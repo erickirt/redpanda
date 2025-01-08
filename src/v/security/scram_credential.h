@@ -19,6 +19,11 @@
 
 namespace security {
 
+enum class scram_algorithm_t {
+    sha256,
+    sha512,
+};
+
 class scram_credential
   : public serde::
       envelope<scram_credential, serde::version<0>, serde::compat_version<0>> {
