@@ -155,4 +155,7 @@ INSTANTIATE_TEST_SUITE_P(
     "package",
     "file_options",
     "enum_proto2",
-    "enum_proto3"));
+    "enum_proto3",
+    // These are covering message and field
+    "message_proto2",
+    "message_proto3"));
