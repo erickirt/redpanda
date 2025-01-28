@@ -203,6 +203,8 @@ struct follower_metrics {
     clock_type::time_point last_heartbeat;
     bool is_live;
     bool under_replicated;
+
+    friend std::ostream& operator<<(std::ostream& o, const follower_metrics& i);
 };
 using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
