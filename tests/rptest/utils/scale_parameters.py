@@ -19,6 +19,22 @@ class ScaleParameters:
     which are scale or performance tests, or which test some system limits need to be "scale aware"
     and can use ScaleParameters for that purpose."""
 
+    # How much memory is required per partition (from the partition memory pool
+    # specified by DEFAULT_PARTITIONS_MEMORY_ALLOCATION_PERCENT).
+    # Should be the same as cluster::DEFAULT_TOPIC_MEMORY_PER_PARTITION.
+    DEFAULT_MIB_PER_PARTITION = 200 / 1024  # 200 KiB
+
+    # The maximum number of partitions allowed per shard. The effective limit is
+    # the lowest of this limit, the partition memory limit, and a few other
+    # limits which usually do not apply in tests.
+    # Should be the same as topic_partitions_per_shard in configuration.cc
+    DEFAULT_PARTITIONS_PER_SHARD = 5000
+
+    # How much memory is reserved for partitions
+    # Should be the same as the default value for
+    # topic_partitions_memory_allocation_percent in configuration.cc
+    DEFAULT_PARTITIONS_MEMORY_ALLOCATION_PERCENT = 10
+
     # Number of partitions to create when running in docker (i.e.
     # when dedicated_nodes=false).  This is independent of the
     # amount of RAM or CPU that the nodes claim to have, because
@@ -31,8 +47,8 @@ class ScaleParameters:
     def __init__(self,
                  redpanda,
                  replication_factor,
-                 mib_per_partition,
-                 topic_partitions_per_shard,
+                 mib_per_partition=DEFAULT_MIB_PER_PARTITION,
+                 topic_partitions_per_shard=DEFAULT_PARTITIONS_PER_SHARD,
                  tiered_storage_enabled=False,
                  partition_memory_reserve_percentage=10):
         self.redpanda = redpanda
