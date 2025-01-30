@@ -9,8 +9,10 @@
 
 import random
 from time import sleep
-from rptest.clients.default import DefaultClient
+from math import ceil
+from collections import Counter
 
+from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
@@ -18,21 +20,13 @@ from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 import requests
 
 
-class MaintenanceTest(RedpandaTest):
+class MaintenanceTestBase(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # Vary partition count relative to num_cpus. This is to ensure that
-        # leadership is moved back to a node that exits maintenance.
-        num_cpus = self.redpanda.get_node_cpu_count()
-        self.topics = (TopicSpec(partition_count=num_cpus * 5,
-                                 replication_factor=3),
-                       TopicSpec(partition_count=num_cpus * 10,
-                                 replication_factor=3))
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
         self._use_rpk = True
@@ -194,7 +188,7 @@ class MaintenanceTest(RedpandaTest):
                 backoff_sec=5,
                 err_msg=f"expected {node.name} maintenance mode: {expect}")
 
-    def _maintenance_disable(self, node):
+    def _maintenance_disable(self, node, check_leadership=True):
         if self._use_rpk:
             self.rpk.cluster_maintenance_disable(node)
         else:
@@ -204,15 +198,29 @@ class MaintenanceTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=5)
 
-        wait_until(lambda: self._has_leadership_role(node),
-                   timeout_sec=120,
-                   backoff_sec=10)
+        if check_leadership:
+            wait_until(lambda: self._has_leadership_role(node),
+                       timeout_sec=120,
+                       backoff_sec=10)
 
         self.logger.debug("Verifying expected broker metadata reported "
                           f"for disabled maintenance mode on node {node.name}")
         wait_until(lambda: self._verify_broker_metadata(False, node),
                    timeout_sec=60,
                    backoff_sec=10)
+
+
+class MaintenanceTest(MaintenanceTestBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Vary partition count relative to num_cpus. This is to ensure that
+        # leadership is moved back to a node that exits maintenance.
+        num_cpus = self.redpanda.get_node_cpu_count()
+        self.topics = (TopicSpec(partition_count=num_cpus * 5,
+                                 replication_factor=3),
+                       TopicSpec(partition_count=num_cpus * 10,
+                                 replication_factor=3))
 
     @cluster(num_nodes=3)
     @matrix(use_rpk=[True, False])
@@ -346,3 +354,56 @@ class MaintenanceTest(RedpandaTest):
             err_msg=
             f"Timeout waiting for maintenance mode to be disabled on node {target_id}"
         )
+
+
+class MaintenanceCycleTest(MaintenanceTestBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(num_brokers=7, *args, **kwargs)
+        self.admin = Admin(self.redpanda)
+        self.rpk = RpkTool(self.redpanda)
+        self._use_rpk = True
+
+    def _get_leaders_stats(self):
+        json = self.admin.get_cluster_partitions()
+        leader_stats = Counter(p["leader_id"] for p in json
+                               if "leader_id" in p)
+        self.redpanda.logger.info(f"{leader_stats=}")
+        return leader_stats
+
+    def _leaders_distributed_evenly(self, tolerance_coefficient):
+        leaders_stats = self._get_leaders_stats()
+        average = sum(leaders_stats.values()) / len(self.redpanda.nodes)
+        acceptable = ceil(average * tolerance_coefficient)
+        return all(c <= acceptable for c in leaders_stats.values())
+
+    @cluster(num_nodes=7)
+    @matrix(use_rpk=[False])
+    def test_leader_distribution(self, use_rpk):
+        # Rolling restart of a cluster balanced by leaders will not bring more
+        # than 3x avg leaders onto a node
+        # (theoretical estimate is e if there are sufficiently many partitions)
+
+        self._use_rpk = use_rpk
+
+        topic = TopicSpec(partition_count=1000, replication_factor=3)
+        self.client().create_topic(topic)
+
+        wait_until(lambda: self._leaders_distributed_evenly(1.1),
+                   timeout_sec=90,
+                   backoff_sec=2,
+                   err_msg="Leaders distributed unevenly")
+        self.redpanda.set_cluster_config({"enable_leader_balancer": False})
+
+        all_nodes_but_one = len(self.redpanda.nodes) - 1
+        for n in random.sample(self.redpanda.nodes, k=all_nodes_but_one):
+            id = self.redpanda.node_id(n)
+            self._enable_maintenance(n)
+            self.redpanda.logger.info(f"node {id} in maintenance mode")
+            self._maintenance_disable(n, check_leadership=False)
+            self.redpanda.logger.info(f"node {id} out of maintenance mode")
+
+        self.redpanda.logger.info(f"{self._get_leaders_stats()=}")
+        wait_until(lambda: self._leaders_distributed_evenly(3),
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="Leaders distributed very unevenly")
