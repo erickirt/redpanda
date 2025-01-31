@@ -46,6 +46,7 @@ iobuf serialize_payload_as_json(const T& payload) {
     return std::move(buf).as_iobuf();
 }
 static constexpr std::string_view json_content_type = "application/json";
+static constexpr std::string_view oauth_token_endpoint = "oauth/tokens";
 } // namespace
 
 namespace iceberg::rest_client {
@@ -112,10 +113,15 @@ catalog_client::acquire_token(retry_chain_node& rtc) {
 
     const auto& creds = _credentials.value();
 
+    // Use the specified OAuth2 server uri if it has a value.
+    // Otherwise, fall back to the deprecated /oauth/tokens catalog endpoint.
+    ss::sstring token_path = creds.oauth2_server_uri.value_or(
+      _path_components.token_api_path());
+
     const auto token_request
       = http::request_builder{}
           .method(boost::beast::http::verb::post)
-          .path(_path_components.token_api_path())
+          .path(token_path)
           .header("content-type", "application/x-www-form-urlencoded");
     auto payload = http::form_encode_data({
       {"grant_type", "client_credentials"},
@@ -322,7 +328,7 @@ ss::sstring path_components::token_api_path() const {
     }
 
     parts.push_back(_api_version());
-    return absl::StrJoin(parts, "/") + "/oauth/tokens";
+    return absl::StrJoin(parts, "/") + "/" + std::string{oauth_token_endpoint};
 }
 
 } // namespace iceberg::rest_client
