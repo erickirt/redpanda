@@ -11,6 +11,7 @@
 #include "iceberg/rest_client/catalog_client.h"
 
 #include "bytes/streambuf.h"
+#include "config/types.h"
 #include "http/request_builder.h"
 #include "http/utils.h"
 #include "iceberg/json_writer.h"
@@ -87,23 +88,30 @@ expected<json::Document> parse_json(iobuf&& raw_response) {
 catalog_client::catalog_client(
   std::unique_ptr<http::abstract_client> http_client,
   ss::sstring endpoint,
-  credentials credentials,
+  std::optional<credentials> credentials,
   std::optional<base_path> base_path,
   std::optional<prefix_path> prefix,
   std::optional<api_version> api_version,
   std::optional<oauth_token> token,
-  std::unique_ptr<retry_policy> retry_policy)
+  std::unique_ptr<retry_policy> retry_policy,
+  config::datalake_catalog_auth_mode auth_mode)
   : _http_client(std::move(http_client))
   , _endpoint{std::move(endpoint)}
   , _credentials{std::move(credentials)}
   , _path_components{std::move(base_path), std::move(prefix), std::move(api_version)}
   , _oauth_token{std::move(token)}
-  , _retry_policy{
-      retry_policy ? std::move(retry_policy)
-                   : std::make_unique<default_retry_policy>()} {}
+  , _retry_policy{retry_policy ? std::move(retry_policy) : std::make_unique<default_retry_policy>()}
+  , _auth_mode(auth_mode) {}
 
 ss::future<expected<oauth_token>>
 catalog_client::acquire_token(retry_chain_node& rtc) {
+    vassert(
+      _credentials.has_value(),
+      "_credentials should have a value in auth mode {}",
+      _auth_mode);
+
+    const auto& creds = _credentials.value();
+
     const auto token_request
       = http::request_builder{}
           .method(boost::beast::http::verb::post)
@@ -111,8 +119,8 @@ catalog_client::acquire_token(retry_chain_node& rtc) {
           .header("content-type", "application/x-www-form-urlencoded");
     auto payload = http::form_encode_data({
       {"grant_type", "client_credentials"},
-      {"client_id", _credentials.client_id},
-      {"client_secret", _credentials.client_secret},
+      {"client_id", creds.client_id},
+      {"client_secret", creds.client_secret},
       // TODO - parameterize this scope, the principal_role should be an input
       // to the catalog client
       {"scope", "PRINCIPAL_ROLE:ALL"},

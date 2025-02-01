@@ -61,6 +61,7 @@ redpanda_cc_library(
         "credentials.h",
     ],
     include_prefix = "iceberg/rest_client",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "@seastar",
@@ -73,6 +74,7 @@ redpanda_cc_library(
         "oauth_token.h",
     ],
     include_prefix = "iceberg/rest_client",
+    visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
         "@seastar",
@@ -114,6 +116,7 @@ redpanda_cc_library(
         ":retry_policy",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:streambuf",
+        "//src/v/config",
         "//src/v/http",
         "//src/v/http:request_builder",
         "//src/v/http:utils",
