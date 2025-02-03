@@ -10,8 +10,6 @@
 #include "kafka/server/handlers/produce.h"
 
 #include "base/likely.h"
-#include "base/vlog.h"
-#include "bytes/iobuf.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -22,14 +20,10 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
-#include "model/record_batch_reader.h"
-#include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "pandaproxy/schema_registry/validation.h"
 #include "raft/errc.h"
 #include "ssx/future-util.h"
-#include "utils/remote.h"
-#include "utils/to_string.h"
 
 #include <seastar/core/execution_stage.hh>
 #include <seastar/core/future.hh>
@@ -39,12 +33,6 @@
 
 #include <boost/container_hash/extensions.hpp>
 #include <fmt/ostream.h>
-
-#include <chrono>
-#include <cstdint>
-#include <memory>
-#include <ranges>
-#include <string_view>
 
 namespace kafka {
 namespace {
