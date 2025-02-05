@@ -297,7 +297,14 @@ ss::future<result<RespT>> in_memory_test_protocol::dispatch(
         auto resp = co_await ss::with_timeout(
           opts.timeout.timeout_at(), std::move(f));
         iobuf_parser parser(std::move(resp));
-        co_return co_await serde::read_async<RespT>(parser);
+        RespT reply = co_await serde::read_async<RespT>(parser);
+        // intercept the reply if the interceptor is set
+        if (_reply_interceptor) {
+            auto intercepted = co_await (*_reply_interceptor)(
+              reply_variant{std::move(reply)}, id);
+            co_return std::get<RespT>(std::move(intercepted));
+        }
+        co_return reply;
     } catch (const ss::timed_out_error&) {
         co_return rpc::errc::client_request_timeout;
     } catch (const seastar::gate_closed_exception&) {
