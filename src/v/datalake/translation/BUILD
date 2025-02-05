@@ -93,6 +93,7 @@ redpanda_cc_library(
     deps = [
         ":model",
         ":stm",
+        ":translation_probe",
         ":utils",
         "//src/v/base",
         "//src/v/cluster",
@@ -122,6 +123,26 @@ redpanda_cc_library(
         "//src/v/utils:lazy_abort_source",
         "//src/v/utils:prefix_logger",
         "//src/v/utils:retry_chain_node",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "translation_probe",
+    srcs = [
+        "translation_probe.cc",
+    ],
+    hdrs = [
+        "translation_probe.h",
+    ],
+    include_prefix = "datalake/translation",
+    visibility = [
+        "//src/v/datalake:__subpackages__",
+    ],
+    deps = [
+        "//src/v/config",
+        "//src/v/metrics",
+        "//src/v/model",
         "@seastar",
     ],
 )
