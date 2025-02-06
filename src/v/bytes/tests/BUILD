@@ -1,4 +1,4 @@
-load("//bazel:test.bzl", "redpanda_cc_btest", "redpanda_cc_fuzz_test", "redpanda_cc_gtest")
+load("//bazel:test.bzl", "redpanda_cc_bench", "redpanda_cc_btest", "redpanda_cc_fuzz_test", "redpanda_cc_gtest")
 
 redpanda_cc_btest(
     name = "iobuf_test",
@@ -89,5 +89,16 @@ redpanda_cc_fuzz_test(
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:scattered_message",
+    ],
+)
+
+redpanda_cc_bench(
+    name = "iobuf_rpbench",
+    srcs = ["iobuf_bench.cc"],
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/random:generators",
+        "@seastar//:benchmark",
     ],
 )
