@@ -2456,26 +2456,25 @@ configuration::configuration()
   , cloud_storage_enable_segment_uploads(
       *this,
       "cloud_storage_enable_segment_uploads",
-      "This property gates log segment upload in the Tiered-Storage subsystem. "
-      "It can be used to temporarily pause all segment uploads in the Redpanda "
-      "cluster. When the uploads are paused the "
-      "'cloud_storage_enable_remote_allow_gaps' cluster configuration or "
-      "'redpanda.remote.allowgaps' topic property determines how the local "
-      "retention should behave.",
+      "Controls the upload of log segments to Tiered Storage. "
+      "If set to false, this property temporarily pauses all log segment "
+      "uploads from the Redpanda cluster. When the uploads are paused, the "
+      "'cloud_storage_enable_remote_allow_gaps' cluster configuration and "
+      "'redpanda.remote.allowgaps' topic properties control local retention "
+      "behavior.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
   , cloud_storage_enable_remote_allow_gaps(
       *this,
       "cloud_storage_enable_remote_allow_gaps",
-      "This property affects the behavior of the Tiered-Storage during pause. "
-      "If 'false' (default value) Redpanda will evict from the local storage "
-      "only data which was already uploaded to the cloud storage. Eventually, "
-      "this will lead to a situation when the local volume is filled with data "
-      "which can't be evicted. When this will happen Redpanda will throttle "
-      "producers. To avoid this the property can be set to 'true'. In this "
-      "case Redpanda will allow segments that wasn't uploaded to the cloud "
-      "storage to be evicted from the local storage. The local storage "
-      "eviction may create a gap in offsets in this case.",
+      "Controls the eviction of locally-stored log segments when Tiered "
+      "Storage uploads are paused. "
+      "Set to `false` (default) to only evict data that has already been "
+      "uploaded to cloud storage. If the retained data fills the local volume, "
+      "Redpanda will throttle producers. "
+      "Set to `true` to allow the eviction of locally-stored log segments, "
+      "which "
+      "may create gaps in offsets. ",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
   , cloud_storage_azure_storage_account(

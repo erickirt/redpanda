@@ -1052,7 +1052,6 @@ config_response_container_t make_topic_configs(
     add_topic_config_if_requested(
       config_keys,
       result,
-
       config::shard_local_cfg().cloud_storage_enable_remote_allow_gaps.name(),
       config::shard_local_cfg().cloud_storage_enable_remote_allow_gaps(),
       topic_property_remote_allow_gaps,
