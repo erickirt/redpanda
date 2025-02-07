@@ -13,6 +13,7 @@ redpanda_package(
     default_yaml_config = "//conf:redpanda.yaml",
     include_sysroot_libs = True,
     redpanda_binary = "//:redpanda",
+    rpath_override = "$ORIGIN/../lib",
     rpk_binary = "//:rpk",
 )
 
@@ -21,6 +22,7 @@ redpanda_package(
     out = "bazel_out.tar.gz",
     include_sysroot_libs = True,
     redpanda_binary = "//:redpanda",
+    rpath_override = "$ORIGIN/../lib",
 )
 
 # This is the ID for the nonroot user in the distroless containers.
@@ -36,6 +38,7 @@ redpanda_package(
     default_yaml_config = "//conf:redpanda.yaml",
     owner = NONROOT_USER,
     redpanda_binary = "//:redpanda",
+    rpath_override = "$ORIGIN/../lib",
     rpk_binary = "//:rpk",
 )
 

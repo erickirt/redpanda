@@ -17,7 +17,6 @@ go_binary(
     visibility = ["//bazel/packaging:__pkg__"],
     x_defs = {
         "binaryPath": "/opt/redpanda/libexec/redpanda",
-        "ldLibraryPath": "/opt/redpanda/lib",
     },
 )
 
@@ -27,6 +26,5 @@ go_binary(
     visibility = ["//bazel/packaging:__pkg__"],
     x_defs = {
         "binaryPath": "/opt/redpanda/libexec/iotune",
-        "ldLibraryPath": "/opt/redpanda/lib",
     },
 )
