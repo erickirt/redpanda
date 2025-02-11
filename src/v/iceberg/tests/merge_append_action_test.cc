@@ -77,26 +77,32 @@ public:
         return {std::move(pk_struct)};
     }
 
-    chunked_vector<data_file> create_data_files(
+    chunked_vector<file_to_append> create_data_files(
+      const table_metadata& md,
       const ss::sstring& path_base,
       size_t num_files,
       size_t record_count,
       int32_t pk_value = 42) {
-        chunked_vector<data_file> ret;
+        chunked_vector<file_to_append> ret;
         ret.reserve(num_files);
         const auto records_per_file = record_count / num_files;
         const auto leftover_records = record_count % num_files;
         for (size_t i = 0; i < num_files; i++) {
             const auto path = fmt::format("{}-{}", path_base, i);
-            ret.emplace_back(data_file{
+            data_file file{
               .content_type = data_file_content_type::data,
               .file_path = uri(path),
               .partition = partition_key{make_int_pk(pk_value)},
               .record_count = records_per_file,
               .file_size_bytes = 1_KiB,
+            };
+            ret.emplace_back(file_to_append{
+              .file = std::move(file),
+              .schema_id = md.current_schema_id,
+              .partition_spec_id = md.default_spec_id,
             });
         }
-        ret[0].record_count += leftover_records;
+        ret[0].file.record_count += leftover_records;
         return ret;
     }
 
@@ -117,7 +123,8 @@ TEST_F(MergeAppendActionTest, TestMergeByCount) {
         const auto expected_manifests = expected_snapshots;
         auto res = tx.merge_append(
                        io,
-                       create_data_files("foo", files_per_man, rows_per_man))
+                       create_data_files(
+                         tx.table(), "foo", files_per_man, rows_per_man))
                      .get();
         ASSERT_FALSE(res.has_error()) << res.error();
         const auto& table = tx.table();
@@ -135,7 +142,9 @@ TEST_F(MergeAppendActionTest, TestMergeByCount) {
     // At the merge threshold, we expect the latest snapshot contains a merged
     // manifest.
     auto res = tx.merge_append(
-                   io, create_data_files("foo", files_per_man, rows_per_man))
+                   io,
+                   create_data_files(
+                     tx.table(), "foo", files_per_man, rows_per_man))
                  .get();
     ASSERT_FALSE(res.has_error()) << res.error();
     const auto& table = tx.table();
@@ -174,10 +183,11 @@ TEST_F(MergeAppendActionTest, TestMergeByBytes) {
     for (size_t i = 0; i < num_to_merge_at; i++) {
         const auto expected_snapshots = i + 1;
         const auto expected_manifests = expected_snapshots;
-        auto res
-          = tx.merge_append(
-                io, create_data_files(path_base, files_per_man, rows_per_man))
-              .get();
+        auto res = tx.merge_append(
+                       io,
+                       create_data_files(
+                         tx.table(), path_base, files_per_man, rows_per_man))
+                     .get();
         ASSERT_FALSE(res.has_error()) << res.error();
         const auto& table = tx.table();
         ASSERT_TRUE(table.snapshots.has_value());
@@ -195,7 +205,8 @@ TEST_F(MergeAppendActionTest, TestMergeByBytes) {
     // manifest.
     auto res = tx.merge_append(
                    io,
-                   create_data_files(path_base, files_per_man, rows_per_man))
+                   create_data_files(
+                     tx.table(), path_base, files_per_man, rows_per_man))
                  .get();
     ASSERT_FALSE(res.has_error()) << res.error();
     const auto& table = tx.table();
@@ -256,7 +267,9 @@ TEST_F(MergeAppendActionTest, TestUniqueSnapshotIds) {
     const size_t num_snapshots = 1000;
     for (auto i = 0; i < 1000; i++) {
         const auto expected_snapshots = i + 1;
-        auto res = tx.merge_append(io, create_data_files("foo", 1, 1)).get();
+        auto res = tx.merge_append(
+                       io, create_data_files(tx.table(), "foo", 1, 1))
+                     .get();
         ASSERT_FALSE(res.has_error()) << res.error();
         ASSERT_TRUE(table.snapshots.has_value());
         ASSERT_TRUE(table.current_snapshot_id.has_value());
@@ -287,8 +300,9 @@ TEST_F(MergeAppendActionTest, TestPartitionSummaries) {
     for (size_t i = 0; i < num_to_merge_at; i++) {
         int32_t pk = base_pk + i;
         const auto expected_manifests = i + 1;
-        auto res
-          = tx.merge_append(io, create_data_files("foo", 1, 1, pk)).get();
+        auto res = tx.merge_append(
+                       io, create_data_files(tx.table(), "foo", 1, 1, pk))
+                     .get();
         ASSERT_FALSE(res.has_error()) << res.error();
 
         // Download the resulting manifest list and make sure we only added a
@@ -319,8 +333,9 @@ TEST_F(MergeAppendActionTest, TestPartitionSummaries) {
     }
     // Write one more manifest, triggering a merge.
     const int32_t last_pk = base_pk + num_to_merge_at + 123;
-    auto res
-      = tx.merge_append(io, create_data_files("foo", 1, 1, last_pk)).get();
+    auto res = tx.merge_append(
+                   io, create_data_files(tx.table(), "foo", 1, 1, last_pk))
+                 .get();
     ASSERT_FALSE(res.has_error()) << res.error();
     auto latest_mlist_path = table.snapshots.value().back().manifest_list_path;
     auto latest_mlist_res = io.download_manifest_list(latest_mlist_path).get();
@@ -345,7 +360,9 @@ TEST_F(MergeAppendActionTest, TestBadMetadata) {
     chunked_vector<table_metadata> bad_tables;
     auto check_bad = [this](table_metadata t) {
         transaction tx(std::move(t));
-        auto res = tx.merge_append(io, create_data_files("foo", 1, 1)).get();
+        auto res = tx.merge_append(
+                       io, create_data_files(tx.table(), "foo", 1, 1))
+                     .get();
         ASSERT_TRUE(res.has_error());
         ASSERT_EQ(res.error(), action::errc::unexpected_state);
     };
@@ -389,9 +406,9 @@ TEST_F(MergeAppendActionTest, TestBadMetadata) {
 
 TEST_F(MergeAppendActionTest, TestBadFile) {
     transaction tx(create_table());
-    auto bad_files = create_data_files("foo", 1, 1);
+    auto bad_files = create_data_files(tx.table(), "foo", 1, 1);
     for (auto& f : bad_files) {
-        f.partition = partition_key{};
+        f.file.partition = partition_key{};
     }
     auto res = tx.merge_append(io, std::move(bad_files)).get();
     ASSERT_TRUE(res.has_error());
@@ -401,10 +418,12 @@ TEST_F(MergeAppendActionTest, TestBadFile) {
 TEST_F(MergeAppendActionTest, TestTagSnapshot) {
     transaction tx(create_table());
     const auto& table = tx.table();
-    auto res
-      = tx.merge_append(
-            io, create_data_files("foo", 1, 1), /*snapshot_props=*/{}, "tag")
-          .get();
+    auto res = tx.merge_append(
+                   io,
+                   create_data_files(tx.table(), "foo", 1, 1),
+                   /*snapshot_props=*/{},
+                   "tag")
+                 .get();
     ASSERT_FALSE(res.has_error()) << res.error();
     ASSERT_TRUE(table.current_snapshot_id.has_value());
 
@@ -425,7 +444,10 @@ TEST_F(MergeAppendActionTest, TestTagSnapshot) {
 
     // Merge again with a tag.
     res = tx.merge_append(
-              io, create_data_files("foo", 1, 1), /*snapshot_props=*/{}, "tag")
+              io,
+              create_data_files(tx.table(), "foo", 1, 1),
+              /*snapshot_props=*/{},
+              "tag")
             .get();
     ASSERT_FALSE(res.has_error()) << res.error();
     ASSERT_TRUE(table.current_snapshot_id.has_value());
@@ -439,7 +461,7 @@ TEST_F(MergeAppendActionTest, TestTagSnapshot) {
     // Now merge with a different tag. The old tag shouldn't be affected.
     res = tx.merge_append(
               io,
-              create_data_files("foo", 1, 1),
+              create_data_files(tx.table(), "foo", 1, 1),
               /*snapshot_props=*/{},
               /*tag_name=*/"other")
             .get();
@@ -465,10 +487,12 @@ TEST_F(MergeAppendActionTest, TestTagWithExpiration) {
     const auto& table = tx.table();
     chunked_hash_set<snapshot_id> snap_ids;
     // Add a snapshot without an explicit tag expiration.
-    auto res
-      = tx.merge_append(
-            io, create_data_files("foo", 1, 1), /*snapshot_props=*/{}, "tag")
-          .get();
+    auto res = tx.merge_append(
+                   io,
+                   create_data_files(tx.table(), "foo", 1, 1),
+                   /*snapshot_props=*/{},
+                   "tag")
+                 .get();
     ASSERT_FALSE(res.has_error()) << res.error();
     ASSERT_TRUE(table.current_snapshot_id.has_value());
 
@@ -488,7 +512,7 @@ TEST_F(MergeAppendActionTest, TestTagWithExpiration) {
     auto long_max = std::numeric_limits<long>::max();
     res = tx.merge_append(
               io,
-              create_data_files("foo", 1, 1),
+              create_data_files(tx.table(), "foo", 1, 1),
               /*snapshot_props=*/{},
               "tag",
               /*tag_expiration_ms=*/long_max)

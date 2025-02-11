@@ -65,25 +65,29 @@ public:
     }
 
     ss::future<> add_snapshot(const iceberg::table_identifier& table_id) {
-        chunked_vector<iceberg::data_file> files;
+        chunked_vector<iceberg::file_to_append> files;
         auto filename = make_filename(file_counter_++);
         auto file_uri = manifest_io.to_uri({filename});
-
-        iceberg::partition_key pk;
-        pk.val = std::make_unique<iceberg::struct_value>();
-        pk.val->fields.emplace_back(iceberg::int_value{0});
-        files.emplace_back(iceberg::data_file{
-          .file_path = file_uri,
-          .partition = std::move(pk),
-          .file_size_bytes = 0,
-        });
 
         auto load_res = co_await catalog.load_table(table_id);
         ASSERT_FALSE_CORO(load_res.has_error())
           << "Error loading: " << load_res.error();
+        iceberg::transaction txn(std::move(load_res.value()));
 
-        auto& table = load_res.value();
-        iceberg::transaction txn(std::move(table));
+        iceberg::partition_key pk;
+        pk.val = std::make_unique<iceberg::struct_value>();
+        pk.val->fields.emplace_back(iceberg::int_value{0});
+        iceberg::data_file file{
+          .file_path = file_uri,
+          .partition = std::move(pk),
+          .file_size_bytes = 0,
+        };
+        files.emplace_back(iceberg::file_to_append{
+          .file = std::move(file),
+          .schema_id = txn.table().current_schema_id,
+          .partition_spec_id = txn.table().default_spec_id,
+        });
+
         auto merge_res = co_await txn.merge_append(
           manifest_io, std::move(files));
         ASSERT_FALSE_CORO(merge_res.has_error())

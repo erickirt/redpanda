@@ -185,19 +185,19 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
     // Validate our input files that their partition keys look sane.
     const auto& pspec = *pspec_it;
     for (const auto& f : new_data_files_) {
-        if (f.partition.val == nullptr) {
+        if (f.file.partition.val == nullptr) {
             vlog(
               log.error,
               "Metadata for data file {} is missing partition key",
-              f.file_path);
+              f.file.file_path);
             co_return action::errc::unexpected_state;
         }
-        auto f_num_fields = f.partition.val->fields.size();
+        auto f_num_fields = f.file.partition.val->fields.size();
         if (f_num_fields != pspec.fields.size()) {
             vlog(
               log.error,
               "Partition key for data file {} has {} fields, expected {}",
-              f.file_path,
+              f.file.file_path,
               f_num_fields,
               pspec.fields.size());
             co_return action::errc::unexpected_state;
@@ -357,7 +357,7 @@ merge_append_action::upload_as_manifest(
 ss::future<checked<chunked_vector<manifest_file>, metadata_io::errc>>
 merge_append_action::maybe_merge_mfiles_and_new_data(
   chunked_vector<manifest_file> to_merge,
-  chunked_vector<data_file> new_data_files,
+  chunked_vector<file_to_append> new_data_files,
   const table_snapshot_ctx& ctx) {
     size_t added_rows{0};
     size_t added_files{0};
@@ -372,14 +372,14 @@ merge_append_action::maybe_merge_mfiles_and_new_data(
     chunked_vector<manifest_entry> new_data_entries;
     auto partition_summaries = field_summary_val::empty_summaries(ctx.pk_type);
     for (auto& f : new_data_files) {
-        update_partition_summaries(f, partition_summaries);
-        added_rows += f.record_count;
+        update_partition_summaries(f.file, partition_summaries);
+        added_rows += f.file.record_count;
         manifest_entry e{
           .status = manifest_entry_status::added,
           .snapshot_id = ctx.snap_id,
           .sequence_number = std::nullopt,
           .file_sequence_number = std::nullopt,
-          .data_file = std::move(f),
+          .data_file = std::move(f.file),
         };
         new_data_entries.emplace_back(std::move(e));
     }
@@ -513,7 +513,7 @@ ss::future<checked<chunked_vector<manifest_file>, metadata_io::errc>>
 merge_append_action::pack_mlist_and_new_data(
   const table_snapshot_ctx& ctx,
   manifest_list old_mlist,
-  chunked_vector<data_file> new_data_files) {
+  chunked_vector<file_to_append> new_data_files) {
     auto num_old_files = old_mlist.files.size();
     auto binned_mfiles = manifest_packer::pack(
       default_target_size_bytes, std::move(old_mlist.files));

@@ -19,6 +19,14 @@
 
 namespace iceberg {
 
+// File with schema and partition spec information, used as input to
+// merge_append_action.
+struct file_to_append {
+    data_file file;
+    schema::id_t schema_id;
+    partition_spec::id_t partition_spec_id;
+};
+
 // Container for a metadata required to build manifest_file::partitions (the
 // field summaries for each partition key field).
 //
@@ -63,7 +71,7 @@ public:
     merge_append_action(
       manifest_io& io,
       const table_metadata& table,
-      chunked_vector<data_file> files,
+      chunked_vector<file_to_append> files,
       chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props = {},
       std::optional<ss::sstring> tag_name = std::nullopt,
       std::optional<int64_t> tag_expiration_ms = std::nullopt,
@@ -115,7 +123,7 @@ private:
     ss::future<checked<chunked_vector<manifest_file>, metadata_io::errc>>
     maybe_merge_mfiles_and_new_data(
       chunked_vector<manifest_file> to_merge,
-      chunked_vector<data_file> new_data_files,
+      chunked_vector<file_to_append> new_data_files,
       const table_snapshot_ctx& ctx);
 
     // Takes the given list of manifest files and merges them with the optional
@@ -138,7 +146,7 @@ private:
     pack_mlist_and_new_data(
       const table_snapshot_ctx& ctx,
       manifest_list old_mlist,
-      chunked_vector<data_file> new_data_files);
+      chunked_vector<file_to_append> new_data_files);
 
 private:
     manifest_io& io_;
@@ -153,7 +161,7 @@ private:
     const size_t mfile_target_size_bytes_;
 
     size_t next_manifest_num_{0};
-    chunked_vector<data_file> new_data_files_;
+    chunked_vector<file_to_append> new_data_files_;
     chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props_;
     std::optional<ss::sstring> tag_name_;
     std::optional<int64_t> tag_expiration_ms_;

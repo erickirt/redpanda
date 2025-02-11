@@ -13,6 +13,7 @@
 #include "container/fragmented_vector.h"
 #include "iceberg/action.h"
 #include "iceberg/manifest_io.h"
+#include "iceberg/merge_append_action.h"
 #include "iceberg/schema.h"
 #include "iceberg/table_metadata.h"
 
@@ -51,7 +52,7 @@ public:
     // back on table-wide properties.
     ss::future<txn_outcome> merge_append(
       manifest_io&,
-      chunked_vector<data_file>,
+      chunked_vector<file_to_append>,
       chunked_vector<std::pair<ss::sstring, ss::sstring>> snapshot_props = {},
       std::optional<ss::sstring> tag_name = std::nullopt,
       std::optional<int64_t> tag_expiration_ms = std::nullopt);
