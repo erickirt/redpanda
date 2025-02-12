@@ -69,7 +69,7 @@ class SegmentReader:
 
 def safe_isdir(p: Path) -> bool:
     """
-    It's valid for files to be deleted at any time, 
+    It's valid for files to be deleted at any time,
     in that case that the file is missing, just return
     that it's not a directory
     """
@@ -81,10 +81,13 @@ def safe_isdir(p: Path) -> bool:
 
 def safe_listdir(p: Path) -> list[Path]:
     """
-    It's valid for directories to be deleted at any time, 
+    It's valid for directories to be deleted at any time,
     in that case that the directory is missing, just return
     that there are no files.
     """
+    if not safe_isdir(p):
+        return []
+
     try:
         return [f for f in p.iterdir()]
     except FileNotFoundError:
