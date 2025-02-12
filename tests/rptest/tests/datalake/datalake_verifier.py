@@ -47,7 +47,8 @@ class DatalakeVerifier():
                  topic: str,
                  query_engine: QueryEngineBase,
                  compacted: bool = False,
-                 table_override: Optional[str] = None):
+                 table_override: Optional[str] = None,
+                 max_buffered_msgs=5000):
         self.redpanda = redpanda
         self.topic = topic
         self.table = table_override or topic
@@ -70,7 +71,7 @@ class DatalakeVerifier():
         self._lock = threading.Lock()
         self._stop = threading.Event()
         # number of messages buffered in memory
-        self._msg_semaphore = threading.Semaphore(5000)
+        self._msg_semaphore = threading.Semaphore(max_buffered_msgs)
         self._num_msgs_pending_verification = 0
         # Signalled when enough messages are batched so query
         # thread can perform verification. Larger batches results
