@@ -289,8 +289,11 @@ partition_translator::do_translation_for_range(
       fmt::format("{}", read_begin_offset), // file prefix
       ss::make_shared<serde_parquet_writer_factory>(),
       std::make_unique<noop_mem_tracker>());
-
+    const auto& ntp = _partition->ntp();
     auto task = translation_task{
+      ntp,
+      _partition->get_topic_revision_id(),
+      std::move(writer_factory),
       **_cloud_io,
       *_schema_mgr,
       *_type_resolver,
@@ -300,7 +303,6 @@ partition_translator::do_translation_for_range(
       _location_provider,
       *_probe,
     };
-    const auto& ntp = _partition->ntp();
     auto remote_path_prefix = remote_path{
       fmt::format("{}/{}/{}", iceberg_data_path_prefix, ntp.path(), _term)};
     vlog(
@@ -329,15 +331,9 @@ partition_translator::do_translation_for_range(
     // of kafka_reader. The reader is cleaned up along with consumption,
     // so we need to ensure that the reader is dispatched to translation
     // in all cases.
-    auto result = co_await task.translate(
-      ntp,
-      _partition->get_topic_revision_id(),
-      std::move(writer_factory),
-      is_cp_enabled,
-      std::move(kafka_reader),
-      remote_path_prefix,
-      parent,
-      _as);
+    co_await task.translate_once(std::move(kafka_reader), _as);
+    auto result = co_await std::move(task).finish(
+      is_cp_enabled, remote_path_prefix, parent, _as);
     if (result.has_error()) {
         vlog(_logger.warn, "Error translating range {}", result.error());
         co_return std::nullopt;
