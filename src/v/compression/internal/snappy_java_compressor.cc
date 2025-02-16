@@ -23,15 +23,6 @@
 #include <snappy.h>
 
 namespace compression::internal {
-struct snappy_magic {
-    static const constexpr std::array<uint8_t, 8> java_magic = {
-      0x82, 'S', 'N', 'A', 'P', 'P', 'Y', 0};
-    static const constexpr int32_t default_version = 1;
-    static const constexpr int32_t min_compatible_version = 1;
-    static const constexpr size_t header_len = java_magic.size()
-                                               + sizeof(default_version)
-                                               + sizeof(min_compatible_version);
-};
 
 size_t find_max_size_in_frags(const iobuf& x) {
     size_t ret = 0;
