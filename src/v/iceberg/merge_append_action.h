@@ -120,7 +120,7 @@ private:
     //
     // Returns the resulting list of manifest files, which will be size 1 in
     // the merging case, or the input size + 1 otherwise.
-    ss::future<checked<chunked_vector<manifest_file>, metadata_io::errc>>
+    ss::future<checked<chunked_vector<manifest_file>, action::errc>>
     maybe_merge_mfiles_and_new_data(
       chunked_vector<manifest_file> to_merge,
       chunked_vector<file_to_append> new_data_files,
@@ -128,7 +128,7 @@ private:
 
     // Takes the given list of manifest files and merges them with the optional
     // new manifest entries (i.e. data file metadata).
-    ss::future<checked<manifest_file, metadata_io::errc>> merge_mfiles(
+    ss::future<checked<manifest_file, action::errc>> merge_mfiles(
       chunked_vector<manifest_file> to_merge,
       chunked_vector<manifest_entry> added_entries,
       const table_snapshot_ctx& ctx);
@@ -140,7 +140,7 @@ private:
     // Returns the resulting list of manifest files, which should encompass all
     // data from the latest snapshot + new data files, and can be written as a
     // new manifest list and committed as a new snapshot.
-    ss::future<checked<chunked_vector<manifest_file>, metadata_io::errc>>
+    ss::future<checked<chunked_vector<manifest_file>, action::errc>>
     pack_mlist_and_new_data(
       const table_snapshot_ctx& ctx,
       manifest_list old_mlist,

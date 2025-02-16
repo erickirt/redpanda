@@ -464,6 +464,7 @@ redpanda_cc_library(
         "merge_append_action.h",
     ],
     implementation_deps = [
+        ":compatibility",
         ":logger",
         ":manifest",
         ":manifest_file_packer",

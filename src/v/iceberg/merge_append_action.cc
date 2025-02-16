@@ -11,6 +11,7 @@
 
 #include "base/units.h"
 #include "base/vlog.h"
+#include "iceberg/compatibility.h"
 #include "iceberg/logger.h"
 #include "iceberg/manifest.h"
 #include "iceberg/manifest_file_packer.h"
@@ -264,7 +265,7 @@ ss::future<action::action_outcome> merge_append_action::build_updates() && {
     auto mfiles_res = co_await pack_mlist_and_new_data(
       ctx, std::move(mlist), std::move(new_data_files_));
     if (mfiles_res.has_error()) {
-        co_return to_action_errc(mfiles_res.error());
+        co_return mfiles_res.error();
     }
     manifest_list new_mlist{std::move(mfiles_res.value())};
 
@@ -351,7 +352,37 @@ merge_append_action::upload_as_manifest(
     co_return co_await io_.upload_manifest(path, m);
 }
 
-ss::future<checked<chunked_vector<manifest_file>, metadata_io::errc>>
+namespace {
+
+// Depending on how schema evolves, type of partition key fields can change
+// (e.g. a field type can be promoted from int to long). This means that
+// partition values of all data files in the new manifest need to be
+// promoted to the common type before creating the manifest.
+//
+// Preconditions: pk and pk_type have the same size, and the promotion for each
+// field is possible.
+void promote_partition_key_type(
+  partition_key& pk, const partition_key_type& pk_type) {
+    // ensured by the callers
+    vassert(
+      pk.val->fields.size() == pk_type.type.fields.size(),
+      "unexpected partition key size: {} (expected: {})",
+      pk.val->fields.size(),
+      pk_type.type.fields.size());
+    for (size_t i = 0; i < pk.val->fields.size(); ++i) {
+        auto& field = pk.val->fields[i];
+        if (field) {
+            const auto& type = std::get<primitive_type>(
+              pk_type.type.fields[i]->type);
+            field = promote_primitive_value_type(
+              std::move(std::get<primitive_value>(*field)), type);
+        }
+    }
+}
+
+} // namespace
+
+ss::future<checked<chunked_vector<manifest_file>, action::errc>>
 merge_append_action::maybe_merge_mfiles_and_new_data(
   chunked_vector<manifest_file> to_merge,
   chunked_vector<file_to_append> new_data_files,
@@ -396,7 +427,7 @@ merge_append_action::maybe_merge_mfiles_and_new_data(
     co_return ret;
 }
 
-ss::future<checked<manifest_file, metadata_io::errc>>
+ss::future<checked<manifest_file, action::errc>>
 merge_append_action::merge_mfiles(
   chunked_vector<manifest_file> to_merge,
   chunked_vector<manifest_entry> added_entries,
@@ -423,11 +454,22 @@ merge_append_action::merge_mfiles(
         // container.
         auto mfile_res = co_await io_.download_manifest(mfile.manifest_path);
         if (mfile_res.has_error()) {
-            co_return mfile_res.error();
+            co_return to_action_errc(mfile_res.error());
         }
         auto m = std::move(mfile_res).value();
         existing_files += m.entries.size();
         for (auto& e : m.entries) {
+            auto f_num_fields = e.data_file.partition.val->fields.size();
+            if (f_num_fields != ctx.pspec.fields.size()) {
+                vlog(
+                  log.error,
+                  "Partition key for data file {} has {} fields, expected {}",
+                  e.data_file.file_path,
+                  f_num_fields,
+                  ctx.pspec.fields.size());
+                co_return action::errc::unexpected_state;
+            }
+
             existing_rows += e.data_file.record_count;
             // Rewrite sequence numbers for previously added entries.
             // These entries refer to files committed prior to this action.
@@ -448,10 +490,21 @@ merge_append_action::merge_mfiles(
           std::back_inserter(merged_entries));
     }
 
+    auto pk_type = partition_key_type::create(ctx.pspec, ctx.schema);
     auto partition_summaries = field_summary_val::empty_summaries(
       ctx.pspec.fields.size());
-    for (const auto& e : merged_entries) {
-        update_partition_summaries(e.data_file, partition_summaries);
+    for (auto& e : merged_entries) {
+        try {
+            promote_partition_key_type(e.data_file.partition, pk_type);
+            update_partition_summaries(e.data_file, partition_summaries);
+        } catch (const std::exception& ex) {
+            vlog(
+              log.error,
+              "bad partition key for file {}: {}",
+              e.data_file.file_path,
+              ex);
+            co_return errc::unexpected_state;
+        }
     }
 
     const auto merged_manifest_path = get_manifest_path(
@@ -459,7 +512,7 @@ merge_append_action::merge_mfiles(
     const auto mfile_up_res = co_await upload_as_manifest(
       merged_manifest_path, ctx.schema, ctx.pspec, std::move(merged_entries));
     if (mfile_up_res.has_error()) {
-        co_return mfile_up_res.error();
+        co_return to_action_errc(mfile_up_res.error());
     }
     manifest_file merged_file{
       .manifest_path = merged_manifest_path,
@@ -480,7 +533,7 @@ merge_append_action::merge_mfiles(
     co_return merged_file;
 }
 
-ss::future<checked<chunked_vector<manifest_file>, metadata_io::errc>>
+ss::future<checked<chunked_vector<manifest_file>, action::errc>>
 merge_append_action::pack_mlist_and_new_data(
   const table_snapshot_ctx& ctx,
   manifest_list old_mlist,
