@@ -1236,7 +1236,7 @@ FIXTURE_TEST(empty_segment_recovery, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, model::offset(6));
 }
 
-FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
+FIXTURE_TEST(test_compaction_preserve_state, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     auto ntp = model::ntp("default", "test", 0);
     // compacted topic
