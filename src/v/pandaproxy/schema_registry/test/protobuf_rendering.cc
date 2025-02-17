@@ -165,4 +165,5 @@ INSTANTIATE_TEST_SUITE_P(
     "composite_extension",
     "nested_extension",
     "map_entry_hack",
-    "repeated_custom_options"));
+    "repeated_custom_options",
+    "enum_ordering"));
