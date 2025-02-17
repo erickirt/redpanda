@@ -76,22 +76,13 @@ iobuf snappy_java_compressor::uncompress(const iobuf& x) {
     if (unlikely(snappy_magic::java_magic != magic_compare)) {
         return snappy_standard_compressor::uncompress(x);
     }
-    // NOTE: version and min_version are BIG_ENDIAN!
     // Previously, these version fields were erroneously written with
     // little-endian encoding. They are now corrected to be written and decoded
-    // using big-endian, but we must retain backwards compatibility here with
-    // the existing, improperly encoded batches (as version, min_version fields
-    // with value 1 will decode to the value 16777216).
-    const auto version = iter.consume_be_type<int32_t>();
-    const auto min_version = iter.consume_be_type<int32_t>();
-    if (unlikely(min_version < snappy_magic::min_compatible_version)) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "version missmatch. iobuf: {} - version:{}, min_version:{}",
-          x,
-          version,
-          min_version));
-    }
+    // using big-endian. Additionally, there was previously a version check
+    // here. It has been removed due to incorrect implementation, and because
+    // most other snappy clients do not perform checks around these fields.
+    [[maybe_unused]] const auto version = iter.consume_be_type<int32_t>();
+    [[maybe_unused]] const auto min_version = iter.consume_be_type<int32_t>();
     // stream decoder next
     iobuf ret;
     const size_t input_bytes = x.size_bytes();
