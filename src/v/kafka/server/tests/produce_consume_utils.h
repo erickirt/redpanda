@@ -9,12 +9,9 @@
  */
 #pragma once
 
-#include "bytes/iobuf.h"
 #include "container/fragmented_vector.h"
 #include "kafka/client/transport.h"
-#include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_request.h"
-#include "storage/record_batch_builder.h"
 
 namespace tests {
 
@@ -90,24 +87,7 @@ public:
       model::topic topic_name,
       model::partition_id pid,
       std::vector<kv_t> records,
-      std::optional<model::timestamp> ts = std::nullopt) {
-        pid_to_kvs_map_t m;
-        m.emplace(pid, std::move(records));
-        auto ret_m = co_await produce(topic_name, std::move(m), ts);
-        if (ret_m.size() != 1) {
-            throw std::runtime_error(fmt::format(
-              "unexpected produce results {}/{}: {} results",
-              topic_name(),
-              pid(),
-              ret_m.size()));
-        }
-        auto it = ret_m.find(pid);
-        if (it == ret_m.end()) {
-            throw std::runtime_error(fmt::format(
-              "produce result missing partition {}/{}", topic_name(), pid()));
-        }
-        co_return it->second;
-    }
+      std::optional<model::timestamp> ts = std::nullopt);
 
 private:
     // Convert the given records-per-partition mapping to a set of per-partition
@@ -137,19 +117,7 @@ public:
     ss::future<std::vector<kv_t>> consume_from_partition(
       model::topic topic_name,
       model::partition_id pid,
-      model::offset kafka_offset_inclusive) {
-        auto m = co_await consume(topic_name, {pid}, kafka_offset_inclusive);
-        if (m.empty()) {
-            throw std::runtime_error(
-              fmt::format("empty fetch {}/{}", topic_name(), pid()));
-        }
-        auto it = m.find(pid);
-        if (it == m.end()) {
-            throw std::runtime_error(fmt::format(
-              "fetch result missing partition {}/{}", topic_name(), pid()));
-        }
-        co_return it->second;
-    }
+      model::offset kafka_offset_inclusive);
 
 private:
     kafka::client::transport _transport;
