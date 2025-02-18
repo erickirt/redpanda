@@ -4119,4 +4119,20 @@ void disk_log_impl::subtract_closed_segment_bytes(uint64_t bytes) {
     _probe->set_closed_segment_bytes(_closed_segment_bytes);
 }
 
+void disk_log_impl::add_segment_bytes(
+  ss::lw_shared_ptr<segment> s, ssize_t bytes) {
+    if (!s->has_clean_compact_timestamp()) {
+        add_dirty_segment_bytes(bytes);
+    }
+    add_closed_segment_bytes(bytes);
+}
+
+void disk_log_impl::subtract_segment_bytes(
+  ss::lw_shared_ptr<segment> s, ssize_t bytes) {
+    if (!s->has_clean_compact_timestamp()) {
+        subtract_dirty_segment_bytes(bytes);
+    }
+    subtract_closed_segment_bytes(bytes);
+}
+
 } // namespace storage

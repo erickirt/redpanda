@@ -28,6 +28,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -489,6 +490,17 @@ private:
     // the tags add_tag or subtract_tag must be used.
     void add_closed_segment_bytes(uint64_t bytes);
     void subtract_closed_segment_bytes(uint64_t bytes);
+
+    // Updates the number of closed & dirty bytes on segment roll (i.e when a
+    // segment's appender is released) or when recovering existing segments from
+    // a set. The argument `bytes` is added to closed_segment_bytes, and
+    // conditionally added to dirty_segment_bytes.
+    void add_segment_bytes(ss::lw_shared_ptr<segment> s, ssize_t bytes);
+
+    // Updates the number of closed & dirty bytes on data removal, e.g
+    // compaction or truncation. The argument `bytes` is removed from
+    // closed_segment_bytes, and conditionally removed from dirty_segment_bytes.
+    void subtract_segment_bytes(ss::lw_shared_ptr<segment> s, ssize_t bytes);
 
     bool _compaction_enabled;
 };
