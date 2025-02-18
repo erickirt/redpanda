@@ -122,9 +122,7 @@ validate_schema_transform(struct_type& dest, const partition_spec& spec);
  * @return Whether the schema changed from source->dest, or an error
  */
 schema_evolution_result evolve_schema(
-  const struct_type& source,
-  struct_type& dest,
-  const partition_spec& spec = partition_spec{});
+  const struct_type& source, struct_type& dest, const partition_spec& spec);
 
 /**
  * try_fill_field_ids - Try to fill all dest fields with IDs from source.
