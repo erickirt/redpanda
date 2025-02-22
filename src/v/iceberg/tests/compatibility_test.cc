@@ -332,7 +332,8 @@ struct struct_evolution_test_case {
     std::string_view description{};
     std::function<struct_type(unique_id_generator&)> generator;
     std::function<void(struct_type&)> update;
-    checked<std::nullopt_t, schema_evolution_errc> err{std::nullopt};
+    checked<std::nullopt_t, schema_evolution_errc> annotate_err{std::nullopt};
+    checked<std::nullopt_t, schema_evolution_errc> validate_err{std::nullopt};
     std::function<bool(const struct_type&, const struct_type&)> validator =
       [](const struct_type&, const struct_type&) { return true; };
     schema_changed any_change{true};
@@ -727,10 +728,8 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
             ids.get_one(), "foo", field_required::no, int_type{}));
           return s;
       },
-    .update = [](
-
-                struct_type& s) { s.fields[0]->type = string_type{}; },
-    .err = schema_evolution_errc::type_mismatch,
+    .update = [](struct_type& s) { s.fields[0]->type = string_type{}; },
+    .validate_err = schema_evolution_errc::type_mismatch,
   },
   struct_evolution_test_case{
     .description
@@ -750,7 +749,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
       [](struct_type& s) {
           get<list_type>(s.fields[0]).element_field->type = string_type{};
       },
-    .err = schema_evolution_errc::type_mismatch,
+    .validate_err = schema_evolution_errc::type_mismatch,
   },
   struct_evolution_test_case{
     .description
@@ -772,7 +771,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
             .fields.emplace_back(
               nested_field::create(0, "int", field_required::yes, int_type{}));
       },
-    .err = schema_evolution_errc::new_required_field,
+    .validate_err = schema_evolution_errc::new_required_field,
 
   },
   struct_evolution_test_case{
@@ -796,7 +795,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
       [](struct_type& s) {
           get<map_type>(s.fields[0]).value_field->type = string_type{};
       },
-    .err = schema_evolution_errc::type_mismatch,
+    .validate_err = schema_evolution_errc::type_mismatch,
   },
   struct_evolution_test_case{
     .description = "map keys are subject to type promotion rules (invalid)",
@@ -819,7 +818,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
       [](struct_type& s) {
           get<map_type>(s.fields[0]).key_field->type = double_type{};
       },
-    .err = schema_evolution_errc::type_mismatch,
+    .validate_err = schema_evolution_errc::type_mismatch,
   },
   struct_evolution_test_case{
     .description = "evolving a primitive field into a struct is illegal",
@@ -840,7 +839,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
           s.fields.emplace_back(
             nested_field::create(0, "foo", field_required::no, std::move(foo)));
       },
-    .err = schema_evolution_errc::incompatible,
+    .annotate_err = schema_evolution_errc::incompatible,
   },
   struct_evolution_test_case{
     .description = "evolving a single field struct into a primitive is illegal",
@@ -861,7 +860,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
           s.fields.clear();
           s.fields.emplace_back(std::move(bar));
       },
-    .err = schema_evolution_errc::incompatible,
+    .annotate_err = schema_evolution_errc::incompatible,
   },
   struct_evolution_test_case{
     .description
@@ -878,7 +877,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
           return s;
       },
     .update = [](struct_type& s) { s.fields.back()->type = long_type{}; },
-    .err = schema_evolution_errc::ambiguous,
+    .annotate_err = schema_evolution_errc::ambiguous,
   },
   struct_evolution_test_case{
     .description = "adding fields to a map key is illegal",
@@ -890,7 +889,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
           key.fields.emplace_back(
             nested_field::create(0, "qux", field_required::no, int_type{}));
       },
-    .err = schema_evolution_errc::violates_map_key_invariant,
+    .annotate_err = schema_evolution_errc::violates_map_key_invariant,
   },
   struct_evolution_test_case{
     .description = "dropping fields from a map key struct is illegal",
@@ -901,7 +900,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
           auto& key = get<struct_type>(map.key_field);
           key.fields.pop_back();
       },
-    .err = schema_evolution_errc::violates_map_key_invariant,
+    .annotate_err = schema_evolution_errc::violates_map_key_invariant,
   },
   struct_evolution_test_case{
     .description
@@ -919,7 +918,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
           s.fields.back()->required = field_required::yes;
           s.fields.back()->type = long_type{};
       },
-    .err = schema_evolution_errc::new_required_field,
+    .validate_err = schema_evolution_errc::new_required_field,
   },
   struct_evolution_test_case{
     .description = "adding required fields is illegal (NOTE: the spec allows "
@@ -931,7 +930,7 @@ static const std::vector<struct_evolution_test_case> invalid_cases{
           s.fields.emplace_back(
             nested_field::create(0, "foo", field_required::yes, int_type{}));
       },
-    .err = schema_evolution_errc::new_required_field,
+    .validate_err = schema_evolution_errc::new_required_field,
   },
 };
 
@@ -956,7 +955,12 @@ public:
         reset_field_ids(cp);
         return cp;
     }
-    auto& err() { return GetParam().err; }
+    auto& err() {
+        return GetParam().annotate_err.has_error() ? GetParam().annotate_err
+                                                   : GetParam().validate_err;
+    }
+    auto& annotate_err() { return GetParam().annotate_err; }
+    auto& validate_err() { return GetParam().validate_err; }
     auto validator(const struct_type& src, const struct_type& dest) {
         return GetParam().validator(src, dest);
     }
@@ -968,12 +972,10 @@ struct AnnotateStructTest : public StructCompatibilityTestBase {};
 INSTANTIATE_TEST_SUITE_P(
   StructEvolutionTest,
   AnnotateStructTest,
-  ::testing::ValuesIn(valid_plus_errs(
-    invalid_cases | std::views::filter([](const auto& tc) {
-        return tc.err.assume_error() != schema_evolution_errc::type_mismatch
-               && tc.err.assume_error()
-                    != schema_evolution_errc::new_required_field;
-    }))));
+  ::testing::ValuesIn(
+    valid_plus_errs(invalid_cases | std::views::filter([](const auto& tc) {
+                        return tc.annotate_err.has_error();
+                    }))));
 
 TEST_P(AnnotateStructTest, AnnotationWorksAndDetectsStructuralErrors) {
     // generate a schema per the test case
@@ -989,8 +991,8 @@ TEST_P(AnnotateStructTest, AnnotationWorksAndDetectsStructuralErrors) {
         auto c2 = type.copy();
         auto annotate_res = annotate_schema_transform(c1, c2);
         if (
-          !err().has_error()
-          || err().error() != schema_evolution_errc::ambiguous) {
+          !annotate_err().has_error()
+          || annotate_err().error() != schema_evolution_errc::ambiguous) {
             ASSERT_FALSE(annotate_res.has_error());
             EXPECT_EQ(annotate_res.value().total(), 0);
         }
@@ -1004,7 +1006,7 @@ TEST_P(AnnotateStructTest, AnnotationWorksAndDetectsStructuralErrors) {
             : fmt::format("Expected {}", err().error()));
 
     if (annotate_res.has_error()) {
-        EXPECT_EQ(annotate_res.error(), err().error());
+        EXPECT_EQ(annotate_res.error(), annotate_err().error());
         return;
     }
     // if no annotation errors, check that every field in the destination
@@ -1034,12 +1036,10 @@ struct ValidateAnnotationTest : public StructCompatibilityTestBase {};
 INSTANTIATE_TEST_SUITE_P(
   StructEvolutionTest,
   ValidateAnnotationTest,
-  ::testing::ValuesIn(valid_plus_errs(
-    invalid_cases | std::views::filter([](const auto& tc) {
-        return tc.err.assume_error() == schema_evolution_errc::type_mismatch
-               || tc.err.assume_error()
-                    == schema_evolution_errc::new_required_field;
-    }))));
+  ::testing::ValuesIn(
+    valid_plus_errs(invalid_cases | std::views::filter([](const auto& tc) {
+                        return tc.validate_err.has_error();
+                    }))));
 
 TEST_P(ValidateAnnotationTest, ValidateCatchesTypeErrors) {
     // generate a schema per the test case
@@ -1067,13 +1067,13 @@ TEST_P(ValidateAnnotationTest, ValidateCatchesTypeErrors) {
 
     // but validate may fail
     auto validate_res = validate_schema_transform(type);
-    ASSERT_EQ(validate_res.has_error(), err().has_error())
+    ASSERT_EQ(validate_res.has_error(), validate_err().has_error())
       << (validate_res.has_error()
             ? fmt::format("Unexpected error: {}", validate_res.error())
-            : fmt::format("Expected {}", err().error()));
+            : fmt::format("Expected {}", validate_err().error()));
 
     if (validate_res.has_error()) {
-        EXPECT_EQ(validate_res.error(), err().error());
+        EXPECT_EQ(validate_res.error(), validate_err().error());
         return;
     }
 
