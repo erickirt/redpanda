@@ -111,6 +111,31 @@ public:
         ASSERT_FALSE(res.has_error());
     }
 
+    void get_snap_data_files(
+      const iceberg::snapshot& snap, chunked_vector<ss::sstring>* uris) {
+        const auto& mlist_uri = snap.manifest_list_path;
+        auto mlist_res = manifest_io.download_manifest_list(mlist_uri).get();
+        ASSERT_TRUE(mlist_res.has_value());
+        const auto& mlist = mlist_res.value();
+
+        auto schema = datalake::default_schema();
+        auto pspec = iceberg::partition_spec::resolve(
+          datalake::hour_partition_spec(), schema.schema_struct);
+        ASSERT_TRUE(pspec.has_value());
+        auto pk_type = iceberg::partition_key_type::create(
+          pspec.value(), schema);
+
+        // Collect all the data files for this snapshot.
+        for (const auto& m : mlist.files) {
+            auto m_res
+              = manifest_io.download_manifest(m.manifest_path, pk_type).get();
+            ASSERT_TRUE(m_res.has_value());
+            for (const auto& e : m_res.value().entries) {
+                uris->emplace_back(e.data_file.file_path());
+            }
+        }
+    }
+
     std::unique_ptr<cloud_io::scoped_remote> sr;
     iceberg::filesystem_catalog catalog;
     datalake::catalog_schema_manager schema_mgr;
@@ -497,31 +522,12 @@ TEST_F(FileCommitterTest, TestDeduplicateConcurrently) {
     // Check that each snapshot does not contain duplicates.
     size_t max_num_files = 0;
     for (const auto& snap : *table.snapshots) {
-        const auto& mlist_uri = snap.manifest_list_path;
-        auto mlist_res = manifest_io.download_manifest_list(mlist_uri).get();
-        ASSERT_TRUE(mlist_res.has_value());
-        const auto& mlist = mlist_res.value();
-
         chunked_vector<ss::sstring> uris;
-        chunked_hash_set<ss::sstring> uris_deduped;
-        auto schema = datalake::default_schema();
-        auto pspec = iceberg::partition_spec::resolve(
-          datalake::hour_partition_spec(), schema.schema_struct);
-        ASSERT_TRUE(pspec.has_value());
-        auto pk_type = iceberg::partition_key_type::create(
-          pspec.value(), schema);
+        ASSERT_NO_FATAL_FAILURE(get_snap_data_files(snap, &uris));
 
-        // Collect all the data files for this snapshot.
-        for (const auto& m : mlist.files) {
-            auto m_res
-              = manifest_io.download_manifest(m.manifest_path, pk_type).get();
-            ASSERT_TRUE(m_res.has_value());
-            for (const auto& e : m_res.value().entries) {
-                uris.emplace_back(e.data_file.file_path());
-                uris_deduped.emplace(e.data_file.file_path());
-            }
-        }
         // Ensure no duplicates.
+        chunked_hash_set<ss::sstring> uris_deduped;
+        uris_deduped.insert(uris.begin(), uris.end());
         ASSERT_EQ(uris.size(), uris_deduped.size());
         max_num_files = std::max(uris.size(), max_num_files);
     }
