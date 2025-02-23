@@ -7,7 +7,8 @@ hermetic and allows us to atomically upgrade the compiler as desired.
 To build a toolchain use the following command:
 
 ```
-docker build --build-arg "LLVM_VERSION=17.0.6" --file Dockerfile.llvm --output $PWD .
+OUTPUT_FILE="llvm-ubuntu-22.04-x86_64-$(date --rfc-3339=date -u).tar.zst"
+docker build --file Dockerfile.llvm --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
 ```
 
 The compiler output will be in a tarball in the current directory, this can be uploaded to S3, then bazel can pull
@@ -21,7 +22,8 @@ You can build an `aarch64` toolchain on a `x86_64` host by installing QEMU:
 Then build the docker image using buildx like so:
 
 ```
-docker buildx build --platform=linux/arm64 --build-arg "LLVM_VERSION=17.0.6" --file Dockerfile.llvm --output $PWD .
+OUTPUT_FILE="llvm-ubuntu-22.04-aarch64-$(date --rfc-3339=date -u).tar.zst"
+docker buildx build --platform=linux/arm64 --file Dockerfile.llvm --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
 ```
 
 ### LTO Builds
@@ -38,13 +40,13 @@ the correct packages in it, then extracting out the exact set of headers and sha
 To build an `x86_64` sysroot on an `x86_64` machine the following command can be used
 
 ```
-OUTPUT_FILE="sysroot-ubuntu-22.04-x86_64-$(date --rfc-3339=date -u).tar.gz"
-docker build --file Dockerfile.sysroot --output type=tar,dest=- . | gzip > "$OUTPUT_FILE"
+OUTPUT_FILE="sysroot-ubuntu-22.04-x86_64-$(date --rfc-3339=date -u).tar.zst"
+docker build --file Dockerfile.sysroot --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
 ```
 
 Building for `arm64` can be done from an `x86_64` host with the following command
 
 ```
-OUTPUT_FILE="sysroot-ubuntu-22.04-aarch64-$(date --rfc-3339=date -u).tar.gz"
-docker buildx build --platform=linux/arm64 --file Dockerfile.sysroot --output type=tar,dest=- . | gzip > "$OUTPUT_FILE"
+OUTPUT_FILE="sysroot-ubuntu-22.04-aarch64-$(date --rfc-3339=date -u).tar.zst"
+docker buildx build --platform=linux/arm64 --file Dockerfile.sysroot --output type=tar,dest=- . | zstd -o "$OUTPUT_FILE"
 ```

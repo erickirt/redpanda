@@ -96,11 +96,9 @@ RUN /opt/build.sh \
 
 WORKDIR /opt/install
 
-RUN bash -c 'tar -czvf /opt/llvm-${LLVM_VERSION}-$(source /etc/os-release && echo -n "$ID")-$(source /etc/os-release && echo -n "$VERSION_ID")-$(uname -m).tar.gz .'
-
 FROM scratch AS lto
 
-COPY --from=lto-build /opt/llvm-*.tar.gz .
+COPY --from=lto-build /opt/install/ .
 
 FROM base AS pgo-build
 
@@ -163,10 +161,8 @@ RUN /opt/build.sh \
   -DLLVM_LINK_LLVM_DYLIB=ON \
   -DLLVM_PROFDATA_FILE=/tmp/profdata.prof
 
-WORKDIR /opt/stage-2
-
-RUN bash -c 'tar -czvf /opt/llvm-${LLVM_VERSION}-$(source /etc/os-release && echo -n "$ID")-$(source /etc/os-release && echo -n "$VERSION_ID")-$(uname -m).tar.gz .'
+# TODO: only copy binaries from stage 2
 
 FROM scratch AS pgo
 
-COPY --from=pgo-build /opt/llvm-*.tar.gz .
+COPY --from=pgo-build /opt/stage-2/ .
