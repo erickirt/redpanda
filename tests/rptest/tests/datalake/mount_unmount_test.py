@@ -23,6 +23,7 @@ from ducktape.mark import matrix
 from rptest.services.admin import Admin, NamespacedTopic, InboundTopic, OutboundDataMigration, MigrationAction
 from rptest.clients.types import TopicSpec
 from rptest.utils.data_migrations import DataMigrationTestMixin
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class MountUnmountIcebergTest(RedpandaTest, DataMigrationTestMixin):
@@ -99,6 +100,7 @@ class MountUnmountIcebergTest(RedpandaTest, DataMigrationTestMixin):
 
     @cluster(num_nodes=6)
     @matrix(cloud_storage_type=supported_storage_types())
+    @skip_debug_mode
     def test_simple_unmount(self, cloud_storage_type):
         self.dl.create_iceberg_enabled_topic(
             self.TOPIC_NAME,
@@ -151,6 +153,7 @@ class MountUnmountIcebergTest(RedpandaTest, DataMigrationTestMixin):
 
     @cluster(num_nodes=6)
     @matrix(cloud_storage_type=supported_storage_types())
+    @skip_debug_mode
     def test_simple_remount(self, cloud_storage_type):
         self.dl.create_iceberg_enabled_topic(
             self.TOPIC_NAME,
