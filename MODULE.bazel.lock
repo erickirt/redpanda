@@ -5477,7 +5477,7 @@
           "@@rules_rust~~rust_host_tools~rust_host_tools//bin/rustc": "241027b94ad67beb36d0356f7cc05180daaa9966b2958cfba1d4de089d2e521c",
           "@@//bazel/thirdparty/Cargo.lock": "931fa1bc55d0e5d2e5b6d96da399569a4c2254a4bb1d99c98f71bb4b98eead73",
           "@@//bazel/thirdparty/Cargo.toml": "cb23768a6e7edc8f97215921e956f5be06521ad93cc0ecf64a932e3a8caada54",
-          "@@//MODULE.bazel": "5928374d2d47a7756986874d0b52dff8d1c2da51fffeba791447d64e081a3611",
+          "@@//MODULE.bazel": "cf4d49ac4dede421671500f888514d4aaac7d6f7e4c5517f262d8766e20039d2",
           "@@//bazel/thirdparty/wasmtime.BUILD": "4b55deaf51f5b8be25fc3592f9bcf3d732f99632cd793c685436ddca9a177534",
           "@@rules_rust~~rust_host_tools~rust_host_tools//bin/cargo": "35099f3b7b9497b3ae95aa00886ac6839343488e5cdb958e69c16c9b58c3afb2"
         },
@@ -7921,12 +7921,12 @@
     "@@toolchains_llvm~//toolchain/extensions:llvm.bzl%llvm": {
       "general": {
         "bzlTransitiveDigest": "fmsRTyBp1xIamu23ImT9c9gJrJFKP4BZtd9ZBzOtLeo=",
-        "usagesDigest": "exYHWj6RKT1iZGln90pdXYIB1u2Zw11KBuxycC5VPvA=",
+        "usagesDigest": "jSnLLuVR3Qg29XhngVdkKJpigNqzii6vlCQzL35ckhY=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
         "generatedRepoSpecs": {
-          "llvm_19_toolchain_llvm": {
+          "llvm_18_toolchain_llvm": {
             "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
             "ruleClassName": "llvm",
             "attributes": {
@@ -7937,25 +7937,25 @@
               "exec_os": "",
               "libclang_rt": {},
               "llvm_mirror": "",
-              "llvm_version": "19.1.7",
+              "llvm_version": "18.1.8",
               "llvm_versions": {},
               "netrc": "",
               "sha256": {
-                "linux-aarch64": "7c64d4b7847cdb48df946bfed66705b6dab042eb69814bd72145750b87052bfe",
-                "linux-x86_64": "8ffe11b83ee02e7ffd82bcd4a426c36619ca971222f2bccadb08e3bf2b39a961"
+                "linux-aarch64": "621856db24f9b081d3d097f7b51b33f8cf096b0d103214b23c49fd5978ce2354",
+                "linux-x86_64": "b568ffa3ae21ac57b4dc5c96743b298343cc503cfb52192155f836b3b10213cf"
               },
               "strip_prefix": {},
               "urls": {
                 "linux-aarch64": [
-                  "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-19.1.7/llvm-19.1.7-ubuntu-22.04-aarch64-2025-02-23.tar.zst"
+                  "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-18.1.8/llvm-18.1.8-ubuntu-22.04-aarch64-2025-02-25.tar.zst"
                 ],
                 "linux-x86_64": [
-                  "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-19.1.7/llvm-19.1.7-ubuntu-22.04-x86_64-2025-02-23.tar.zst"
+                  "https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-18.1.8/llvm-18.1.8-ubuntu-22.04-x86_64-2025-02-25.tar.zst"
                 ]
               }
             }
           },
-          "llvm_19_toolchain": {
+          "llvm_18_toolchain": {
             "bzlFile": "@@toolchains_llvm~//toolchain:rules.bzl",
             "ruleClassName": "toolchain",
             "attributes": {
@@ -8001,7 +8001,7 @@
               "link_flags": {},
               "link_libs": {},
               "llvm_versions": {
-                "": "19.1.7"
+                "": "18.1.8"
               },
               "opt_compile_flags": {},
               "opt_link_flags": {},

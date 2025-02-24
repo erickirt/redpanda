@@ -49,10 +49,10 @@ sh_binary(
     name = "clang_format",
     srcs = ["format_cc.sh"],
     args = [
-        "$(rootpath @llvm_19_toolchain//:clang-format)",
+        "$(rootpath @llvm_18_toolchain//:clang-format)",
     ],
     data = [
-        "@llvm_19_toolchain//:clang-format",
+        "@llvm_18_toolchain//:clang-format",
     ],
     # Only build this target on demand, so we don't download
     # this toolchain if we're using a different one for the build.

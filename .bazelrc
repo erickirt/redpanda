@@ -1,5 +1,5 @@
 common --registry=https://bcr.bazel.build
-common --extra_toolchains=@llvm_19_toolchain//:all
+common --extra_toolchains=@llvm_18_toolchain//:all
 
 common --@toolchains_llvm//toolchain/config:libunwind=False
 common --@toolchains_llvm//toolchain/config:compiler-rt=False
@@ -65,7 +65,7 @@ build:sanitizer --@krb5//:sanitizers=address,undefined,vptr,function
 # clang-tidy
 # =================================
 build:clang-tidy --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect
-build:clang-tidy --@bazel_clang_tidy//:clang_tidy_executable=@llvm_19_toolchain//:clang-tidy
+build:clang-tidy --@bazel_clang_tidy//:clang_tidy_executable=@llvm_18_toolchain//:clang-tidy
 build:clang-tidy --@bazel_clang_tidy//:clang_tidy_config=//:clang_tidy_config
 build:clang-tidy --copt -Wno-pragma-once-outside-header
 build:clang-tidy --output_groups=report
@@ -132,7 +132,7 @@ test --test_verbose_timeout_warnings
 
 # Use --config=lldb to run a test under lldb
 # to connect run `gdb-remote 7654` in an lldb session
-test:lldb --run_under='@llvm_19_toolchain_llvm//:bin/lldb-server g :7654 --'
+test:lldb --run_under='@llvm_18_toolchain_llvm//:bin/lldb-server g :7654 --'
 # Bump timeout to 1h
 test:lldb --test_timeout=3600
 test:lldb --strategy=TestRunner=local
