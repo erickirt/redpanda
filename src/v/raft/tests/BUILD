@@ -637,7 +637,6 @@ redpanda_cc_gtest(
         "//src/v/raft",
         "//src/v/raft/tests:raft_fixture",
         "//src/v/raft/tests:raft_fixture_retry_policy",
-        "//src/v/raft/tests:simple_raft_fixture",
         "//src/v/reflection:adl",
         "//src/v/storage:record_batch_builder",
         "//src/v/storage/tests:disk_log_builder",
