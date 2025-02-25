@@ -505,6 +505,14 @@ private:
     void subtract_segment_bytes(ss::lw_shared_ptr<segment> s, ssize_t bytes);
 
     bool _compaction_enabled;
+
+    // The counter for the number of self compactions that have occured in
+    // adjacent_merge_compact() since the last adjacent merge operation was
+    // triggered. Used in combination with the cluster tunable
+    // `log_compaction_adjacent_merge_self_compaction_count`, which sets the
+    // number of self compactions that must occur before attempting to
+    // compaction adjacent segments.
+    size_t _adjacent_merge_counter{0};
 };
 
 } // namespace storage

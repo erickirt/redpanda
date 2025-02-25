@@ -516,7 +516,21 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
             const ssize_t removed_bytes = ssize_t(result.size_before)
                                           - ssize_t(result.size_after);
             subtract_segment_bytes(segment, removed_bytes);
-            co_return;
+
+            auto config_adjacent_merge_count
+              = config::shard_local_cfg()
+                  .log_compaction_adjacent_merge_self_compaction_count();
+            // >= to ensure proper behavior if the config value were to be
+            // changed to be lower than the active counter.
+            if (
+              config_adjacent_merge_count.has_value()
+              && ++_adjacent_merge_counter
+                   >= config_adjacent_merge_count.value()) {
+                _adjacent_merge_counter = 0;
+                break;
+            } else {
+                co_return;
+            }
         }
     }
 
