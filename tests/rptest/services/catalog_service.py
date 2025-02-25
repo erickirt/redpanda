@@ -101,14 +101,9 @@ class CatalogService(abc.ABC, Service):
             raise ValueError(
                 f"Unsupported credential type: {type(self.credentials)}")
 
-    def _client(self,
-                catalog_name: str = 'default',
-                catalog_url: Optional[str] = None):
-        if not catalog_url:
-            catalog_url = self.iceberg_rest_url
-
+    def client(self, catalog_name: str = 'default'):
         conf = dict()
-        conf["uri"] = catalog_url
+        conf["uri"] = self.iceberg_rest_url
         conf["warehouse"] = self.cloud_storage_warehouse
 
         if isinstance(self.credentials, cloud_storage.S3Credentials):

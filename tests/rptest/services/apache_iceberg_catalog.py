@@ -127,9 +127,6 @@ class IcebergRESTCatalog(CatalogService):
             raise ValueError(
                 f"Unsupported credential type: {type(self.credentials)}")
 
-    def client(self, catalog_name: str = 'default'):
-        return self._client(catalog_name=catalog_name)
-
     def _make_env(self):
         env = dict()
 

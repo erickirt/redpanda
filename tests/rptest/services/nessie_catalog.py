@@ -83,9 +83,6 @@ class NessieCatalog(CatalogService):
     def catalog_type(self) -> CatalogType:
         return CatalogType.NESSIE
 
-    def client(self, catalog_name: str = 'default'):
-        return self._client(catalog_name=catalog_name)
-
     def _java_home(self, node):
         return node.account.ssh_output(
             "echo /usr/lib/jvm/java-21-openjdk-$(dpkg-architecture -q DEB_BUILD_ARCH)"
