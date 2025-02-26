@@ -154,6 +154,13 @@ public:
     virtual translation_status status() const = 0;
 
     /**
+     * Approximation for current translation lag, in milliseconds.
+     * Precise semantics are implementation defined.
+     */
+    virtual ss::future<std::optional<std::chrono::milliseconds>>
+    current_lag_ms() const = 0;
+
+    /**
      * Notification from the translator to translate until time
      * the slice elapses. May be called any time after
      * \ref scheduler_notifications::notify_ready notification.

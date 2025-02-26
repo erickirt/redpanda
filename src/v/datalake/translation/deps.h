@@ -128,6 +128,24 @@ public:
       ss::abort_source&)
       = 0;
 
+    /**
+     * current_lag_ms - Approximation of current translation lag with respect to
+     * some data source.
+     *
+     * Calulated as the difference between current system time and a replicated
+     * underestimate for the timestamp of the last offset we translated. The
+     * intent here is to consistently _over_ estimate translation lag.
+     *
+     * returns optional<chrono::milliseconds>
+     *   - nullopt if iceberg disabled or stm is not in sync or we never caught
+     *     the tip of the log
+     *   - 0ms if last_translated_offset == max_offset_for_translation
+     *   - otherwise now() - last_catchup (in milliseconds)
+     *
+     */
+    virtual ss::future<std::optional<std::chrono::milliseconds>>
+    current_lag_ms(model::timeout_clock::duration timeout) = 0;
+
     virtual void update_commit_lag(
       std::optional<kafka::offset> max_committed_kafka_offset) const
       = 0;

@@ -250,6 +250,28 @@ public:
           new_offset, new_ts, term, timeout, as);
     }
 
+    ss::future<std::optional<std::chrono::milliseconds>>
+    current_lag_ms(model::timeout_clock::duration timeout) final {
+        using namespace std::chrono_literals;
+        if (auto last_translated = co_await _stm->highest_translated_offset(
+              timeout);
+            !last_translated.has_value()) {
+            co_return std::nullopt;
+        } else if (last_translated.value() == max_offset_for_translation()) {
+            co_return 0ms;
+        }
+
+        if (auto last_ts = co_await _stm->last_translated_timestamp(timeout);
+            !last_ts.has_value()) {
+            co_return std::nullopt;
+        } else if (model::timestamp::now() < last_ts.value()) {
+            co_return 0ms;
+        } else {
+            co_return std::chrono::milliseconds{
+              (model::timestamp::now() - last_ts.value()).value()};
+        }
+    }
+
     void update_commit_lag(
       std::optional<kafka::offset> max_committed_kafka_offset) const final {
         auto max_translatable_offset = max_offset_for_translation();

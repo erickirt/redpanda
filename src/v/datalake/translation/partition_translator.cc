@@ -320,6 +320,11 @@ scheduling::translation_status partition_translator::status() const {
     return {};
 }
 
+ss::future<std::optional<std::chrono::milliseconds>>
+partition_translator::current_lag_ms() const {
+    return _data_source->current_lag_ms(wait_timeout);
+}
+
 void partition_translator::start_translation(
   scheduling::clock::duration duration) {
     if (_gate.is_closed()) {
