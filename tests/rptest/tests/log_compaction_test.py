@@ -387,3 +387,140 @@ class LogCompactionTest(LogCompactionTestBase, PreallocNodesTest,
 
         if PartitionMoveExceptionReporter.exc is not None:
             raise PartitionMoveExceptionReporter.exc
+
+
+class LogCompactionSchedulingTest(LogCompactionTestBase, PreallocNodesTest):
+    def __init__(self, test_context):
+        self.test_context = test_context
+        # Run with small segments and a very frequent compaction interval.
+        self.extra_rp_conf = {
+            'log_compaction_interval_ms': 4000,
+            'log_segment_size': 2 * 1024**2,  # 2 MiB
+            'compacted_log_segment_size': 1024**2,  # 1 MiB
+        }
+
+        super().__init__(test_context=test_context,
+                         num_brokers=3,
+                         node_prealloc_count=1,
+                         extra_rp_conf=self.extra_rp_conf)
+
+        self._rpk_client = RpkTool(self.redpanda)
+
+    def set_min_cleanable_dirty_ratio(self, dirty_ratio):
+        self.min_cleanable_dirty_ratio = dirty_ratio
+        self._rpk_client.alter_topic_config(
+            self.topic_spec.name, TopicSpec.PROPERTY_MIN_CLEANABLE_DIRTY_RATIO,
+            dirty_ratio)
+
+    def consume_and_validate_log(self):
+        consumer = KgoVerifierSeqConsumer(self.test_context,
+                                          self.redpanda,
+                                          self.topic_spec.name,
+                                          self.msg_size,
+                                          debug_logs=True,
+                                          trace_logs=True,
+                                          compacted=True,
+                                          loop=False,
+                                          validate_latest_values=True,
+                                          nodes=self.preallocated_nodes)
+
+        # Consume and wait. clean=False to not accidentally remove latest value map.
+        consumer.start(clean=False)
+        consumer.wait(timeout_sec=180)
+
+        consumer.stop()
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    @matrix(key_set_cardinality=[100, 1000])
+    def dirty_ratio_scheduling_test(self, key_set_cardinality):
+        """
+        Tests that the dirty ratio of a log controls scheduling of compaction rounds
+        and that dirty/closed bytes are also accurately tracked.
+        """
+
+        # Create a topic with `compact` policy, and a min.cleanable.dirty.ratio of 1.0.
+        self.topic_setup(cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+                         replication_factor=3,
+                         key_set_cardinality=key_set_cardinality,
+                         partition_count=10,
+                         min_cleanable_dirty_ratio=1.0)
+
+        self.produce_and_consume()
+
+        # At this point, the min.cleanable.dirty.ratio is 1.0
+        self.prev_sliding_window_rounds = -1
+
+        def compaction_has_completed():
+            new_sliding_window_rounds = self.get_complete_sliding_window_rounds(
+            )
+
+            res = self.prev_sliding_window_rounds == new_sliding_window_rounds
+            self.prev_sliding_window_rounds = new_sliding_window_rounds
+            return res
+
+        wait_until(
+            compaction_has_completed,
+            timeout_sec=120,
+            backoff_sec=self.extra_rp_conf['log_compaction_interval_ms'] /
+            1000 * 4,
+            err_msg="Compaction did not stabilize.")
+
+        # We may race with a segment roll which won't be compacted (due to high min.cleanable.dirty.ratio),
+        # so we cannot assert dirty_segment_bytes == 0 here.
+
+        # Restart each redpanda broker to roll segments
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # Check the dirty ratio after the segments were rolled and added to the dirty/closed bytes
+        def seen_dirty_ratio_above_zero():
+            return all([
+                self.get_dirty_ratio([node]) > 0.0
+                for node in self.redpanda.nodes
+            ])
+
+        wait_until(
+            seen_dirty_ratio_above_zero,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Did not see a non-zero dirty ratio across all brokers.")
+
+        # Sleep for a period of time. We want to assert that no compaction rounds have
+        # occured for our topic, which still has a min.cleanable.dirty.ratio of 1.0, but
+        # a large number of closed, clean segments with only a small number of dirty segments.
+        time.sleep(self.extra_rp_conf['log_compaction_interval_ms'] * 3 / 1000)
+
+        complete_sliding_window_rounds = self.get_complete_sliding_window_rounds(
+        )
+        assert complete_sliding_window_rounds == 0, f"Expected complete sliding window rounds == 0 for a topic with min.cleanable.dirty.ratio == 1.0, got {complete_sliding_window_rounds}."
+
+        # Set the min.cleanable.dirty.ratio for our topic to 0.0. Expect to
+        # see the rolled segment compacted along with the rest of the log
+        self.set_min_cleanable_dirty_ratio(0.0)
+
+        wait_until(
+            compaction_has_completed,
+            timeout_sec=120,
+            backoff_sec=self.extra_rp_conf['log_compaction_interval_ms'] /
+            1000 * 4,
+            err_msg="Compaction did not stabilize.")
+
+        def no_dirty_bytes():
+            return all([
+                self.get_dirty_segment_bytes([node]) == 0
+                and self.get_closed_segment_bytes([node]) > 0
+                for node in self.redpanda.nodes
+            ])
+
+        # All dirty bytes should have eventually be cleaned
+        # up by unconditional compaction
+        wait_until(
+            no_dirty_bytes,
+            timeout_sec=120,
+            backoff_sec=1,
+            err_msg=
+            f"Did not see dirty_segment_bytes == 0 and closed_segment_bytes > 0 across all brokers."
+        )
+
+        # Perform validation with KgoVerifierSeqConsumer
+        self.consume_and_validate_log()
