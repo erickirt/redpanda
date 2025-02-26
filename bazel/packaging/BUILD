@@ -15,9 +15,14 @@ redpanda_package(
 redpanda_package(
     name = "vtools_input",
     out = "bazel_out.tar.gz",
+    hwloc_calc = "@hwloc//:hwloc_calc",
+    hwloc_distrib = "@hwloc//:hwloc_distrib",
     include_sysroot_libs = True,
+    iotune = "@seastar//:iotune",
+    openssl = "@openssl//:openssl_binary",
     redpanda_binary = "//:redpanda",
     rpath_override = "$ORIGIN/../lib",
+    rpk_binary = "//:rpk",
 )
 
 redpanda_package(

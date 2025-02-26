@@ -29,6 +29,11 @@ import (
 
 type pkgConfig struct {
 	RedpandaBinary    string   `json:"redpanda_binary"`
+	RPUtil            *string  `json:"rp_util"`
+	IOTune            *string  `json:"iotune"`
+	HWLocCalc         *string  `json:"hwloc_calc"`
+	HWLocDistrib      *string  `json:"hwloc_distrib"`
+	OpenSSL           *string  `json:"openssl"`
 	RPKBinary         *string  `json:"rpk"`
 	SharedLibraries   []string `json:"shared_libraries"`
 	DefaultYAMLConfig *string  `json:"default_yaml_config"`
@@ -98,8 +103,17 @@ func createTarball(cfg pkgConfig, w io.Writer) error {
 
 	dir("opt/redpanda/bin/")
 	file("opt/redpanda/bin/redpanda", cfg.RedpandaBinary)
-	if cfg.RPKBinary != nil {
-		file("opt/redpanda/bin/rpk", *cfg.RPKBinary)
+	for name, binary := range map[string]*string{
+		"rp_util":       cfg.RPUtil,
+		"rpk":           cfg.RPKBinary,
+		"iotune":        cfg.IOTune,
+		"hwloc_calc":    cfg.HWLocCalc,
+		"hwloc_distrib": cfg.HWLocDistrib,
+		"openssl":       cfg.OpenSSL,
+	} {
+		if binary != nil {
+			file(filepath.Join("opt/redpanda/bin/", name), *binary)
+		}
 	}
 	dir("var/")
 	dir("var/lib/")
@@ -175,8 +189,18 @@ func createPackageDir(cfg pkgConfig, output string) error {
 		return err
 	}
 
-	if cfg.RPKBinary != nil {
-		if err := file(*cfg.RPKBinary, "bin", "rpk"); err != nil {
+	for name, binary := range map[string]*string{
+		"rp_util":       cfg.RPUtil,
+		"rpk":           cfg.RPKBinary,
+		"iotune":        cfg.IOTune,
+		"hwloc_calc":    cfg.HWLocCalc,
+		"hwloc_distrib": cfg.HWLocDistrib,
+		"openssl":       cfg.OpenSSL,
+	} {
+		if binary == nil {
+			continue
+		}
+		if err := file(*binary, "bin", name); err != nil {
 			return err
 		}
 	}
