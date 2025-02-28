@@ -29,7 +29,8 @@ enum class crash_type {
     segfault,
     abort,
     illegal_instruction,
-    assertion
+    assertion,
+    oom
 };
 
 std::ostream& operator<<(std::ostream&, crash_type);
