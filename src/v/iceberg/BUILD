@@ -1018,6 +1018,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":datatypes",
+        "//src/v/utils:fixed_string",
     ],
 )
 
