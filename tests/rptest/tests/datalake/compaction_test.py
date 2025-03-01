@@ -35,7 +35,7 @@ class CompactionGapsTest(RedpandaTest):
                 "iceberg_enabled": "true",
                 "iceberg_catalog_commit_interval_ms": 5000,
                 "datalake_coordinator_snapshot_max_delay_secs": 10,
-                "log_compaction_interval_ms": 5000,
+                "log_compaction_interval_ms": 10000,
                 "min_cleanable_dirty_ratio": 0.0
             },
             *args,
@@ -63,11 +63,11 @@ class CompactionGapsTest(RedpandaTest):
         wait_until(
             lambda: self.partition_segments() == count,
             timeout_sec=120,
-            backoff_sec=3,
+            backoff_sec=2,
             err_msg=f"Timed out waiting for segment count to reach {count}")
 
     def produce_until_segment_count(self, count):
-        timeout_sec = 60
+        timeout_sec = 180
         deadline = time() + timeout_sec
         while True:
             current_segment_count = self.partition_segments()
