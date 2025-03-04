@@ -246,6 +246,15 @@ public:
       model::term_id term,
       model::timeout_clock::duration timeout,
       ss::abort_source& as) final {
+        // _translation_target holds the max translatable offset from the last
+        // time we found new translatable records, along with the system time we
+        // found them. the general idea here is that, once we've translated
+        // up to an offset that meets or exceeds the stored target offset, any
+        // additional offsets must have become translatable at some
+        // _translation_target.ts + T. at this point, we can replicate the
+        // cached timestamp, since it provides a lower bound for when
+        // new_offset became translatable, from the perspective of the
+        // translator.
         std::optional<model::timestamp> new_ts{};
         if (_translation_target && new_offset >= _translation_target->offset) {
             new_ts.emplace(_translation_target->ts);
