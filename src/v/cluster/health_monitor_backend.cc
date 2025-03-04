@@ -52,6 +52,7 @@
 #include <iterator>
 #include <optional>
 #include <ranges>
+#include <utility>
 
 using namespace cluster::health_monitor_backend_details;
 
@@ -79,6 +80,7 @@ health_monitor_backend::health_monitor_backend(
   , _feature_table(feature_table)
   , _partition_leaders_table(partition_leaders_table)
   , _topic_table(topic_table)
+  , _reports{ss::make_lw_shared<report_cache_t>()}
   , _local_monitor(local_monitor)
   , _self(_raft0->self().id()) {}
 
@@ -88,7 +90,7 @@ health_monitor_backend::register_node_callback(health_node_cb_t cb) {
 
     auto id = _next_callback_id++;
     // call notification for all the groups
-    for (const auto& report : _reports) {
+    for (const auto& report : reports()) {
         cb(*report.second, {});
     }
     _node_callbacks.emplace_back(id, std::move(cb));
@@ -190,8 +192,8 @@ node_health_report::topics_t filter_topic_status(
 
 std::optional<node_health_report_ptr> health_monitor_backend::build_node_report(
   model::node_id id, const node_report_filter& f) {
-    auto it = _reports.find(id);
-    if (it == _reports.end()) {
+    auto it = reports().find(id);
+    if (it == reports().cend()) {
         return std::nullopt;
     }
     if (f.include_partitions && f.ntp_filters.namespaces.empty()) {
@@ -440,9 +442,12 @@ ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
       model::topic_namespace,
       chunked_hash_set<model::partition_id>>
       unclaimed_partitions;
+    // allow `collect_cluster_health` replace it concurrently
+    auto reports = hold_reports();
+
     // local report
-    auto local_report_it = std::as_const(_reports).find(_self);
-    if (local_report_it == _reports.cend()) {
+    auto local_report_it = reports->find(_self);
+    if (local_report_it == reports->end()) {
         vlog(clusterlog.debug, "current node is not part of the cluster");
         co_return errc::node_does_not_exists;
     };
@@ -468,11 +473,17 @@ ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
     }
 
     // remote reports
-    for (const auto& [node_id, node_report] : _reports) {
+    auto other_nodes = *reports | std::views::keys
+                       | std::ranges::to<std::vector>();
+    // Iterate over saved keys, as new entries may be added into `*reports`
+    // concurrently by `get_current_node_health`, which potentially invalidates
+    // iterators.
+    for (const auto node_id : other_nodes) {
         if (node_id == _self) {
             continue;
         }
-        for (const auto& [nt, partitions] : node_report->topics) {
+        const auto& node_report = *reports->at(node_id);
+        for (const auto& [nt, partitions] : node_report.topics) {
             co_await ssx::async_for_each_counter(
               counter,
               partitions,
@@ -518,6 +529,16 @@ ss::future<errc> health_monitor_backend::walk_local_and_remote_reports(
           });
     }
     co_return errc::success;
+}
+
+const health_monitor_backend::report_cache_t&
+health_monitor_backend::reports() const {
+    return std::as_const(*_reports);
+}
+
+const ss::lw_shared_ptr<const health_monitor_backend::report_cache_t>
+health_monitor_backend::hold_reports() const {
+    return _reports;
 }
 
 ss::future<result<restart_risk_report>>
@@ -615,7 +636,7 @@ health_monitor_backend::get_current_node_in_sync_replicas_share(
 
 bool health_monitor_backend::contains_node_health_report(
   model::node_id id) const {
-    return _reports.contains(id);
+    return reports().contains(id);
 }
 
 ss::future<result<cluster_health_report>>
@@ -775,7 +796,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     vlog(clusterlog.debug, "collecting cluster health statistics");
     // collect all reports
     auto ids = _members.local().node_ids();
-    auto reports = co_await ssx::async_transform(
+    auto collected_reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
           if (id == _self) {
               return _report_collection_mutex.with(
@@ -783,13 +804,12 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
           }
           return collect_remote_node_health(id);
       });
-
-    auto old_reports = std::exchange(_reports, {});
+    auto new_reports = ss::make_lw_shared<report_cache_t>();
 
     // update nodes reports and cache cluster-level data disk health
     storage::disk_space_alert cluster_data_disk_health
       = storage::disk_space_alert::ok;
-    for (auto& r : reports) {
+    for (auto& r : collected_reports) {
         if (r) {
             const auto id = r.value().id;
             vlog(
@@ -799,7 +819,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
               r.value());
 
             std::optional<nhr_ptr> old_report;
-            if (auto old_i = old_reports.find(id); old_i != old_reports.end()) {
+            if (auto old_i = reports().find(id); old_i != reports().end()) {
                 vlog(
                   clusterlog.debug,
                   "(previous node report from {}: {})",
@@ -816,8 +836,10 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
             cluster_data_disk_health = storage::max_severity(
               r.value().local_state.data_disk.alert, cluster_data_disk_health);
 
-            _reports.emplace(
-              id, ss::make_lw_shared<node_health_report>(std::move(r.value())));
+            new_reports->emplace(
+              id,
+              ss::make_lw_shared<const node_health_report>(
+                std::move(r.value())));
         }
     }
     _reports_data_disk_health = cluster_data_disk_health;
@@ -850,9 +872,10 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     /**
      * Remove reports from nodes that were removed
      */
-    absl::erase_if(_reports, not_in_members_table);
+    absl::erase_if(*new_reports, not_in_members_table);
     absl::erase_if(_status, not_in_members_table);
 
+    _reports = std::move(new_reports);
     _restart_risks_collected = node_restart_risks_available;
     _last_refresh = ss::lowres_clock::now();
     co_return errc::success;
@@ -881,8 +904,8 @@ ss::future<result<node_health_report_ptr>>
 health_monitor_backend::get_current_node_health() {
     vlog(clusterlog.debug, "getting current node health");
 
-    auto it = _reports.find(_self);
-    if (it != _reports.end()) {
+    auto it = reports().find(_self);
+    if (it != reports().end()) {
         co_return it->second;
     }
 
@@ -896,8 +919,8 @@ health_monitor_backend::get_current_node_health() {
           clusterlog.debug,
           "report collection in progress, waiting for report to be available");
         u.emplace(co_await _report_collection_mutex.get_units());
-        auto it = _reports.find(_self);
-        if (it != _reports.end()) {
+        auto it = reports().find(_self);
+        if (it != reports().end()) {
             co_return it->second;
         }
     }
@@ -910,7 +933,7 @@ health_monitor_backend::get_current_node_health() {
     }
 
     it = _reports
-           .emplace(
+           ->emplace(
              _self,
              ss::make_lw_shared<node_health_report>(std::move(r.value())))
            .first;
@@ -1018,8 +1041,8 @@ health_monitor_backend::get_node_drain_status(
         co_return ec;
     }
 
-    auto it = _reports.find(node_id);
-    if (it == _reports.end()) {
+    auto it = reports().find(node_id);
+    if (it == reports().end()) {
         co_return errc::node_does_not_exists;
     }
 
@@ -1027,7 +1050,7 @@ health_monitor_backend::get_node_drain_status(
 }
 
 health_monitor_backend::aggregated_report
-health_monitor_backend::aggregate_reports(report_cache_t& reports) {
+health_monitor_backend::aggregate_reports(const report_cache_t& reports) {
     struct collector {
         absl::node_hash_set<model::ntp> to_ntp_set() const {
             absl::node_hash_set<model::ntp> ret;
@@ -1100,9 +1123,9 @@ health_monitor_backend::get_cluster_health_overview(
                 ret.nodes_down.push_back(id);
             }
         }
-        auto report_it = _reports.find(id);
+        auto report_it = reports().find(id);
         if (
-          report_it != _reports.end()
+          report_it != reports().end()
           && report_it->second->local_state.recovery_mode_enabled) {
             ret.nodes_in_recovery_mode.push_back(id);
         }
@@ -1113,7 +1136,7 @@ health_monitor_backend::get_cluster_health_overview(
     std::sort(
       ret.nodes_in_recovery_mode.begin(), ret.nodes_in_recovery_mode.end());
 
-    auto aggr_report = aggregate_reports(_reports);
+    auto aggr_report = aggregate_reports(reports());
 
     auto move_into = [](auto& dest, auto& src) {
         dest.reserve(src.size());
