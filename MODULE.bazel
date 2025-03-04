@@ -163,6 +163,27 @@ use_repo(llvm, "llvm_18_toolchain", "llvm_18_toolchain_llvm")
 
 register_toolchains("@llvm_18_toolchain//:all")
 
+llvm.toolchain(
+    name = "llvm_20_toolchain",
+    compile_flags = COMPILE_FLAGS,
+    cxx_standard = {"": CXX_STANDARD},
+    llvm_version = "20.1.0",
+    sha256 = {
+        "linux-x86_64": "05d14395ed8367a42194245e34892938deff3b4e73b613354d0df439deead113",
+    },
+    urls = {
+        "linux-x86_64": ["https://github.com/redpanda-data/llvm-project/releases/download/llvmorg-20.1.0/llvm-20.1.0-ubuntu-22.04-x86_64-2025-03-04.tar.zst"],
+    },
+)
+llvm.sysroot(
+    name = "llvm_20_toolchain",
+    label = "@x86_64_sysroot//:sysroot",
+    targets = ["linux-x86_64"],
+)
+use_repo(llvm, "llvm_20_toolchain", "llvm_20_toolchain_llvm")
+
+register_toolchains("@llvm_20_toolchain//:all")
+
 # ====================================
 # Go Toolchain
 # ====================================
