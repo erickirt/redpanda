@@ -26,7 +26,6 @@
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/follower_stats.h"
 #include "raft/fwd.h"
 #include "rpc/connection_cache.h"
 #include "ssx/async_algorithm.h"
@@ -300,22 +299,22 @@ public:
     operator==(const partition_risk&, const partition_risk&)
       = default;
 
-    friend inline constexpr partition_risk
+    friend constexpr partition_risk
     operator&(const partition_risk x, const partition_risk y) {
         return partition_risk{x() & y()};
     }
 
-    friend inline constexpr partition_risk
+    friend constexpr partition_risk
     operator|(const partition_risk x, const partition_risk y) {
         return partition_risk{x() | y()};
     }
 
-    friend inline partition_risk&
+    friend partition_risk&
     operator|=(partition_risk& x, const partition_risk y) {
         x = x | y;
         return x;
     }
-    constexpr inline explicit operator bool() const;
+    constexpr explicit operator bool() const;
     friend std::ostream& operator<<(std::ostream&, const partition_risk&);
 };
 
@@ -324,7 +323,7 @@ struct partition_risk::c {
       full_acks_produce_unavailable{2}, unavailable{4}, acks1_data_loss{8};
 };
 
-constexpr inline partition_risk::operator bool() const {
+constexpr partition_risk::operator bool() const {
     return *this != partition_risk::c::no_risk;
 }
 
