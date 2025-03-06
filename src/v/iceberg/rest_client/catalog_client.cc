@@ -98,14 +98,16 @@ catalog_client::catalog_client(
   std::optional<api_version> api_version,
   std::optional<oauth_token> token,
   std::unique_ptr<retry_policy> retry_policy,
-  config::datalake_catalog_auth_mode auth_mode)
+  config::datalake_catalog_auth_mode auth_mode,
+  ss::shared_ptr<client_probe> probe)
   : _http_client(std::move(http_client))
   , _endpoint{std::move(endpoint)}
   , _credentials{std::move(credentials)}
   , _path_components{std::move(base_path), std::move(prefix), std::move(api_version)}
   , _oauth_token{std::move(token)}
   , _retry_policy{retry_policy ? std::move(retry_policy) : std::make_unique<default_retry_policy>()}
-  , _auth_mode(auth_mode) {}
+  , _auth_mode(auth_mode)
+  , _probe(std::move(probe)) {}
 
 ss::future<expected<oauth_token>>
 catalog_client::acquire_token(retry_chain_node& rtc) {

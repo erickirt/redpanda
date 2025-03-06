@@ -125,6 +125,7 @@ redpanda_cc_library(
     include_prefix = "iceberg/rest_client",
     visibility = ["//visibility:public"],
     deps = [
+        ":client_probe",
         ":credentials",
         ":entities",
         ":error",
