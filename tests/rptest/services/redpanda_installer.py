@@ -164,8 +164,13 @@ class RedpandaInstaller:
         """
         for node in ssh_out_per_node:
             logger.debug(f"{log_msg} for {node.account.hostname}")
-            for l in ssh_out_per_node[node]:
-                logger.debug(l)
+            captured_output = []
+            try:
+                for line in ssh_out_per_node[node]:
+                    captured_output.append(line)
+            except:
+                logger.error(f"Command failed: {captured_output}")
+                raise
 
     def __init__(self, redpanda):
         """
