@@ -111,7 +111,9 @@ public:
      * or nullopt if there is no data to translate.
      */
     virtual ss::future<std::optional<kafka::offset>> wait_for_data_to_translate(
-      std::optional<kafka::offset> last_translated_offset, ss::abort_source&)
+      std::optional<kafka::offset> last_translated_offset,
+      ss::lowres_clock::time_point deadline,
+      ss::abort_source&)
       = 0;
 
     virtual ss::future<std::optional<model::record_batch_reader>>
