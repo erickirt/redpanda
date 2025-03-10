@@ -126,6 +126,28 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
         # redpanda will be started by DatalakeServices
         pass
 
+    def create_producer(self, schema=AVRO_SCHEMA_STR):
+        value_serializer = AvroSerializer(
+            SchemaRegistryClient(
+                {"url": self.redpanda.schema_reg().split(",")[0]}), schema)
+        return SerializingProducer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'key.serializer': StringSerializer('utf_8'),
+            'value.serializer': value_serializer,
+        })
+
+    def describe_partitioning(self, dl, topic_name):
+        table_name = f"redpanda.{topic_name}"
+        spark = dl.spark()
+        spark_describe_out = spark.run_query_fetch_all(
+            f"describe {table_name}")
+        # If there is just 1 field in the partition spec, partition info
+        # starts with '# Partition Information', if there is more, it starts
+        # with '# Partitioning'.
+        return list(
+            itertools.dropwhile(lambda r: not r[0].startswith('# Partition'),
+                                spark_describe_out))
+
     @cluster(num_nodes=6)
     @matrix(cloud_storage_type=supported_storage_types(),
             catalog_type=supported_catalog_types())
@@ -150,18 +172,7 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
                     "(hour(timestamp_us), event_type)"
                 })
 
-            value_serializer = AvroSerializer(
-                SchemaRegistryClient(
-                    {"url": self.redpanda.schema_reg().split(",")[0]}),
-                AVRO_SCHEMA_STR)
-            producer = SerializingProducer({
-                'bootstrap.servers':
-                self.redpanda.brokers(),
-                'key.serializer':
-                StringSerializer('utf_8'),
-                'value.serializer':
-                value_serializer,
-            })
+            producer = self.create_producer()
 
             # Have all records share the same timestamp, so that they are
             # guaranteed to end up in the same hour partition.
@@ -183,13 +194,7 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
 
             # Check that created table has the correct partition spec.
 
-            table_name = f"redpanda.{topic_name}"
-            spark = dl.spark()
-            spark_describe_out = spark.run_query_fetch_all(
-                f"describe {table_name}")
-            describe_partitioning = list(
-                itertools.dropwhile(lambda r: r[0] != "# Partitioning",
-                                    spark_describe_out))
+            describe_partitioning = self.describe_partitioning(dl, topic_name)
             expected_partitioning = [
                 ('# Partitioning', '', ''),
                 ('Part 0', 'hours(timestamp_us)', ''),
@@ -199,6 +204,9 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
 
             # Check that files are correctly partitioned and that
             # spark can use this partitioning for a delete query.
+
+            table_name = f"redpanda.{topic_name}"
+            spark = dl.spark()
 
             files_before = set(
                 spark.run_query_fetch_all(
@@ -215,3 +223,110 @@ class DatalakeCustomPartitioningTest(RedpandaTest):
                     f"select file_path from {table_name}.files"))
             assert len(files_after) == partitions
             assert files_after.issubset(files_before)
+
+    @cluster(num_nodes=6)
+    @matrix(cloud_storage_type=supported_storage_types(),
+            catalog_type=supported_catalog_types())
+    def test_spec_evolution(self, cloud_storage_type, catalog_type):
+        with DatalakeServices(self.test_context,
+                              redpanda=self.redpanda,
+                              catalog_type=catalog_type,
+                              include_query_engines=[QueryEngineType.SPARK
+                                                     ]) as dl:
+            # Create an iceberg topic with a custom partition spec and produce
+            # some data.
+
+            topic_name = "foo"
+            msg_count = 1000
+            partitions = 5
+            dl.create_iceberg_enabled_topic(
+                topic_name,
+                partitions=partitions,
+                iceberg_mode="value_schema_id_prefix",
+                config={"redpanda.iceberg.partition.spec": "()"})
+
+            producer = self.create_producer()
+
+            already_produced = 0
+
+            def produce():
+                nonlocal already_produced
+                # Have all records share the same timestamp, so that they are
+                # guaranteed to end up in the same hour partition.
+                timestamp = time.time()
+                for i in range(msg_count):
+                    ev_type = random.choice(["type_A", "type_B"])
+                    record = {
+                        "event_type": ev_type,
+                        "number": already_produced + i,
+                        "timestamp_us": int(timestamp * 1000000),
+                    }
+                    producer.produce(
+                        topic=topic_name,
+                        # key to ensure that all partitions get some records
+                        key=str(uuid4()),
+                        value=record)
+                producer.flush()
+                already_produced += msg_count
+                dl.wait_for_translation(topic_name, msg_count=already_produced)
+
+            produce()
+
+            table_name = f"redpanda.{topic_name}"
+            spark = dl.spark()
+
+            # The translator for each partition should produce one file.
+            files1 = set(
+                spark.run_query_fetch_all(
+                    f"select file_path from {table_name}.files"))
+            assert len(files1) == partitions
+
+            # partition spec should reflect the original value
+            describe_partitioning = self.describe_partitioning(dl, topic_name)
+            assert describe_partitioning == []
+
+            self.logger.info("adding a 2-field partition spec...")
+            rpk = RpkTool(self.redpanda)
+            rpk.alter_topic_config(topic_name,
+                                   "redpanda.iceberg.partition.spec",
+                                   "(hour(timestamp_us), event_type)")
+
+            produce()
+
+            # The translator for each partition should produce one file
+            # for each event type.
+            files2 = set(
+                spark.run_query_fetch_all(
+                    f"select file_path from {table_name}.files"))
+            assert len(files2) == partitions * 3
+
+            # partition spec should reflect the altered value
+            describe_partitioning = self.describe_partitioning(dl, topic_name)
+            expected_partitioning = [
+                ('# Partitioning', '', ''),
+                ('Part 0', 'hours(timestamp_us)', ''),
+                ('Part 1', 'event_type', ''),
+            ]
+            assert describe_partitioning == expected_partitioning
+
+            self.logger.info("removing one field from partition spec...")
+            rpk.alter_topic_config(topic_name,
+                                   "redpanda.iceberg.partition.spec",
+                                   "(event_type)")
+
+            produce()
+
+            # The translator for each partition should produce one file
+            # for each event type.
+            files3 = set(
+                spark.run_query_fetch_all(
+                    f"select file_path from {table_name}.files"))
+            assert len(files3) == partitions * 5
+
+            describe_partitioning = self.describe_partitioning(dl, topic_name)
+            expected_partitioning = [
+                ('# Partition Information', '', ''),
+                ('# col_name', 'data_type', 'comment'),
+                ('event_type', 'string', None),
+            ]
+            assert describe_partitioning == expected_partitioning
