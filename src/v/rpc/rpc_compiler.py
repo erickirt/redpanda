@@ -249,6 +249,9 @@ def _enrich_methods(service: Any):
 
 def _codegen(service: Any, out: str):
     logger.info(service)
+    # this limitation comes from the finjector bitmap which is a uint64_t
+    assert len(service["methods"]) <= 64, \
+        f"Service {service['service_name']} has too many methods to hold in a uint64_t"
     tpl = Template(RPC_TEMPLATE)
     with open(out, 'w') as f:
         f.write(tpl.render(service))
