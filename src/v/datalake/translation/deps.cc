@@ -441,6 +441,20 @@ public:
         }
     }
 
+    size_t flushed_bytes() const final {
+        size_t result = 0;
+        if (_in_progress_translation) {
+            result = _in_progress_translation->flushed_bytes();
+        }
+        return result;
+    }
+
+    std::optional<kafka::offset> last_translated_offset() const final {
+        return _in_progress_translation
+                 ? _in_progress_translation->last_translated_offset()
+                 : std::nullopt;
+    }
+
     ss::future<> flush() final {
         if (_in_progress_translation) {
             return _in_progress_translation->flush().then_wrapped(

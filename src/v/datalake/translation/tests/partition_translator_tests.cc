@@ -248,7 +248,9 @@ public:
         }
         auto min = model::offset_cast(batches.begin()->base_offset());
         auto max = model::offset_cast(batches.back().last_offset());
-
+        for (auto& batch : batches) {
+            _translated_bytes += batch.size_bytes();
+        }
         // keep track of translation boundaries for result propagation
         _min_offset_translated = std::min(
           min, _min_offset_translated.value_or(kafka::offset::max()));
@@ -256,10 +258,18 @@ public:
           max, _max_offset_translated.value_or(kafka::offset::min()));
     }
 
+    std::optional<kafka::offset> last_translated_offset() const final {
+        return _max_offset_translated;
+    }
+
+    size_t flushed_bytes() const final { return _flushed_bytes; }
+
     ss::future<> flush() final {
         if (_test_ctx.error_on_flush()) {
             return ss::make_exception_future("flush error simulation");
         }
+        _flushed_bytes += _translated_bytes;
+        _translated_bytes = 0;
         return ss::make_ready_future();
     }
 
@@ -273,16 +283,27 @@ public:
             result.start_offset = _min_offset_translated.value();
             result.last_offset = _max_offset_translated.value();
         }
+        data_file file;
+        file.file_size_bytes = _flushed_bytes;
+        result.files.push_back(std::move(file));
+        _flushed_bytes = 0;
+        _min_offset_translated.reset();
+        _max_offset_translated.reset();
         return ss::make_ready_future<std::optional<translated_offset_range>>(
           std::move(result));
     }
 
     ss::future<> discard() final {
         _inflight_translation = false;
+        _flushed_bytes = 0;
+        _min_offset_translated.reset();
+        _max_offset_translated.reset();
         return ss::make_ready_future();
     }
 
 private:
+    size_t _translated_bytes{0};
+    size_t _flushed_bytes{0};
     std::optional<kafka::offset> _min_offset_translated;
     std::optional<kafka::offset> _max_offset_translated;
     fake_test_ctx& _test_ctx;

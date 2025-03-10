@@ -181,6 +181,17 @@ public:
     virtual ss::future<> flush() = 0;
 
     /**
+     * Returns the number of bytes that are flushed to the writer from the
+     * inflight translation.
+     */
+    virtual size_t flushed_bytes() const = 0;
+
+    /**
+     * Returns the last translated offset by the translator, if one exists.
+     */
+    virtual std::optional<kafka::offset> last_translated_offset() const = 0;
+
+    /**
      * Reconciles the translator configurations.
      */
     virtual void reconcile_properties() = 0;
