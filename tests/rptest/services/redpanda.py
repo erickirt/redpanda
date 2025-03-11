@@ -3414,9 +3414,9 @@ class RedpandaService(RedpandaServiceBase):
             self.logger.debug(
                 f"Creating S3 bucket: {self.si_settings.cloud_storage_bucket}")
         elif self.si_settings.cloud_storage_type == CloudStorageType.ABS:
-            # Make sure that use_bucket_cleanup_policy if False for ABS
-            self.logger.warning("Turning off use_bucket_cleanup_policy "
-                                "as it is not implemented for Azure/ABS")
+            # Make sure that use_bucket_cleanup_policy if False for ABS:
+            # 1) We don't implement it.
+            # 2) It's not needed because ABS buckets can be deleted without emptying.
             self.si_settings.use_bucket_cleanup_policy = False
             self._cloud_storage_client = ABSClient(
                 logger=self.logger,
