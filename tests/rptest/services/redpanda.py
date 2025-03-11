@@ -3734,7 +3734,7 @@ class RedpandaService(RedpandaServiceBase):
                     continue
 
                 if is_allowed_log_line(line):
-                    self.logger.warn(
+                    self.logger.info(
                         f"Ignoring allow-listed log line '{line}'")
                     continue
 
@@ -3755,7 +3755,7 @@ class RedpandaService(RedpandaServiceBase):
 
         if crashes:
             if self._tolerate_crashes:
-                self.logger.warn(
+                self.logger.info(
                     f"Detected crashes, but RedpandaService is configured to allow them: {crashes}"
                 )
             else:
