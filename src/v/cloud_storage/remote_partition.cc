@@ -1316,6 +1316,7 @@ struct finalize_data {
     cloud_storage_clients::bucket_name bucket;
     iobuf serialized_manifest;
     model::offset insync_offset;
+    bool remote_manifest_expected;
 };
 
 /// This function runs as a detached background fiber, so has no shutdown
@@ -1330,8 +1331,13 @@ ss::future<> finalize_in_background(
 
     retry_chain_node local_rtc(as, finalize_timeout, finalize_backoff);
 
+    // Start with an empty manifest.
     partition_manifest remote_manifest(data.ntp, data.revision);
 
+    // Try downloading the remote manifest unconditionally. Although locally we
+    // might believe it does not exist (e.g. because we are a replica and
+    // haven't received yet the command informing us that remote manifest is
+    // clean), it might exist and we should try to use it if so.
     partition_manifest_downloader dl(
       data.bucket, path_provider, data.ntp, data.revision, api);
     auto manifest_get_result = co_await dl.download_manifest(
@@ -1344,16 +1350,28 @@ ss::future<> finalize_in_background(
           manifest_get_result.error());
         co_return;
     }
+
     if (
       manifest_get_result.value()
       == find_partition_manifest_outcome::no_matching_manifest) {
-        vlog(
-          cst_log.error,
-          "[{}] Failed to fetch manifest during finalize(). Not found",
-          data.ntp);
-        co_return;
+        if (data.remote_manifest_expected) {
+            // Log an error if manifest doesn't exist but we expected it to.
+            // This is a bug.
+            vlog(
+              cst_log.error,
+              "[{}] Failed to fetch manifest during finalize(). Not found",
+              data.ntp);
+            co_return;
+        } else {
+            vlog(
+              cst_log.debug,
+              "[{}] Failed to fetch manifest during finalize(). Not found. "
+              "Will upload a new one.",
+              data.ntp);
+        }
     }
 
+    // Note: We might get here with empty remote_manifest (default constructed).
     if (remote_manifest.get_insync_offset() > data.insync_offset) {
         // Our local manifest is behind the remote: return a copy of the
         // remote manifest for use in deletion
@@ -1405,7 +1423,7 @@ ss::future<> finalize_in_background(
     }
 }
 
-void remote_partition::finalize() {
+void remote_partition::finalize(bool remote_manifest_expected) {
     vlog(_ctxlog.info, "Finalizing remote storage state...");
 
     // We do this in the background, because
@@ -1425,7 +1443,9 @@ void remote_partition::finalize() {
       .revision = stm_manifest.get_revision_id(),
       .bucket = _bucket,
       .serialized_manifest = std::move(serialized_manifest),
-      .insync_offset = stm_manifest.get_insync_offset()};
+      .insync_offset = stm_manifest.get_insync_offset(),
+      .remote_manifest_expected = remote_manifest_expected,
+    };
 
     ssx::spawn_with_gate(
       _api.gate(),
