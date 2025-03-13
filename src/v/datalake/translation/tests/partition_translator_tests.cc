@@ -112,6 +112,12 @@ public:
           _highest_translated_offset + kafka::offset_delta(100));
     }
 
+    std::optional<size_t> translation_backlog() const {
+        return _translation_backlog;
+    }
+
+    std::chrono::milliseconds target_lag() const { return 1s; }
+
 private:
     model::ntp _ntp;
     model::revision_id _rev;
@@ -128,6 +134,7 @@ private:
 
     absl::flat_hash_map<model::topic_partition, chunked_vector<data_file>>
       _files;
+    std::optional<size_t> _translation_backlog;
 };
 
 class fake_data_src : public data_source {
@@ -187,16 +194,12 @@ public:
 
     ss::future<std::error_code> replicate_highest_translated_offset(
       kafka::offset offset,
+      std::optional<model::timestamp>,
       model::term_id,
       model::timeout_clock::duration,
       ss::abort_source&) final {
         _test_ctx.update_highest_translated_offset(offset);
         co_return std::make_error_code(std::errc());
-    }
-
-    ss::future<std::optional<std::chrono::milliseconds>>
-    current_lag_ms(model::timeout_clock::duration) final {
-        co_return std::nullopt;
     }
 
     void update_commit_lag(std::optional<kafka::offset>) const final {}
@@ -353,6 +356,37 @@ public:
 
     bool should_finish_inflight_translation() final {
         return _test_ctx.should_finish_inflight_translation();
+    }
+
+    std::chrono::milliseconds current_lag_ms() const final {
+        return std::chrono::milliseconds(0);
+    }
+
+    virtual void notify_new_data_for_translation(kafka::offset){
+
+    };
+
+    virtual void notify_data_translated(kafka::offset){};
+
+    virtual std::optional<model::timestamp>
+    get_translated_offset_timestamp_estimate(kafka::offset) {
+        return model::timestamp::now();
+    };
+
+    /**
+     * Returns an estimate size of data that are ready to be translated.
+     */
+
+    std::chrono::milliseconds target_lag() const final {
+        return _test_ctx.target_lag();
+    }
+
+    std::optional<size_t> translation_backlog() const final {
+        return _test_ctx.translation_backlog();
+    }
+
+    scheduling::clock::time_point next_checkpoint_deadline() const final {
+        return scheduling::clock::now();
     }
 
 private:
