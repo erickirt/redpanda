@@ -15,8 +15,12 @@
 #include "metrics/metrics.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "utils/chunked_kv_cache.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
+
+#include <chrono>
+#include <type_traits>
 
 namespace schema {
 class registry;
@@ -99,6 +103,8 @@ struct resolved_type {
     // correspond to their final IDs in the catalog.
     iceberg::field_type type;
     ss::sstring type_name;
+
+    resolved_type copy() const;
 };
 
 struct type_and_buf {
@@ -120,16 +126,19 @@ public:
         registry_error,
         translation_error,
         bad_input,
+        invalid_config,
     };
     friend std::ostream& operator<<(std::ostream&, const errc&);
     virtual ss::future<checked<type_and_buf, errc>>
     resolve_buf_type(std::optional<iobuf> b) const = 0;
-
+    // TODO(iceberg): This should be it's own interface.
     virtual ss::future<checked<resolved_type, errc>>
       resolve_identifier(schema_identifier) const = 0;
     virtual ~type_resolver() = default;
 };
 
+// binary_type_resolver is the type resolver for the raw key_value mode of
+// iceberg.
 class binary_type_resolver : public type_resolver {
 public:
     ss::future<checked<type_and_buf, type_resolver::errc>>
@@ -140,6 +149,8 @@ public:
     ~binary_type_resolver() override = default;
 };
 
+// record_schema_resolver uses the schema registry wire format
+// to decode messages and resolve their schemas.
 class record_schema_resolver : public type_resolver {
 public:
     explicit record_schema_resolver(
@@ -158,9 +169,51 @@ public:
 private:
     schema::registry& sr_;
     std::optional<std::reference_wrapper<schema_cache>> cache_;
+};
 
-    ss::future<checked<shared_schema_t, type_resolver::errc>>
-      get_schema(pandaproxy::schema_registry::schema_id) const;
+// latest_protobuf_schema_resolver is a schema resolver that:
+//
+// - assumes resolved schemas are protobuf
+// - looks the latest version up of a schema using topic name strategy
+// - for that schema, looks up a specific message descriptor
+// - use said message descriptor as the schema for the topic
+class latest_protobuf_schema_resolver : public type_resolver {
+public:
+    latest_protobuf_schema_resolver(
+      schema::registry& sr,
+      model::topic_view topic_name,
+      ss::sstring full_message_name,
+      ss::lowres_clock::duration cache_duration,
+      std::optional<std::reference_wrapper<schema_cache>> sc);
+    latest_protobuf_schema_resolver(const latest_protobuf_schema_resolver&)
+      = delete;
+    latest_protobuf_schema_resolver(latest_protobuf_schema_resolver&&) = delete;
+    latest_protobuf_schema_resolver&
+    operator=(const latest_protobuf_schema_resolver&)
+      = delete;
+    latest_protobuf_schema_resolver&
+    operator=(latest_protobuf_schema_resolver&&)
+      = delete;
+    ~latest_protobuf_schema_resolver() override = default;
+
+    ss::future<checked<type_and_buf, type_resolver::errc>>
+    resolve_buf_type(std::optional<iobuf> b) const override;
+
+    ss::future<checked<resolved_type, errc>>
+      resolve_identifier(schema_identifier) const override;
+
+private:
+    schema::registry* sr_;
+    pandaproxy::schema_registry::subject subject_;
+    ss::sstring full_message_name_;
+    ss::lowres_clock::duration cache_duration_;
+    std::optional<std::reference_wrapper<schema_cache>> cache_;
+    struct cached_schema {
+        resolved_type type;
+        ss::lowres_clock::time_point evict_deadline;
+    };
+    mutable std::optional<cached_schema> latest_cached_schema_;
+    mutable mutex mu_{"latest_protobuf_schema_resolver"};
 };
 
 } // namespace datalake

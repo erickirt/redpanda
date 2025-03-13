@@ -11,6 +11,7 @@
 #include "bytes/bytes.h"
 #include "datalake/logger.h"
 #include "datalake/record_schema_resolver.h"
+#include "gmock/gmock.h"
 #include "iceberg/datatypes.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "schema/tests/fake_registry.h"
@@ -82,14 +83,14 @@ public:
     void SetUp() override {
         auto avro_schema_id = sr
                                 ->create_schema(unparsed_schema{
-                                  subject{"foo"},
+                                  subject{"foo-value"},
                                   unparsed_schema_definition{
                                     avro_record_schema, schema_type::avro}})
                                 .get();
         ASSERT_EQ(1, avro_schema_id());
         auto pb_schema_id = sr
                               ->create_schema(unparsed_schema{
-                                subject{"foo"},
+                                subject{"foo-value"},
                                 unparsed_schema_definition{
                                   pb_record_schema, schema_type::protobuf}})
                               .get();
@@ -264,6 +265,39 @@ TEST_F(RecordSchemaResolverTest, TestSchemaRegistryError) {
     EXPECT_FALSE(resolved_buf.type->id.protobuf_offsets.has_value());
 }
 
+TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema) {
+    using namespace std::chrono_literals;
+    iobuf buf;
+    buf.append(generate_dummy_body());
+
+    auto resolver = latest_protobuf_schema_resolver(
+      *sr,
+      model::topic("foo"),
+      "datalake.proto.nested_message.inner_message_t1",
+      0s,
+      std::nullopt);
+    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    ASSERT_FALSE(res.has_error());
+    auto& resolved_buf = res.value();
+    ASSERT_TRUE(resolved_buf.type.has_value());
+    EXPECT_EQ(2, resolved_buf.type->id.schema_id());
+    EXPECT_TRUE(resolved_buf.type->id.protobuf_offsets.has_value());
+    EXPECT_THAT(
+      resolved_buf.type->id.protobuf_offsets.value(),
+      testing::ElementsAre(2, 0));
+
+    const auto expected_type = field_type{[] {
+        auto expected_struct = struct_type{};
+        expected_struct.fields.emplace_back(nested_field::create(
+          1, "inner_label_1", field_required::no, string_type{}));
+        expected_struct.fields.emplace_back(nested_field::create(
+          2, "inner_number_1", field_required::no, int_type{}));
+        return expected_struct;
+    }()};
+    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_THAT(resolved_buf.parsable_buf, testing::Optional(std::ref(buf)));
+}
+
 namespace {
 struct counting_store : public pandaproxy::schema_registry::schema_getter {
     counting_store(
@@ -357,14 +391,14 @@ std::unique_ptr<counting_registry> make_counting_sr() {
 
     auto avro_schema_id = sr
                             ->create_schema(unparsed_schema{
-                              subject{"foo"},
+                              subject{"foo-value"},
                               unparsed_schema_definition{
                                 avro_record_schema, schema_type::avro}})
                             .get();
     vassert(1 == avro_schema_id(), "failed to registry avro schema");
     auto pb_schema_id = sr
                           ->create_schema(unparsed_schema{
-                            subject{"foo"},
+                            subject{"foo-value"},
                             unparsed_schema_definition{
                               pb_record_schema, schema_type::protobuf}})
                           .get();
@@ -381,7 +415,7 @@ std::unique_ptr<counting_registry> make_counting_sr() {
     for (auto i = 3; i < 10; i++) {
         auto pb_schema_id = sr
                               ->create_schema(unparsed_schema{
-                                subject{"foo"},
+                                subject{"foo-value"},
                                 unparsed_schema_definition{
                                   get_simple_schema(i), schema_type::protobuf}})
                               .get();
