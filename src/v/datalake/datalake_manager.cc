@@ -290,6 +290,7 @@ datalake_manager::handle_translator_state_change(const model::ntp& ntp) {
     if (_gate.is_closed() || !model::is_user_topic(ntp)) {
         co_return;
     }
+    vlog(datalake_log.debug, "Translator state change for {} detected.", ntp);
     auto partition = _partition_mgr->local().get(ntp);
     auto is_leader = partition && partition->raft()->is_leader();
     const auto& topic_cfg = _topic_table->local().get_topic_cfg(

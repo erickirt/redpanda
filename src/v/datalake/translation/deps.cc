@@ -565,11 +565,6 @@ translation_context::make_default_translation_context(
       std::move(probe));
 }
 
-// note: this is a temporary implementation to get the code compiling
-// to be filled with a proper implementation that tracks windows based
-// on batch timestamps + heuristics
-// Even the interface is temporary and subject to change depending on
-// the changes needed to track windows.
 class partition_lag_tracker : public translation_lag_tracker {
 public:
     explicit partition_lag_tracker(
