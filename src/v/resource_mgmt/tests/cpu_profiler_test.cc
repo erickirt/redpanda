@@ -9,7 +9,6 @@
  * by the Apache License, Version 2.0
  */
 
-#include "config/configuration.h"
 #include "config/property.h"
 #include "resource_mgmt/cpu_profiler.h"
 
@@ -25,11 +24,9 @@
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-#include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
-#include <exception>
 #include <optional>
 
 namespace {
@@ -88,7 +85,7 @@ SEASTAR_TEST_CASE(test_cpu_profiler_enable_override) {
 
     BOOST_REQUIRE(new_results.samples.size() == old_results.samples.size());
 
-    for (int i = 0; i < old_results.samples.size(); i++) {
+    for (size_t i = 0; i < old_results.samples.size(); i++) {
         BOOST_REQUIRE(
           new_results.samples[i].occurrences
           == old_results.samples[i].occurrences);
