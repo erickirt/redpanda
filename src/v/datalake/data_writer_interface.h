@@ -46,7 +46,7 @@ inline std::error_code make_error_code(writer_error e) noexcept {
 }
 
 /**
- * Interface to track memory used by the parquet writer. The reservations are
+ * Interface to track memory used by the parquet writers. The reservations are
  * held until the tracker object is alive or release is explicitly called.
  */
 class writer_mem_tracker {
@@ -60,14 +60,14 @@ public:
     virtual ~writer_mem_tracker() = default;
 
     /**
-     * Notify the mem tracker of current memory usage. The writer may
-     * choose to compress/shrink memory upon which the tracker must be
-     * notified of the current usage. May not be called concurrently with
-     * other methods.
+     * Reserves passed input bytes.
      */
-    virtual ss::future<>
-    update_current_memory_usage(size_t current_bytes_usage, ss::abort_source&)
-      = 0;
+    virtual ss::future<> reserve_bytes(size_t bytes, ss::abort_source&) = 0;
+
+    /**
+     * Frees up passed input bytes.
+     */
+    virtual ss::future<> free_bytes(size_t bytes, ss::abort_source&) = 0;
 
     /**
      * Releases all the reservations. After this caller, the reserved bytes

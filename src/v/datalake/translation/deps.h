@@ -29,26 +29,29 @@ namespace datalake::translation {
 
 class noop_mem_tracker : public writer_mem_tracker {
 public:
-    ss::future<>
-    update_current_memory_usage(size_t, ss::abort_source&) override;
+    ss::future<> reserve_bytes(size_t, ss::abort_source&) override;
+    ss::future<> free_bytes(size_t, ss::abort_source&) override;
     void release() override;
 };
 
-class writer_reservations_impl : public writer_mem_tracker {
+/**
+ * Tracks memory usage across all writers in a single translator.
+ */
+class translator_mem_tracker : public writer_mem_tracker {
 public:
-    explicit writer_reservations_impl(
+    explicit translator_mem_tracker(
       scheduling::reservations_tracker& scheduling_reservations)
       : _reservations_tracker(scheduling_reservations) {}
 
-    ss::future<>
-    update_current_memory_usage(size_t, ss::abort_source&) override;
+    ss::future<> reserve_bytes(size_t, ss::abort_source&) override;
+    ss::future<> free_bytes(size_t, ss::abort_source&) override;
     void release() override;
 
     size_t current_usage() const;
     size_t total_reserved() const;
 
 private:
-    size_t _current_used_bytes{0};
+    size_t _current_usage{0};
     scheduling::reservations_tracker& _reservations_tracker;
     ssx::semaphore_units _reservations;
 };

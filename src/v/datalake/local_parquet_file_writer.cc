@@ -167,17 +167,17 @@ local_parquet_file_writer_factory::local_parquet_file_writer_factory(
   local_path base_directory,
   ss::sstring file_name_prefix,
   ss::shared_ptr<parquet_ostream_factory> writer_factory,
-  std::unique_ptr<writer_mem_tracker> mem_tracker)
+  writer_mem_tracker& mem_tracker)
   : _base_directory(std::move(base_directory))
   , _file_name_prefix(std::move(file_name_prefix))
   , _writer_factory(std::move(writer_factory))
-  , _mem_tracker(std::move(mem_tracker)) {}
+  , _mem_tracker(mem_tracker) {}
 
 ss::future<result<std::unique_ptr<parquet_file_writer>, writer_error>>
 local_parquet_file_writer_factory::create_writer(
   const iceberg::struct_type& schema, ss::abort_source&) {
     auto writer = std::make_unique<local_parquet_file_writer>(
-      create_filename(), _writer_factory, *_mem_tracker);
+      create_filename(), _writer_factory, _mem_tracker);
 
     auto res = co_await writer->initialize(schema);
     if (res.has_error()) {

@@ -23,6 +23,8 @@
 #include "kafka/data/partition_proxy.h"
 #include "kafka/utils/txn_reader.h"
 
+#include <seastar/util/defer.hh>
+
 namespace {
 datalake::translation::translation_errc
 map_error_code(datalake::translation_task::errc errc) {
@@ -61,18 +63,18 @@ ss::future<cluster::errc> wait_stm_translated(
 }
 } // namespace
 
-ss::future<>
-noop_mem_tracker::update_current_memory_usage(size_t, ss::abort_source&) {
+ss::future<> noop_mem_tracker::reserve_bytes(size_t, ss::abort_source&) {
+    return ss::make_ready_future<>();
+}
+ss::future<> noop_mem_tracker::free_bytes(size_t, ss::abort_source&) {
     return ss::make_ready_future<>();
 }
 void noop_mem_tracker::release() {}
 
-ss::future<> writer_reservations_impl::update_current_memory_usage(
-  size_t new_used_bytes, ss::abort_source& as) {
-    _current_used_bytes = new_used_bytes;
-    // todo: as a potential optimization we can choose to release bytes if the
-    // new usage is less than current
-    while (_current_used_bytes > _reservations.count()) {
+ss::future<>
+translator_mem_tracker::reserve_bytes(size_t bytes, ss::abort_source& as) {
+    _current_usage += bytes;
+    while (_current_usage > _reservations.count()) {
         // reserve any deficit
         auto reservation = co_await _reservations_tracker.reserve_memory(as);
         if (_reservations.count()) {
@@ -83,16 +85,20 @@ ss::future<> writer_reservations_impl::update_current_memory_usage(
     }
 }
 
-void writer_reservations_impl::release() {
-    _current_used_bytes = 0;
+ss::future<>
+translator_mem_tracker::free_bytes(size_t bytes, ss::abort_source&) {
+    _current_usage -= std::min(_current_usage, bytes);
+    return ss::now();
+}
+
+void translator_mem_tracker::release() {
+    _current_usage = 0;
     _reservations.return_all();
 }
 
-size_t writer_reservations_impl::current_usage() const {
-    return _current_used_bytes;
-}
+size_t translator_mem_tracker::current_usage() const { return _current_usage; }
 
-size_t writer_reservations_impl::total_reserved() const {
+size_t translator_mem_tracker::total_reserved() const {
     return _reservations.count();
 }
 
@@ -409,7 +415,8 @@ public:
       , _probe(std::move(probe))
       , _invalid_record_action(compute_invalid_record_action())
       , _cp_enabled(translation_task::custom_partitioning_enabled{
-          _features.is_active(features::feature::datalake_iceberg_ga)}) {}
+          _features.is_active(features::feature::datalake_iceberg_ga)})
+      , _mem_tracker(translator_mem_tracker{_reservations}) {}
 
     ss::future<> translate_now(
       model::record_batch_reader reader, ss::abort_source& as) final {
@@ -480,8 +487,9 @@ public:
 
     ss::future<> flush() final {
         if (_in_progress_translation) {
-            return _in_progress_translation->flush().then_wrapped(
-              [](auto result_f) {
+            vlog(datalake_log.trace, "[{}] flushing writers", _ntp);
+            return _in_progress_translation->flush()
+              .then_wrapped([](auto result_f) {
                   if (result_f.failed()) {
                       return ss::make_exception_future(
                         result_f.get_exception());
@@ -491,13 +499,17 @@ public:
                       return ss::make_exception_future(result.error());
                   }
                   return ss::now();
-              });
+              })
+              .finally([this]() { _mem_tracker.release(); });
         }
         return ss::now();
     }
 
     ss::future<checked<coordinator::translated_offset_range, translation_errc>>
     finish(retry_chain_node& rcn, ss::abort_source& as) final {
+        // This is strictly not needed as flush() is always called after
+        // every scheduler iteration but we do it just to be extra cautious.
+        auto cleanup = ss::defer([this] { _mem_tracker.release(); });
         if (!_in_progress_translation) {
             co_return translation_errc::no_data;
         }
@@ -522,11 +534,7 @@ public:
         co_await std::move(task.value()).discard().discard_result();
     }
 
-    size_t buffered_bytes() const final {
-        return _in_progress_translation
-                 ? _in_progress_translation->buffered_bytes()
-                 : 0;
-    }
+    size_t buffered_bytes() const final { return _mem_tracker.current_usage(); }
 
 private:
     scheduling::clock::duration compute_target_lag() const {
@@ -546,7 +554,7 @@ private:
           _writer_scratch_space, // storage temp files are written to
           fmt::to_string(_ntp.tp.partition), // file prefix
           ss::make_shared<serde_parquet_writer_factory>(),
-          std::make_unique<writer_reservations_impl>(_reservations));
+          _mem_tracker);
     }
 
     model::iceberg_invalid_record_action compute_invalid_record_action() const {
@@ -577,7 +585,7 @@ private:
     ss::lw_shared_ptr<translation_probe> _probe;
     model::iceberg_invalid_record_action _invalid_record_action;
     translation_task::custom_partitioning_enabled _cp_enabled;
-
+    translator_mem_tracker _mem_tracker;
     std::optional<translation_task> _in_progress_translation;
     bool _discard_translated_state{false};
 };

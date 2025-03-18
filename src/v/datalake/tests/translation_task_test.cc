@@ -93,7 +93,7 @@ public:
           datalake::local_path(tmp_dir.get_path()),
           "test-prefix",
           ss::make_shared<datalake::serde_parquet_writer_factory>(),
-          std::make_unique<datalake::noop_mem_tracker>());
+          noop_tracker);
     }
 
     template<typename R>
@@ -153,6 +153,7 @@ public:
     std::unique_ptr<table_creator> t_creator;
     datalake::location_provider location_provider;
     translation_probe probe;
+    datalake::noop_mem_tracker noop_tracker;
 };
 
 struct deleter {
