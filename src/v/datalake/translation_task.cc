@@ -42,6 +42,8 @@ translation_task::errc map_error_code(writer_error errc) {
         return translation_task::errc::no_data;
     case writer_error::flush_error:
         return translation_task::errc::flush_error;
+    case writer_error::oom_error:
+        return translation_task::errc::oom_error;
     }
 }
 
@@ -355,6 +357,8 @@ std::ostream& operator<<(std::ostream& o, translation_task::errc ec) {
         return o << "writer flush error";
     case translation_task::errc::no_data:
         return o << "no data to translate";
+    case translation_task::errc::oom_error:
+        return o << "memory exhausted";
     }
 }
 } // namespace datalake

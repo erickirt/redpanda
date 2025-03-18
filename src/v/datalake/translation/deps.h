@@ -157,6 +157,7 @@ enum translation_errc {
     cloud_io_error,
     flush_error,
     discard_error,
+    oom_error,
 };
 
 std::ostream& operator<<(std::ostream&, translation_errc);

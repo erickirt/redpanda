@@ -36,6 +36,8 @@ map_error_code(datalake::translation_task::errc errc) {
         return translation_errc::flush_error;
     case datalake::translation_task::errc::no_data:
         return translation_errc::no_data;
+    case datalake::translation_task::errc::oom_error:
+        return translation_errc::oom_error;
     }
 }
 } // namespace
@@ -369,6 +371,8 @@ std::ostream& operator<<(std::ostream& o, translation_errc ec) {
         return o << "translation_errc::flush_error";
     case discard_error:
         return o << "translation_errc::discard_error";
+    case oom_error:
+        return o << "translation_errc::oom_error";
     }
 }
 

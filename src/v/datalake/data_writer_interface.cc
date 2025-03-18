@@ -15,22 +15,18 @@ namespace datalake {
 std::ostream& operator<<(std::ostream& os, const writer_error& ev) {
     switch (ev) {
     case writer_error::ok:
-        os << "Ok";
-        break;
+        return os << "Ok";
     case writer_error::parquet_conversion_error:
-        os << "Parquet Conversion Error";
-        break;
+        return os << "Parquet Conversion Error";
     case writer_error::file_io_error:
-        os << "File IO Error";
-        break;
+        return os << "File IO Error";
     case writer_error::no_data:
-        os << "No data";
-        break;
+        return os << "No data";
     case writer_error::flush_error:
-        os << "Flush failed";
-        break;
+        return os << "Flush failed";
+    case writer_error::oom_error:
+        return os << "Memory exhausted";
     }
-    return os;
 }
 std::string data_writer_error_category::message(int ev) const {
     return fmt::to_string(static_cast<writer_error>(ev));

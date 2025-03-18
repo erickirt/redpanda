@@ -26,6 +26,7 @@ enum class writer_error {
     file_io_error,
     no_data,
     flush_error,
+    oom_error,
 };
 std::ostream& operator<<(std::ostream&, const writer_error&);
 
