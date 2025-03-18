@@ -23,6 +23,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <utility>
 #include <variant>
@@ -233,12 +234,16 @@ struct primitive_test_values {
       decimal_value{absl::MakeInt128(-321123321, 123)}};
 };
 
-TEST(TestTransformApplication, IdentityTransform) {
+TEST(TestTransformApplication, IdentityAndVoidTransforms) {
     primitive_test_values test_values;
 
     auto test_transform = [](const value& val) {
-        auto transformed = apply_transform(val, identity_transform{}).value();
-        ASSERT_EQ(val, transformed);
+        auto id_transformed
+          = apply_transform(val, identity_transform{}).value();
+        ASSERT_EQ(val, id_transformed);
+
+        auto void_transformed = apply_transform(val, void_transform{});
+        ASSERT_EQ(void_transformed, std::nullopt);
     };
 
     test_transform(test_values.boolean_val);
