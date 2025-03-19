@@ -228,9 +228,14 @@ translation_task::translation_task(
       *_translation_probe) {}
 
 ss::future<> translation_task::translate_once(
-  model::record_batch_reader reader, ss::abort_source& as) {
+  model::record_batch_reader reader,
+  kafka::offset start_offset,
+  ss::abort_source& as) {
     return _multiplexer.multiplex(
-      std::move(reader), _read_timeout + model::timeout_clock::now(), as);
+      std::move(reader),
+      start_offset,
+      _read_timeout + model::timeout_clock::now(),
+      as);
 }
 
 size_t translation_task::flushed_bytes() const {

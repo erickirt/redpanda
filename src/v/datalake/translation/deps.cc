@@ -440,7 +440,9 @@ public:
       , _mem_tracker(translator_mem_tracker{_reservations}) {}
 
     ss::future<> translate_now(
-      model::record_batch_reader reader, ss::abort_source& as) final {
+      model::record_batch_reader reader,
+      kafka::offset start_offset,
+      ss::abort_source& as) final {
         if (!_in_progress_translation) {
             _in_progress_translation.emplace(translation_task{
               _ntp,
@@ -462,7 +464,8 @@ public:
                   "state changed, reset translation");
             });
         }
-        return _in_progress_translation->translate_once(std::move(reader), as);
+        return _in_progress_translation->translate_once(
+          std::move(reader), start_offset, as);
     }
 
     void reconcile_properties() final {

@@ -250,11 +250,13 @@ partition_translator::run_one_translation_iteration(
             as.request_abort_ex(translator_time_quota_exceeded_error{});
         });
 
-        auto translation_f
-          = _translation_ctx
-              ->translate_now(
-                std::move(reader.value()), _inflight_translation_state->as)
-              .finally([this] { return _translation_ctx->flush(); });
+        auto translation_f = _translation_ctx
+                               ->translate_now(
+                                 std::move(reader.value()),
+                                 begin_offset,
+                                 _inflight_translation_state->as)
+                               .finally(
+                                 [this] { return _translation_ctx->flush(); });
         cancellation_timer.arm(_inflight_translation_state->translate_for);
         co_await std::move(translation_f).finally([&cancellation_timer] {
             cancellation_timer.cancel();

@@ -271,8 +271,8 @@ public:
           "finish() must be called in all cases for cleanup");
     }
 
-    ss::future<>
-    translate_now(model::record_batch_reader rdr, ss::abort_source&) final {
+    ss::future<> translate_now(
+      model::record_batch_reader rdr, kafka::offset, ss::abort_source&) final {
         _test_ctx.translation_attempt();
         _inflight_translation = true;
         auto batches = co_await model::consume_reader_to_fragmented_memory(

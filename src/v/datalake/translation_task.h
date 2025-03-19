@@ -58,8 +58,10 @@ public:
      * Can be called multiple times if needed. The results of translation can be
      * uploading using finish().
      */
-    ss::future<>
-    translate_once(model::record_batch_reader reader, ss::abort_source&);
+    ss::future<> translate_once(
+      model::record_batch_reader reader,
+      kafka::offset start_offset,
+      ss::abort_source&);
 
     /**
      * Current number of bytes flushed by all the open writers.

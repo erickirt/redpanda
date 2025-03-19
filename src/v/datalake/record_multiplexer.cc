@@ -95,17 +95,19 @@ record_multiplexer::record_multiplexer(
 
 ss::future<> record_multiplexer::multiplex(
   model::record_batch_reader reader,
+  kafka::offset start_offset,
   model::timeout_clock::time_point deadline,
   ss::abort_source& as) {
     co_await std::move(reader).consume(
-      relaying_consumer{[this, &as](model::record_batch b) mutable {
-          return do_multiplex(std::move(b), as);
-      }},
+      relaying_consumer{
+        [this, start_offset, &as](model::record_batch b) mutable {
+            return do_multiplex(std::move(b), start_offset, as);
+        }},
       deadline);
 }
 
 ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
-  model::record_batch batch, ss::abort_source& as) {
+  model::record_batch batch, kafka::offset start_offset, ss::abort_source& as) {
     if (batch.compressed()) {
         batch = co_await storage::internal::decompress_batch(std::move(batch));
     }
@@ -122,6 +124,9 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
         auto timestamp = model::timestamp{
           first_timestamp + record.timestamp_delta()};
         kafka::offset offset{batch.base_offset()() + record.offset_delta()};
+        if (offset < start_offset) {
+            continue;
+        }
         int64_t estimated_size = (key ? key->size_bytes() : 0)
                                  + (val ? val->size_bytes() : 0);
         chunked_vector<std::pair<std::optional<iobuf>, std::optional<iobuf>>>

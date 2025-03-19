@@ -201,7 +201,8 @@ public:
      * Translates using the record reader until aborted.
      */
     virtual ss::future<>
-    translate_now(model::record_batch_reader, ss::abort_source&) = 0;
+    translate_now(model::record_batch_reader, kafka::offset, ss::abort_source&)
+      = 0;
 
     /**
      * Flushes all the buffered state guaranteeing release of resources.
