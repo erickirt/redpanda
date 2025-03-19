@@ -357,7 +357,9 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         if (is_not_set(current_log.flags, bflags::should_compact)) {
             // Still perform gc() here on a regular `log_compaction_interval_ms`
             // basis. Use `try_get_units()` to avoid concurrent garbage
-            // collection with `gc_loop()`.
+            // collection with `gc_loop()`- if we fail to obtain units,
+            // it is because urgent garbage collection is already underway for
+            // this log.
             auto units = current_log.housekeeping_lock.try_get_units();
             if (units.has_value()) {
                 co_await current_log.handle->gc(
