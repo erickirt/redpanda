@@ -252,11 +252,6 @@ private:
 std::pair<uint64_t, uint64_t> partition_balancer_planner::get_node_bytes_info(
   const node::local_state& node_state) {
     const auto& state = node_state.log_data_size;
-    vlog(
-      clusterlog.debug,
-      "getting node disk information from node: {}",
-      node_state);
-
     if (likely(state)) {
         // It is okay to account reclaimable space as free space even through
         // the space is not readily available. During the partition move if the
@@ -363,33 +358,34 @@ void partition_balancer_planner::init_per_node_state(
     for (const auto& node_report : health_report.node_reports) {
         const auto [total, free] = get_node_bytes_info(
           node_report->local_state);
-        ctx.node_disk_reports.emplace(
+        auto disk_info = node_disk_space{node_report->id, total, total - free};
+        const bool is_full = disk_info.original_used_ratio()
+                             > _config.soft_max_disk_usage_ratio;
+        vlogl(
+          clusterlog,
+          is_full ? ss::log_level::info : ss::log_level::debug,
+          "node {} disk used: {}, total: {} (ratio: {:.4}, is_full: {}), "
+          "node report: {}",
           node_report->id,
-          node_disk_space(node_report->id, total, total - free));
+          human::bytes(disk_info.used),
+          human::bytes(disk_info.total),
+          disk_info.original_used_ratio(),
+          is_full,
+          node_report->local_state);
+        ctx.node_disk_reports.emplace(node_report->id, disk_info);
+
+        if (
+          is_full
+          && _config.mode == model::partition_autobalancing_mode::continuous) {
+            result.violations.full_nodes.emplace_back(
+              node_report->id,
+              uint32_t(disk_info.original_used_ratio() * 100.0));
+        }
     }
 
     for (model::node_id id : ctx.all_nodes) {
-        auto disk_it = ctx.node_disk_reports.find(id);
-        if (disk_it == ctx.node_disk_reports.end()) {
+        if (!ctx.node_disk_reports.contains(id)) {
             vlog(clusterlog.info, "node {}: no disk report", id);
-            continue;
-        }
-
-        const auto& disk = disk_it->second;
-        double used_space_ratio = disk.original_used_ratio();
-        vlog(
-          clusterlog.debug,
-          "node {}: bytes used: {}, bytes total: {}, used ratio: {:.4}",
-          id,
-          disk.used,
-          disk.total,
-          used_space_ratio);
-
-        if (
-          _config.mode == model::partition_autobalancing_mode::continuous
-          && used_space_ratio > _config.soft_max_disk_usage_ratio) {
-            result.violations.full_nodes.emplace_back(
-              id, uint32_t(used_space_ratio * 100.0));
         }
     }
 }
