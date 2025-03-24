@@ -155,7 +155,8 @@ private:
     cloudcheck_opts _opts;
 
     const cloud_storage_clients::object_key self_test_prefix
-      = cloud_storage_clients::object_key{fmt::format("self-test-{}/", _self)};
+      = cloud_storage_clients::object_key{
+        fmt::format("self-test-{}-{}/", _self, ss::sstring{uuid_t::create()})};
 
 private:
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
