@@ -171,30 +171,29 @@ private:
     std::optional<std::reference_wrapper<schema_cache>> cache_;
 };
 
-// latest_protobuf_schema_resolver is a schema resolver that:
+// latest_subject_schema_resolver is a schema resolver that uses the latest
+// schema for a subject to parse records with a configurable cache duration.
 //
-// - assumes resolved schemas are protobuf
-// - looks the latest version up of a schema using topic name strategy
-// - for that schema, looks up a specific message descriptor
-// - use said message descriptor as the schema for the topic
-class latest_protobuf_schema_resolver : public type_resolver {
+// If the schema is protobuf then the first protobuf defined in the proto file
+// will be used to parse the record unless `protobuf_message_name` is specified,
+// then the protobuf with that specific name is used for parsing.
+class latest_subject_schema_resolver : public type_resolver {
 public:
-    latest_protobuf_schema_resolver(
+    latest_subject_schema_resolver(
       schema::registry& sr,
-      model::topic_view topic_name,
-      ss::sstring full_message_name,
+      pandaproxy::schema_registry::subject subject,
+      std::optional<ss::sstring> protobuf_message_name,
       config::binding<std::chrono::milliseconds> cache_duration,
       std::optional<std::reference_wrapper<schema_cache>> sc);
-    latest_protobuf_schema_resolver(const latest_protobuf_schema_resolver&)
+    latest_subject_schema_resolver(const latest_subject_schema_resolver&)
       = delete;
-    latest_protobuf_schema_resolver(latest_protobuf_schema_resolver&&) = delete;
-    latest_protobuf_schema_resolver&
-    operator=(const latest_protobuf_schema_resolver&)
+    latest_subject_schema_resolver(latest_subject_schema_resolver&&) = delete;
+    latest_subject_schema_resolver&
+    operator=(const latest_subject_schema_resolver&)
       = delete;
-    latest_protobuf_schema_resolver&
-    operator=(latest_protobuf_schema_resolver&&)
+    latest_subject_schema_resolver& operator=(latest_subject_schema_resolver&&)
       = delete;
-    ~latest_protobuf_schema_resolver() override = default;
+    ~latest_subject_schema_resolver() override = default;
 
     ss::future<checked<type_and_buf, type_resolver::errc>>
     resolve_buf_type(std::optional<iobuf> b) const override;
@@ -205,7 +204,7 @@ public:
 private:
     schema::registry* sr_;
     pandaproxy::schema_registry::subject subject_;
-    ss::sstring full_message_name_;
+    std::optional<ss::sstring> protobuf_message_name_;
     config::binding<std::chrono::milliseconds> cache_duration_;
     std::optional<std::reference_wrapper<schema_cache>> cache_;
     struct cached_schema {

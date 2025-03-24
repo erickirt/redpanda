@@ -53,10 +53,15 @@ static std::unique_ptr<type_resolver> make_type_resolver(
         return std::make_unique<binary_type_resolver>();
     case model::iceberg_mode::variant::value_schema_id_prefix:
         return std::make_unique<record_schema_resolver>(sr, cache);
-    case model::iceberg_mode::variant::latest_protobuf_value:
-        return std::make_unique<latest_protobuf_schema_resolver>(
+    case model::iceberg_mode::variant::value_subject_latest:
+        auto subject = pandaproxy::schema_registry::subject(
+          fmt::format("{}-value", topic_name));
+        if (auto explicit_subject = mode.subject_name()) {
+            subject = pandaproxy::schema_registry::subject(*explicit_subject);
+        }
+        return std::make_unique<latest_subject_schema_resolver>(
           sr,
-          topic_name,
+          subject,
           mode.protobuf_full_name(),
           config::shard_local_cfg().iceberg_latest_schema_cache_ttl_ms.bind(),
           cache);
@@ -73,7 +78,7 @@ make_record_translator(const model::iceberg_mode& mode) {
     case model::iceberg_mode::variant::key_value:
         return std::make_unique<key_value_translator>();
     case model::iceberg_mode::variant::value_schema_id_prefix:
-    case model::iceberg_mode::variant::latest_protobuf_value:
+    case model::iceberg_mode::variant::value_subject_latest:
         return std::make_unique<structured_data_translator>();
     }
 }

@@ -27,9 +27,12 @@
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
 
+#include <absl/container/flat_hash_map.h>
+#include <absl/strings/str_split.h>
 #include <fmt/ostream.h>
 
 #include <iostream>
+#include <optional>
 #include <type_traits>
 
 namespace model {
@@ -595,8 +598,9 @@ iceberg_mode iceberg_mode::value_schema_id_prefix
 void write(iobuf& out, const iceberg_mode& m) {
     using serde::write;
     write(out, m.kind());
-    if (m.kind() == iceberg_mode::variant::latest_protobuf_value) {
-        write(out, m.protobuf_full_name());
+    if (m.kind() == iceberg_mode::variant::value_subject_latest) {
+        write(out, m.protobuf_full_name().value_or(""));
+        write(out, m.subject_name().value_or(""));
     }
 }
 
@@ -615,10 +619,12 @@ void read_nested(
     case iceberg_mode::variant::value_schema_id_prefix:
         m = iceberg_mode::value_schema_id_prefix;
         return;
-    case iceberg_mode::variant::latest_protobuf_value:
-        ss::sstring s;
-        read_nested(in, s, bytes_left_limit);
-        m = iceberg_mode::latest_protobuf_value(s);
+    case iceberg_mode::variant::value_subject_latest:
+        ss::sstring msg_name;
+        read_nested(in, msg_name, bytes_left_limit);
+        ss::sstring subject;
+        read_nested(in, subject, bytes_left_limit);
+        m = iceberg_mode::value_subject_latest(msg_name, subject);
         return;
     }
     throw serde::serde_exception(
@@ -633,10 +639,55 @@ std::ostream& operator<<(std::ostream& os, const iceberg_mode& mode) {
         return os << "key_value";
     case iceberg_mode::variant::value_schema_id_prefix:
         return os << "value_schema_id_prefix";
-    case iceberg_mode::variant::latest_protobuf_value:
-        return os << "latest_protobuf_value:" << mode.protobuf_full_name();
+    case iceberg_mode::variant::value_subject_latest:
+        os << "value_subject_latest";
+        bool delimiter = false;
+        auto emit_delimiter = [&delimiter, &os]() {
+            os << (delimiter ? "," : ":");
+            delimiter = true;
+        };
+        if (auto protobuf_name = mode.protobuf_full_name()) {
+            emit_delimiter();
+            os << "protobuf_name=" << protobuf_name.value();
+        }
+        if (auto subject = mode.subject_name()) {
+            emit_delimiter();
+            os << "subject=" << subject.value();
+        }
+        return os;
     }
 }
+
+namespace {
+// Parse configuration options for iceberg_mode's value_subject_latest, which
+// is a grammar like: `:(<name>=<value>)+`
+std::optional<absl::flat_hash_map<std::string, std::string>>
+parse_config_options(std::string_view str) {
+    if (str.empty()) {
+        return absl::flat_hash_map<std::string, std::string>{};
+    }
+    if (!absl::ConsumePrefix(&str, ":")) {
+        return std::nullopt;
+    }
+    if (str.empty()) {
+        return std::nullopt;
+    }
+    absl::flat_hash_map<std::string, std::string> result;
+    for (std::string_view pair : absl::StrSplit(str, ",")) {
+        auto [it, inserted] = result.insert(
+          absl::StrSplit(pair, absl::MaxSplits("=", 1)));
+        // Don't allow duplicates
+        if (!inserted) {
+            return std::nullopt;
+        }
+        // Don't allow empty keys or values
+        if (it->first.empty() || it->second.empty()) {
+            return std::nullopt;
+        }
+    }
+    return result;
+}
+} // namespace
 
 std::istream& operator>>(std::istream& is, iceberg_mode& mode) {
     ss::sstring s;
@@ -647,13 +698,26 @@ std::istream& operator>>(std::istream& is, iceberg_mode& mode) {
         mode = iceberg_mode::key_value;
     } else if (s == "value_schema_id_prefix") {
         mode = iceberg_mode::value_schema_id_prefix;
-    } else if (s.starts_with("latest_protobuf_value:")) {
-        s = s.substr(std::strlen("latest_protobuf_value:"));
-        if (s.empty()) {
+    } else if (s.starts_with("value_subject_latest")) {
+        s = s.substr(std::strlen("value_subject_latest"));
+        auto options = parse_config_options(s);
+        if (!options.has_value()) {
             is.setstate(std::ios::failbit);
-        } else {
-            mode = iceberg_mode::latest_protobuf_value(s);
+            return is;
         }
+        std::string_view protobuf_name;
+        std::string_view subject;
+        for (const auto& [key, value] : options.value()) {
+            if (key == "protobuf_name") {
+                protobuf_name = value;
+            } else if (key == "subject") {
+                subject = value;
+            } else {
+                is.setstate(std::ios::failbit);
+                return is;
+            }
+        }
+        mode = iceberg_mode::value_subject_latest(protobuf_name, subject);
     } else {
         is.setstate(std::ios::failbit);
     }

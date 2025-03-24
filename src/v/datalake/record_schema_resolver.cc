@@ -334,26 +334,21 @@ record_schema_resolver::resolve_identifier(schema_identifier ident) const {
       from_identifier_visitor{std::move(ident), shared_schema});
 }
 
-latest_protobuf_schema_resolver::latest_protobuf_schema_resolver(
+latest_subject_schema_resolver::latest_subject_schema_resolver(
   schema::registry& sr,
-  model::topic_view topic_name,
-  ss::sstring full_message_name,
+  ppsr::subject subject,
+  std::optional<ss::sstring> protobuf_message_name,
   config::binding<std::chrono::milliseconds> cache_duration,
   std::optional<std::reference_wrapper<schema_cache>> sc)
   : sr_(&sr)
-  , subject_(fmt::format("{}-value", topic_name()))
-  , full_message_name_(std::move(full_message_name))
-  , cache_duration_(cache_duration)
+  , subject_(std::move(subject))
+  , protobuf_message_name_(std::move(protobuf_message_name))
+  , cache_duration_(std::move(cache_duration))
   , cache_(sc) {}
 
 namespace {
 
-struct pb_descriptor_lookup_result {
-    std::reference_wrapper<const google::protobuf::Descriptor> descriptor;
-    std::vector<int32_t> offsets;
-};
-
-checked<pb_descriptor_lookup_result, type_resolver::errc> lookup_descriptor(
+checked<std::vector<int32_t>, type_resolver::errc> compute_message_offsets(
   const ppsr::protobuf_schema_definition& pb_def,
   std::string_view message_full_name) {
     auto d_res = ppsr::descriptor(pb_def, message_full_name);
@@ -368,17 +363,13 @@ checked<pb_descriptor_lookup_result, type_resolver::errc> lookup_descriptor(
         offsets.push_back(d->index());
     }
     std::ranges::reverse(offsets);
-    return pb_descriptor_lookup_result{
-      .descriptor = d_res.value(),
-      .offsets = std::move(offsets),
-    };
+    return offsets;
 }
 
 } // namespace
 
 ss::future<checked<type_and_buf, type_resolver::errc>>
-latest_protobuf_schema_resolver::resolve_buf_type(
-  std::optional<iobuf> b) const {
+latest_subject_schema_resolver::resolve_buf_type(std::optional<iobuf> b) const {
     auto duration = std::chrono::duration_cast<ss::lowres_clock::duration>(
       cache_duration_());
     if (
@@ -396,6 +387,7 @@ latest_protobuf_schema_resolver::resolve_buf_type(
       = co_await ss::coroutine::as_future<ppsr::subject_schema>(
         sr_->get_subject_schema(subject_, /*subject_version=*/std::nullopt));
     if (latest_schema_fut.failed()) {
+        latest_schema_fut.ignore_ready_future();
         co_return type_resolver::errc::registry_error;
     }
     auto latest_schema = std::move(latest_schema_fut.get());
@@ -404,48 +396,45 @@ latest_protobuf_schema_resolver::resolve_buf_type(
         co_return schema_res.error();
     }
     auto shared_schema = schema_res.value();
-    auto pb_def_res = shared_schema->visit(ss::make_visitor(
-      [](const ppsr::protobuf_schema_definition& pb_def)
-        -> checked<ppsr::protobuf_schema_definition, type_resolver::errc> {
-          return pb_def;
+    auto resolve_res = shared_schema->visit(ss::make_visitor(
+      [this, &latest_schema, &shared_schema](
+        const ppsr::protobuf_schema_definition& pb_def)
+        -> checked<resolved_type, type_resolver::errc> {
+          std::vector<int32_t> offsets;
+          if (const auto& explicit_name = protobuf_message_name_) {
+              auto res = compute_message_offsets(pb_def, *explicit_name);
+              if (res.has_error()) {
+                  return res.error();
+              }
+              offsets = std::move(res.value());
+          } else {
+              offsets = {0};
+          }
+          return translate_protobuf_schema(
+            pb_def, latest_schema.id, offsets, std::move(shared_schema));
       },
-      [](const auto&)
-        -> checked<ppsr::protobuf_schema_definition, type_resolver::errc> {
+      [&latest_schema, &shared_schema](const ppsr::avro_schema_definition& def)
+        -> checked<resolved_type, type_resolver::errc> {
+          return translate_avro_schema(
+            def, latest_schema.id, std::move(shared_schema));
+      },
+      [](const ppsr::json_schema_definition&)
+        -> checked<resolved_type, type_resolver::errc> {
           return type_resolver::errc::invalid_config;
       }));
-    if (pb_def_res.has_error()) {
-        co_return pb_def_res.error();
+    if (resolve_res.has_error()) {
+        co_return resolve_res.error();
     }
-    auto lookup_res = lookup_descriptor(pb_def_res.value(), full_message_name_);
-    if (lookup_res.has_error()) {
-        co_return lookup_res.error();
-    }
-    auto res = std::move(lookup_res.value());
-    try {
-        auto type = type_to_iceberg(res.descriptor).value();
-        auto resolved = resolved_type{
-          .schema = resolved_schema(res.descriptor, std::move(shared_schema)),
-          .id
-          = {.schema_id = latest_schema.id, .protobuf_offsets = std::move(res.offsets)},
-          .type = std::move(type),
-          .type_name = res.descriptor.get().name(),
-        };
-        latest_cached_schema_.emplace(resolved.copy(), ss::lowres_clock::now());
-        co_return type_and_buf{
-          .type = std::move(resolved),
-          .parsable_buf = std::move(b),
-        };
-    } catch (...) {
-        vlog(
-          datalake_log.error,
-          "Protobuf schema translation failed: {}",
-          std::current_exception());
-        co_return type_resolver::errc::translation_error;
-    }
+    auto resolved = std::move(resolve_res.value());
+    latest_cached_schema_.emplace(resolved.copy(), ss::lowres_clock::now());
+    co_return type_and_buf{
+      .type = std::move(resolved),
+      .parsable_buf = std::move(b),
+    };
 }
 
 ss::future<checked<resolved_type, type_resolver::errc>>
-latest_protobuf_schema_resolver::resolve_identifier(
+latest_subject_schema_resolver::resolve_identifier(
   schema_identifier ident) const {
     auto schema_res = co_await get_schema(sr_, cache_, ident.schema_id);
     if (schema_res.has_error()) {

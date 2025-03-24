@@ -96,6 +96,20 @@ public:
                                   pb_record_schema, schema_type::protobuf}})
                               .get();
         ASSERT_EQ(2, pb_schema_id());
+        avro_schema_id = sr
+                           ->create_schema(unparsed_schema{
+                             subject{"latest-avro"},
+                             unparsed_schema_definition{
+                               avro_record_schema, schema_type::avro}})
+                           .get();
+        ASSERT_EQ(1, avro_schema_id());
+        pb_schema_id = sr
+                         ->create_schema(unparsed_schema{
+                           subject{"latest-proto"},
+                           unparsed_schema_definition{
+                             pb_record_schema, schema_type::protobuf}})
+                         .get();
+        ASSERT_EQ(2, pb_schema_id());
     }
     std::unique_ptr<schema::fake_registry> sr;
 };
@@ -266,14 +280,39 @@ TEST_F(RecordSchemaResolverTest, TestSchemaRegistryError) {
     EXPECT_FALSE(resolved_buf.type->id.protobuf_offsets.has_value());
 }
 
-TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema) {
+TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Protobuf) {
     using namespace std::chrono_literals;
     iobuf buf;
     buf.append(generate_dummy_body());
 
-    auto resolver = latest_protobuf_schema_resolver(
+    auto resolver = latest_subject_schema_resolver(
       *sr,
-      model::topic("foo"),
+      subject("latest-proto"),
+      std::nullopt,
+      config::mock_binding(std::chrono::milliseconds(0s)),
+      std::nullopt);
+    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    ASSERT_FALSE(res.has_error());
+    auto& resolved_buf = res.value();
+    ASSERT_TRUE(resolved_buf.type.has_value());
+    EXPECT_EQ(2, resolved_buf.type->id.schema_id());
+    EXPECT_THAT(
+      resolved_buf.type->id.protobuf_offsets,
+      testing::Optional(testing::ElementsAre(0)));
+
+    const auto expected_type = field_type{struct_type{}};
+    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_THAT(resolved_buf.parsable_buf, testing::Optional(std::ref(buf)));
+}
+
+TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Protobuf_MessageName) {
+    using namespace std::chrono_literals;
+    iobuf buf;
+    buf.append(generate_dummy_body());
+
+    auto resolver = latest_subject_schema_resolver(
+      *sr,
+      subject("latest-proto"),
       "datalake.proto.nested_message.inner_message_t1",
       config::mock_binding(std::chrono::milliseconds(0s)),
       std::nullopt);
@@ -282,10 +321,9 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema) {
     auto& resolved_buf = res.value();
     ASSERT_TRUE(resolved_buf.type.has_value());
     EXPECT_EQ(2, resolved_buf.type->id.schema_id());
-    EXPECT_TRUE(resolved_buf.type->id.protobuf_offsets.has_value());
     EXPECT_THAT(
-      resolved_buf.type->id.protobuf_offsets.value(),
-      testing::ElementsAre(2, 0));
+      resolved_buf.type->id.protobuf_offsets,
+      testing::Optional(testing::ElementsAre(2, 0)));
 
     const auto expected_type = field_type{[] {
         auto expected_struct = struct_type{};
@@ -293,6 +331,39 @@ TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema) {
           1, "inner_label_1", field_required::no, string_type{}));
         expected_struct.fields.emplace_back(nested_field::create(
           2, "inner_number_1", field_required::no, int_type{}));
+        return expected_struct;
+    }()};
+    EXPECT_EQ(resolved_buf.type->type, expected_type);
+    EXPECT_THAT(resolved_buf.parsable_buf, testing::Optional(std::ref(buf)));
+}
+
+TEST_F(RecordSchemaResolverTest, TestLatestSubjectSchema_Avro) {
+    // NOTE: we strongly should discourage avro users from using this mode, it's
+    // impossible to correctly evolve the schema this way without a stop the
+    // world pause.
+    using namespace std::chrono_literals;
+    iobuf buf;
+    buf.append(generate_dummy_body());
+
+    auto resolver = latest_subject_schema_resolver(
+      *sr,
+      subject("latest-avro"),
+      std::nullopt,
+      config::mock_binding(std::chrono::milliseconds(0s)),
+      std::nullopt);
+    auto res = resolver.resolve_buf_type(buf.copy()).get();
+    ASSERT_FALSE(res.has_error());
+    auto& resolved_buf = res.value();
+    ASSERT_TRUE(resolved_buf.type.has_value());
+    EXPECT_EQ(1, resolved_buf.type->id.schema_id());
+    EXPECT_EQ(resolved_buf.type->id.protobuf_offsets, std::nullopt);
+
+    const auto expected_type = field_type{[] {
+        auto expected_struct = struct_type{};
+        expected_struct.fields.emplace_back(
+          nested_field::create(0, "value", field_required::yes, long_type{}));
+        expected_struct.fields.emplace_back(
+          nested_field::create(0, "next", field_required::yes, int_type{}));
         return expected_struct;
     }()};
     EXPECT_EQ(resolved_buf.type->type, expected_type);

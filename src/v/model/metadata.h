@@ -607,13 +607,12 @@ public:
         // are then interepted using the schema and the resulting columns are
         // mapped to appropriate iceberg types and corresponding table columns.
         value_schema_id_prefix = 2,
-        // Iceberg translation always uses the latest protobuf schema found in
-        // the topic's subject in schema registry using the name `<topic>-value`
-        // which is also known as the TopicNameStrategy in schema registry
-        // terms. The latest version is fetched at runtime, then the specified
-        // message within the file descriptor is used to decode the message
-        // value.
-        latest_protobuf_value = 3,
+        // Iceberg translation always uses the latest schema found in
+        // the topic's subject in schema registry. By default we assume the
+        // TopicNamingStrategy (<topic>-value) and if protobuf the 0th message
+        // in the file descriptor. However these can both be overridden by the
+        // user.
+        value_subject_latest = 3,
     };
     static iceberg_mode disabled;
 
@@ -623,9 +622,9 @@ public:
 
     // Creates a new iceberg mode with the latest protobuf value kind and the
     // protobuf full name.
-    static iceberg_mode
-    latest_protobuf_value(std::string_view protobuf_full_name) {
-        return {latest_protobuf_value_t{}, protobuf_full_name};
+    static iceberg_mode value_subject_latest(
+      std::string_view protobuf_full_name, std::string_view subject_name) {
+        return {latest_protobuf_value_t{}, protobuf_full_name, subject_name};
     }
 
     // Returns the kind of iceberg mode is being used.
@@ -633,11 +632,28 @@ public:
         return static_cast<variant>(_impl.index());
     }
 
-    // Returns the protobuf message's full name.
+    // Returns the protobuf message's full name if specified.
     //
     // Throws is variant() != variant::latest_protobuf_value
-    const ss::sstring& protobuf_full_name() const {
-        return std::get<latest_protobuf_value_impl>(_impl).message_full_name;
+    std::optional<ss::sstring> protobuf_full_name() const {
+        const auto& name
+          = std::get<latest_protobuf_value_impl>(_impl).message_full_name;
+        if (name.empty()) {
+            return std::nullopt;
+        }
+        return name;
+    }
+
+    // Returns the subject name if specified.
+    //
+    // Throws is variant() != variant::latest_protobuf_value
+    std::optional<ss::sstring> subject_name() const {
+        const auto& subject
+          = std::get<latest_protobuf_value_impl>(_impl).subject_name;
+        if (subject.empty()) {
+            return std::nullopt;
+        }
+        return subject;
     }
 
     bool operator==(const iceberg_mode&) const = default;
@@ -657,10 +673,14 @@ private:
     }
 
     struct latest_protobuf_value_t {};
-    iceberg_mode(latest_protobuf_value_t, std::string_view protobuf_full_name)
+    iceberg_mode(
+      latest_protobuf_value_t,
+      std::string_view protobuf_full_name,
+      std::string_view subject_name)
       : _impl(
           std::in_place_type<latest_protobuf_value_impl>,
-          ss::sstring(protobuf_full_name)) {}
+          ss::sstring(protobuf_full_name),
+          ss::sstring(subject_name)) {}
 
     struct disabled_impl {
         bool operator==(const disabled_impl&) const = default;
@@ -673,6 +693,7 @@ private:
     };
     struct latest_protobuf_value_impl {
         ss::sstring message_full_name;
+        ss::sstring subject_name;
         bool operator==(const latest_protobuf_value_impl&) const = default;
     };
 

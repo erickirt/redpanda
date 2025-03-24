@@ -300,7 +300,7 @@ metrics_reporter::build_metrics_snapshot() {
         case model::iceberg_mode::variant::value_schema_id_prefix:
             ++snapshot.topics_with_iceberg_sr;
             break;
-        case model::iceberg_mode::variant::latest_protobuf_value:
+        case model::iceberg_mode::variant::value_subject_latest:
             ++snapshot.topics_with_iceberg_pb;
             break;
         }

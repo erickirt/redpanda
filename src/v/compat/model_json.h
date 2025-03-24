@@ -329,9 +329,11 @@ inline void rjson_serialize(
     wr.StartObject();
     wr.Key("kind");
     rjson_serialize(wr, m.kind());
-    if (m.kind() == model::iceberg_mode::variant::latest_protobuf_value) {
+    if (m.kind() == model::iceberg_mode::variant::value_subject_latest) {
         wr.Key("protobuf_full_name");
-        rjson_serialize(wr, m.protobuf_full_name());
+        rjson_serialize(wr, m.protobuf_full_name().value_or(""));
+        wr.Key("subject_name");
+        rjson_serialize(wr, m.subject_name().value_or(""));
     }
     wr.EndObject();
 }
@@ -354,7 +356,7 @@ inline void read_value(const json::Value& rd, model::iceberg_mode& m) {
     case model::iceberg_mode::variant::value_schema_id_prefix:
         m = model::iceberg_mode::value_schema_id_prefix;
         break;
-    case model::iceberg_mode::variant::latest_protobuf_value:
+    case model::iceberg_mode::variant::value_subject_latest:
         it = obj.FindMember("protobuf_full_name");
         if (it == obj.MemberEnd()) {
             throw std::runtime_error(
@@ -362,7 +364,14 @@ inline void read_value(const json::Value& rd, model::iceberg_mode& m) {
         }
         ss::sstring name;
         read_value(it->value, name);
-        m = model::iceberg_mode::latest_protobuf_value(name);
+        it = obj.FindMember("subject_name");
+        if (it == obj.MemberEnd()) {
+            throw std::runtime_error(
+              "missing subject_name member from iceberg_mode json");
+        }
+        ss::sstring subject;
+        read_value(it->value, subject);
+        m = model::iceberg_mode::value_subject_latest(name, subject);
         break;
     }
 }
