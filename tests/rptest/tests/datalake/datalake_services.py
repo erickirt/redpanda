@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import operator
 from typing import Any, Tuple, Optional
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -255,7 +256,9 @@ class DatalakeServices():
                              msg_count,
                              timeout=30,
                              backoff_sec=5,
-                             table_override=None):
+                             table_override=None,
+                             op=operator.eq):
+        assert op in [operator.eq, operator.gt], f"Suspicious operator {op}"
         table_name = topic
         if table_override:
             table_name = table_override
@@ -271,7 +274,7 @@ class DatalakeServices():
                     self.query_engines))
             self.redpanda.logger.debug(
                 f"Current counts for {table_name}: {counts}")
-            return all([c == msg_count for _, c in counts.items()])
+            return all([op(c, msg_count) for _, c in counts.items()])
 
         wait_until(
             translation_done,
