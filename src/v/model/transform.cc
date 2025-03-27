@@ -337,7 +337,7 @@ model::record_batch transformed_data::make_batch(
     model::record_batch::compressed_records serialized_records;
     int32_t i = 0;
     for (model::transformed_data& r : records) {
-        serialized_records.append_fragments(std::move(r).to_serialized_record(
+        serialized_records.append(std::move(r).to_serialized_record(
           model::record_attributes(),
           /*timestamp_delta=*/0,
           /*offset_delta=*/i++));
@@ -404,7 +404,7 @@ iobuf transformed_data::to_serialized_record(
     bytes od = vint::to_bytes(offset_delta);
     out.append(od.data(), od.size());
 
-    out.append_fragments(std::move(_data));
+    out.append(std::move(_data));
 
     bytes encoded_size = vint::to_bytes(
       int64_t(out.size_bytes() - vint::max_length));
