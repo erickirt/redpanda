@@ -798,6 +798,9 @@ private:
 
     void validate_offset_translator_delta(
       const protocol_metadata&, const storage::offset_stats& lstats);
+
+    std::optional<model::offset>
+      adjust_learner_initial_offset(std::optional<model::offset>);
     // args
     vnode _self;
     raft::group_id _group;
