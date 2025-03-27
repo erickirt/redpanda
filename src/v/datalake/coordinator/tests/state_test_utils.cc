@@ -56,13 +56,12 @@ void add_partition_state(
   bool dlq) {
     for (size_t i = 0; i < offset_bounds_by_pid.size(); i++) {
         auto pid = static_cast<model::partition_id>(i);
-        partition_state p_state;
+        auto& p_state = state.pid_to_pending_files[pid];
         for (auto& f :
              make_pending_files(offset_bounds_by_pid[i], with_files, dlq)) {
             p_state.pending_entries.emplace_back(pending_entry{
               .data = std::move(f), .added_pending_at = added_at});
         }
-        state.pid_to_pending_files[pid] = std::move(p_state);
     }
 }
 topic_state make_topic_state(
