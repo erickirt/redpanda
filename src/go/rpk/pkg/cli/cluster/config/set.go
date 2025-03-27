@@ -44,6 +44,18 @@ func (s *anySlice) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+func parseArgs(args []string) ([]string, error) {
+	if len(args) == 2 && !strings.Contains(args[0], "=") {
+		args = []string{args[0] + "=" + args[1]}
+	}
+	for _, arg := range args {
+		if !strings.Contains(arg, "=") {
+			return nil, fmt.Errorf("invalid arguments: %v, please use one of 'rpk cluster config set <key> <value>' or 'rpk cluster config set <key>=<value>', for empty values use 'rpk cluster config set <key>=\"\"' ", args)
+		}
+	}
+	return args, nil
+}
+
 func newSetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var noConfirm bool
 	cmd := &cobra.Command{
@@ -64,12 +76,12 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			var key, value string
-			if len(args) == 1 && strings.Contains(args[0], "=") {
-				kv := strings.SplitN(args[0], "=", 2)
-				key, value = kv[0], kv[1]
-			} else if len(args) == 2 {
-				key, value = args[0], args[1]
-			} else {
+			
+			configs, error := parseArgs(args)
+			out.MaybeDieErr(error)
+			
+			// this validation is added to support the previous behavior, this will remove in next commits
+			if len(configs) > 1 {
 				out.Die("invalid arguments: %v, please use one of 'rpk cluster config set <key> <value>' or 'rpk cluster config set <key>=<value>'", args)
 			}
 			// Disabling Tiered Storage requires a confirmation from the user because it may lead to data loss.
@@ -82,6 +94,9 @@ Use the flag '--no-confirm' to avoid the confirmation prompt.`,
 					}
 				}
 			}
+
+			split := strings.SplitN(configs[0], "=", 2)
+			key, value = split[0], split[1]
 
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "rpk unable to load config: %v", err)
