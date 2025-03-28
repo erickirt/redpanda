@@ -443,6 +443,10 @@ func restartCluster(
 	if len(states) == 0 {
 		return nil, nil
 	}
+	// If we only have one stranded Console container, the user must purge it.
+	if len(states) == 1 && states[0].Console {
+		return nil, fmt.Errorf("stranded Redpanda Console container detected; please run 'rpk container purge' and try again")
+	}
 	grp, _ := errgroup.WithContext(context.Background())
 	mu := sync.Mutex{}
 	var (
