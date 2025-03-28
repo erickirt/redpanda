@@ -202,6 +202,7 @@ private:
     ss::future<expected<iobuf>> perform_request(
       retry_chain_node& rtc,
       http::request_builder request_builder,
+      const ss::sstring& host,
       client_probe::endpoint endpoint,
       std::optional<iobuf> payload = std::nullopt);
 

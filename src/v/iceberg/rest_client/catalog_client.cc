@@ -133,6 +133,7 @@ catalog_client::maybe_configure(retry_chain_node& rtc) {
     auto config = (co_await perform_request(
                      rtc,
                      http_request,
+                     _endpoint,
                      client_probe::endpoint::create_namespace,
                      std::nullopt))
                     .and_then(parse_json)
@@ -183,14 +184,17 @@ catalog_client::acquire_token(retry_chain_node& rtc) {
 
     // Use the specified OAuth2 server uri if it has a value.
     // Otherwise, fall back to the deprecated /oauth/tokens catalog endpoint.
-    ss::sstring token_path = creds.oauth2_server_uri.value_or(
-      _path_components.token_api_path());
 
-    const auto token_request
+    auto token_request
       = http::request_builder{}
           .method(boost::beast::http::verb::post)
-          .path(token_path)
           .header("content-type", "application/x-www-form-urlencoded");
+    bool custom_oauth2_server = creds.oauth2_server_uri.has_value();
+    if (!custom_oauth2_server) {
+        // If there's no custom OAuth2 server specified, presume that the REST
+        // catalog has one built in.
+        token_request.path(_path_components.token_api_path());
+    }
     auto payload = http::form_encode_data({
       {"grant_type", "client_credentials"},
       {"client_id", creds.client_id},
@@ -202,6 +206,7 @@ catalog_client::acquire_token(retry_chain_node& rtc) {
     co_return (co_await perform_request(
                  rtc,
                  token_request,
+                 custom_oauth2_server ? *creds.oauth2_server_uri : _endpoint,
                  client_probe::endpoint::oauth_token,
                  std::move(payload)))
       .and_then(parse_json)
@@ -263,6 +268,7 @@ ss::future<expected<std::monostate>> catalog_client::maybe_add_bearer_auth(
 ss::future<expected<iobuf>> catalog_client::perform_request(
   retry_chain_node& rtc,
   http::request_builder request_builder,
+  const ss::sstring& host,
   client_probe::endpoint endpoint,
   std::optional<iobuf> payload) {
     if (payload.has_value()) {
@@ -300,7 +306,7 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
             co_return tl::unexpected(
               retries_exhausted{.errors = std::move(retriable_errors)});
         }
-        auto request = request_builder.host(_endpoint).build();
+        auto request = request_builder.host(host).build();
         if (!request.has_value()) {
             co_return tl::unexpected(request.error());
         }
@@ -373,6 +379,7 @@ catalog_client::create_namespace(
     co_return (co_await perform_request(
                  rtc,
                  http_request,
+                 _endpoint,
                  client_probe::endpoint::create_namespace,
                  serialize_payload_as_json(req)))
       .and_then(parse_json)
@@ -400,6 +407,7 @@ ss::future<expected<load_table_result>> catalog_client::create_table(
     co_return (co_await perform_request(
                  rtc,
                  http_request,
+                 _endpoint,
                  client_probe::endpoint::create_table,
                  serialize_payload_as_json(req)))
       .and_then(parse_json)
@@ -422,8 +430,9 @@ ss::future<expected<load_table_result>> catalog_client::load_table(
         co_return tl::unexpected(auth_result.error());
     }
 
-    co_return (co_await perform_request(
-                 rtc, http_request, client_probe::endpoint::load_table))
+    co_return (
+      co_await perform_request(
+        rtc, http_request, _endpoint, client_probe::endpoint::load_table))
       .and_then(parse_json)
       .and_then(parse_as_expected("load_table", parse_load_table_result));
 }
@@ -452,8 +461,9 @@ ss::future<expected<std::monostate>> catalog_client::drop_table(
         co_return tl::unexpected(auth_result.error());
     }
 
-    co_return (co_await perform_request(
-                 rtc, http_request, client_probe::endpoint::drop_table))
+    co_return (
+      co_await perform_request(
+        rtc, http_request, _endpoint, client_probe::endpoint::drop_table))
       .map([](iobuf&&) {
           // we expect empty response, discard it
           return std::monostate{};
@@ -479,6 +489,7 @@ ss::future<expected<commit_table_response>> catalog_client::commit_table_update(
     co_return (co_await perform_request(
                  rtc,
                  http_request,
+                 _endpoint,
                  client_probe::endpoint::commit_table_update,
                  serialize_payload_as_json(commit_request)))
       .and_then(parse_json)
