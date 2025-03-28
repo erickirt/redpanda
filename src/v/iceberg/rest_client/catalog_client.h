@@ -208,7 +208,7 @@ private:
 
     ss::gate _gate;
     std::unique_ptr<http::abstract_client> _http_client;
-    ss::sstring _endpoint;
+    const ss::sstring _endpoint;
     std::optional<credentials> _credentials;
     path_components _path_components;
     std::optional<warehouse> _warehouse;

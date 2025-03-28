@@ -199,9 +199,7 @@ catalog_client::acquire_token(retry_chain_node& rtc) {
       {"grant_type", "client_credentials"},
       {"client_id", creds.client_id},
       {"client_secret", creds.client_secret},
-      // TODO - parameterize this scope, the principal_role should be an input
-      // to the catalog client
-      {"scope", "PRINCIPAL_ROLE:ALL"},
+      {"scope", creds.oauth2_scope},
     });
     co_return (co_await perform_request(
                  rtc,
