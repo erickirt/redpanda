@@ -83,10 +83,11 @@ class NodeConfig:
 
 
 class Minio:
-    def __init__(self, binary, directory):
+    def __init__(self, binary, directory, config):
         self.binary = binary
         self.directory = directory
         self.stopped = False
+        self.cfg = config
 
     def stop(self):
         if not self.stopped:
@@ -104,10 +105,18 @@ class Minio:
         home_dir.mkdir(parents=True, exist_ok=True)
 
         env = dict(HOME=home_dir,
-                   MINIO_REGION_NAME="panda-region",
-                   MINIO_DOMAIN="localhost")
+                   MINIO_REGION_NAME=self.cfg.cloud_storage_region)
+        hostname = self.cfg.cloud_storage_api_endpoint
+        port = self.cfg.cloud_storage_api_endpoint_port
+        args = [
+            str(self.binary), "server", "--address", f"{hostname}:{port}",
+            str(data_dir)
+        ]
+        args = " ".join(args)
+        cmd = f"{args} 2>&1 | tee -i {log_path}"
+        print(f"Running: {cmd}")
         self.process = await asyncio.create_subprocess_shell(
-            f"{self.binary}  server {data_dir} 2>&1 | tee -i {log_path}",
+            cmd,
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT)
@@ -342,7 +351,7 @@ async def main():
     if args.minio_executable:
         minio_dir = args.directory / "minio"
         minio_dir.mkdir(parents=True, exist_ok=True)
-        minio = Minio(args.minio_executable, minio_dir)
+        minio = Minio(args.minio_executable, minio_dir, configs[0].redpanda)
         minio_task = asyncio.create_task(minio.run())
         await ensure_bucket_exists(configs[0].redpanda)
 
