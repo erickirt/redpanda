@@ -94,11 +94,12 @@ class Minio:
 
     async def run(self):
         log_path = self.directory / "minio.log"
+
         data_dir = self.directory / "data"
-        #conf_dir = self.directory / "config"
-        home_dir = self.directory / "home"
         data_dir.mkdir(parents=True, exist_ok=True)
-        #conf_dir.mkdir(parents=True, exist_ok=True)
+
+        # minio really wants a $HOME
+        home_dir = self.directory / "home"
         home_dir.mkdir(parents=True, exist_ok=True)
 
         env = dict(HOME=home_dir,
