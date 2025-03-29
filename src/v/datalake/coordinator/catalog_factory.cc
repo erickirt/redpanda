@@ -171,7 +171,8 @@ rest_catalog_factory::make_credentials_or_token() {
           = std::make_optional<iceberg::rest_client::credentials>(
             config_->iceberg_rest_catalog_client_id().value(),
             config_->iceberg_rest_catalog_client_secret().value(),
-            config_->iceberg_rest_catalog_oauth2_server_uri());
+            config_->iceberg_rest_catalog_oauth2_server_uri(),
+            config_->iceberg_rest_catalog_oauth2_scope());
         break;
     }
     }

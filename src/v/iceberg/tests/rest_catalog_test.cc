@@ -45,6 +45,7 @@ iceberg::rest_client::credentials get_credentials() {
     return {
       .client_id = "redpanda",
       .client_secret = "being_cute",
+      .oauth2_scope = "PRINCIPAL_ROLE:ALL",
     };
 }
 struct RestCatalogTest

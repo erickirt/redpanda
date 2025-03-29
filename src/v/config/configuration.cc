@@ -3940,6 +3940,14 @@ configuration::configuration()
       {.visibility = visibility::user},
       std::nullopt,
       &validate_non_empty_string_opt)
+  , iceberg_rest_catalog_oauth2_scope(
+      *this,
+      "iceberg_rest_catalog_oauth2_scope",
+      "The OAuth scope used to retrieve access tokens for Iceberg catalog "
+      "authentication. Only meaningful when "
+      "`iceberg_rest_catalog_authentication_mode` is set to `oauth2`",
+      {.visibility = visibility::user},
+      "PRINCIPAL_ROLE:ALL")
   , iceberg_rest_catalog_authentication_mode(
       *this,
       "iceberg_rest_catalog_authentication_mode",

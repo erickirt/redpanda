@@ -202,12 +202,13 @@ private:
     ss::future<expected<iobuf>> perform_request(
       retry_chain_node& rtc,
       http::request_builder request_builder,
+      const ss::sstring& host,
       client_probe::endpoint endpoint,
       std::optional<iobuf> payload = std::nullopt);
 
     ss::gate _gate;
     std::unique_ptr<http::abstract_client> _http_client;
-    ss::sstring _endpoint;
+    const ss::sstring _endpoint;
     std::optional<credentials> _credentials;
     path_components _path_components;
     std::optional<warehouse> _warehouse;

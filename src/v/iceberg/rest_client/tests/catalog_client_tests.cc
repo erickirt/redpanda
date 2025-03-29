@@ -23,7 +23,10 @@ using namespace std::chrono_literals;
 using namespace testing;
 namespace {
 constexpr auto endpoint = "http://localhost:8181";
-const r::credentials credentials{.client_id = "id", .client_secret = "secret"};
+const r::credentials credentials{
+  .client_id = "id",
+  .client_secret = "secret",
+  .oauth2_scope = "PRINCIPAL_ROLE:ALL"};
 
 template<typename Variant, typename Outer>
 void assert_type_and_value(Outer input, Variant expected) {
