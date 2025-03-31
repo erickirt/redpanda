@@ -2246,6 +2246,16 @@ consensus::do_append_entries(append_entries_request&& r) {
             _hbeat = clock_type::now();
         });
         validate_offset_translator_delta(request_metadata, lstats);
+
+        // simulate disk error
+        if (unlikely(_inject_error_in_append_entries)) {
+            vlog(
+              _ctxlog.warn,
+              "simulating an error in append_entries request from {}",
+              r.source_node());
+            throw std::runtime_error("injected error");
+        }
+
         storage::append_result ofs = co_await disk_append(
           std::move(r).release_batches(), update_last_quorum_index::no);
         auto last_visible = std::min(
