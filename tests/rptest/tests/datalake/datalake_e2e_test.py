@@ -156,49 +156,50 @@ class DatalakeE2ETests(RedpandaTest):
     @cluster(num_nodes=3)
     @matrix(cloud_storage_type=supported_storage_types(),
             query_engine=[QueryEngineType.SPARK, QueryEngineType.TRINO],
-            catalog_type=supported_catalog_types(),
-            test_case=list(AVRO_SCHEMA_TEST_CASES.keys()))
-    def test_avro_schema(self, cloud_storage_type, query_engine, catalog_type,
-                         test_case):
+            catalog_type=supported_catalog_types())
+    def test_avro_schema(self, cloud_storage_type, query_engine, catalog_type):
         count = 100
-        table_name = f"redpanda.{self.topic_name}"
 
         with DatalakeServices(self.test_ctx,
                               redpanda=self.redpanda,
                               include_query_engines=[query_engine],
                               catalog_type=catalog_type) as dl:
-            dl.create_iceberg_enabled_topic(
-                self.topic_name, iceberg_mode="value_schema_id_prefix")
-            schema = AVRO_SCHEMA_TEST_CASES[test_case]
-            raw_schema = avro.loads(schema.schema_str)
-            producer = AvroProducer(
-                {
-                    'bootstrap.servers': self.redpanda.brokers(),
-                    'schema.registry.url':
-                    self.redpanda.schema_reg().split(",")[0]
-                },
-                default_value_schema=raw_schema)
-            for _ in range(count):
-                t = time.time()
-                record = schema.generate_record(t)
-                producer.produce(topic=self.topic_name, value=record)
-            producer.flush()
-            dl.wait_for_translation(self.topic_name, msg_count=count)
+            for test_case, schema in AVRO_SCHEMA_TEST_CASES.items():
+                test_case_topic_name = f"{test_case}_test_case"
+                table_name = f"redpanda.{test_case_topic_name}"
+                dl.create_iceberg_enabled_topic(
+                    test_case_topic_name,
+                    iceberg_mode="value_schema_id_prefix")
+                raw_schema = avro.loads(schema.schema_str)
+                producer = AvroProducer(
+                    {
+                        'bootstrap.servers':
+                        self.redpanda.brokers(),
+                        'schema.registry.url':
+                        self.redpanda.schema_reg().split(",")[0]
+                    },
+                    default_value_schema=raw_schema)
+                for _ in range(count):
+                    t = time.time()
+                    record = schema.generate_record(t)
+                    producer.produce(topic=test_case_topic_name, value=record)
+                producer.flush()
+                dl.wait_for_translation(test_case_topic_name, msg_count=count)
 
-            if query_engine == QueryEngineType.TRINO:
-                trino = dl.trino()
-                trino_expected_out = schema.expected_trino
-                trino_describe_out = trino.run_query_fetch_all(
-                    f"describe {table_name}")
-                assert trino_describe_out == trino_expected_out, str(
-                    trino_describe_out)
-            else:
-                spark = dl.spark()
-                spark_expected_out = schema.expected_spark
-                spark_describe_out = spark.run_query_fetch_all(
-                    f"describe {table_name}")
-                assert spark_describe_out == spark_expected_out, str(
-                    spark_describe_out)
+                if query_engine == QueryEngineType.TRINO:
+                    trino = dl.trino()
+                    trino_expected_out = schema.expected_trino
+                    trino_describe_out = trino.run_query_fetch_all(
+                        f"describe {table_name}")
+                    assert trino_describe_out == trino_expected_out, str(
+                        trino_describe_out)
+                else:
+                    spark = dl.spark()
+                    spark_expected_out = schema.expected_spark
+                    spark_describe_out = spark.run_query_fetch_all(
+                        f"describe {table_name}")
+                    assert spark_describe_out == spark_expected_out, str(
+                        spark_describe_out)
 
     @cluster(num_nodes=3)
     @matrix(cloud_storage_type=supported_storage_types(),
