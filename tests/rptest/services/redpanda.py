@@ -2285,6 +2285,14 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         """
         return self._cloud_cluster.scale_cluster(nodes_count)
 
+    def set_cluster_config_overrides(self, cluster_id, config_values):
+        """
+        Set configuration overrides for a specific
+        Redpanda cloud cluster using Admin API
+        """
+        return self._cloud_cluster.set_cluster_config_overrides(
+            cluster_id, config_values)
+
     def clean_cluster(self):
         """Cleans state from a running cluster to make it seem like it was newly provisioned.
 
