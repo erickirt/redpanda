@@ -58,14 +58,24 @@ class DatalakeThrottlingTest(RedpandaTest):
         sample = self.redpanda.metrics_sample("total_throttle")
         assert sample is not None, "total_throttle metric not found"
         for s in sample.samples:
-            self.logger.debug(f"metrics sample: {s}")
+            self.logger.debug(f"total throttle - metrics sample: {s}")
+            total += s.value
+        return total
+
+    def _throttled_requests(self):
+        total = 0
+        sample = self.redpanda.metrics_sample("throttled_requests")
+        assert sample is not None, "throttled_requests metric not found"
+        for s in sample.samples:
+            self.logger.debug(f"requests throttled - metrics sample: {s}")
             total += s.value
         return total
 
     def producer_throttled(self, dl: DatalakeServices):
         dl.produce_to_topic(self.topic_name, 128, 10240)
         throttle = self._total_throttle()
-        return throttle > 0
+        throttled_requests = self._throttled_requests()
+        return throttle > 0 and throttled_requests > 0
 
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=supported_storage_types(),
