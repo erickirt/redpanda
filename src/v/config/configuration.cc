@@ -3992,6 +3992,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100_MiB,
       {.min = 0, .max = std::numeric_limits<uint32_t>::max()})
+  , iceberg_throttle_backlog_size_ratio(
+      *this,
+      "iceberg_throttle_backlog_size_ratio",
+      "Ration of the total backlog size to the disk space at which the "
+      "throttle to iceberg producers is applied",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.3)
   , iceberg_delete(
       *this,
       "iceberg_delete",
