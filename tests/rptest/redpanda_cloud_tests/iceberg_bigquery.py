@@ -158,36 +158,40 @@ class CloudIcebergBigquery(RedpandaCloudTest):
         select_query = f"SELECT * FROM `{PROJECT}.{TABLE_ID}` LIMIT 10;"
         count_query = f"SELECT COUNT(*) AS total_rows FROM `{PROJECT}.{TABLE_ID}`;"
 
-        # Test SELECT query
         try:
-            select_results = run_query(bq_client, select_query,
-                                       "SELECT query (LIMIT 10)")
-            assert select_results, "SELECT query returned no results!"
-            self.logger.info(
-                f"SELECT query returned {len(select_results)} rows.")
-            # TODO Add assertions for specific data formats
-        except Exception as e:
-            self.logger.error(f"Failed to execute SELECT query: {e}")
-            raise
+            # Test SELECT query
+            try:
+                select_results = run_query(bq_client, select_query,
+                                           "SELECT query (LIMIT 10)")
+                assert select_results, "SELECT query returned no results!"
+                self.logger.info(
+                    f"SELECT query returned {len(select_results)} rows.")
+                # TODO Add assertions for specific data formats
+            except Exception as e:
+                self.logger.error(f"Failed to execute SELECT query: {e}")
+                raise
 
-        # Test COUNT query
-        try:
-            count_results = run_query(bq_client, count_query, "COUNT query")
-            total_rows = count_results[0].total_rows if count_results else 0
+            # Test COUNT query
+            try:
+                count_results = run_query(bq_client, count_query,
+                                          "COUNT query")
+                total_rows = count_results[0].total_rows if count_results else 0
 
-            assert total_rows == MESSAGE_COUNT, (
-                f"Expected {MESSAGE_COUNT} rows, but got {total_rows}!")
-            self.logger.info(
-                f"COUNT query result: {total_rows} rows, expected {MESSAGE_COUNT}."
-            )
+                assert total_rows == MESSAGE_COUNT, (
+                    f"Expected {MESSAGE_COUNT} rows, but got {total_rows}!")
+                self.logger.info(
+                    f"COUNT query result: {total_rows} rows, expected {MESSAGE_COUNT}."
+                )
 
-        except Exception as e:
-            self.logger.error(f"Failed to execute COUNT query: {e}")
-            raise
+            except Exception as e:
+                self.logger.error(f"Failed to execute COUNT query: {e}")
+                raise
 
-        # Delete all topics
-        topics = self.rpk.list_topics()
-        for topic in topics:
-            self.rpk.delete_topic(topic)
+            # Delete all topics
+            topics = self.rpk.list_topics()
+            for topic in topics:
+                self.rpk.delete_topic(topic)
 
-        delete_dataset(bq_client, PROJECT, DATASET_ID)
+        finally:
+            # Always delete the dataset, even if an exception occurred
+            delete_dataset(bq_client, PROJECT, DATASET_ID)
