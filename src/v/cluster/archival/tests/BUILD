@@ -144,7 +144,7 @@ redpanda_cc_btest(
 
 redpanda_cc_btest(
     name = "ntp_archiver_test",
-    timeout = "moderate",
+    timeout = "short",
     srcs = [
         "ntp_archiver_test.cc",
     ],
