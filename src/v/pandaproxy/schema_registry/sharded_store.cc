@@ -254,9 +254,8 @@ ss::future<bool> sharded_store::upsert(
   schema_version version,
   is_deleted deleted) {
     try {
-        subject_schema canonical = co_await make_canonical_schema(
+        schema = co_await make_canonical_schema(
           schema.share(), normalize::no, false);
-        schema = std::move(canonical);
     } catch (...) {
         // do nothing. In case make_canonical_schema fails, continue with the
         // schema as-is in the topic

@@ -500,7 +500,7 @@ public:
             return true;
         }
         case state::definition: {
-            _schema.def = schema_definition::raw_string{ss::sstring{sv}};
+            _schema.def = schema_definition::raw_string{sv};
             _state = state::object;
             return true;
         }
