@@ -1264,7 +1264,7 @@ archival_metadata_stm::apply_local_snapshot(
     _compacted_replaced_bytes = 0;
 
     if (snap.dirty == state_dirty::dirty) {
-        _last_clean_at = model::offset{0};
+        _last_clean_at = model::offset{};
     } else {
         _last_clean_at = header.offset;
     }
