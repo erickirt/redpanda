@@ -28,6 +28,7 @@
 
 #include <optional>
 #include <ranges>
+#include <utility>
 
 namespace pandaproxy::schema_registry {
 
@@ -640,12 +641,20 @@ public:
         return {id, inserted};
     }
 
-    bool upsert_schema(schema_id id, schema_definition def) {
+    bool upsert_schema(schema_id id, schema_definition def, bool mark_schema) {
+        if (mark_schema) {
+            _marked_schemas.push_back(id);
+        }
         return _schemas.insert_or_assign(id, schema_entry(std::move(def)))
           .second;
     }
 
     void delete_schema(schema_id id) { _schemas.erase(id); }
+
+    // This function returns and unmarkes all marked schemas.
+    chunked_vector<schema_id> extract_marked_schemas() {
+        return std::exchange(_marked_schemas, {});
+    }
 
     struct insert_subject_result {
         schema_version version;
@@ -903,6 +912,7 @@ private:
 
     schema_map _schemas;
     subject_map _subjects;
+    chunked_vector<schema_id> _marked_schemas;
     compatibility_level _compatibility{compatibility_level::backward};
     mode _mode{mode::read_write};
     is_mutable _mutable;

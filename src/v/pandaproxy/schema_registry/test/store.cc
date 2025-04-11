@@ -78,7 +78,7 @@ bool upsert(
   pps::schema_id id,
   pps::schema_version version,
   pps::is_deleted deleted) {
-    store.upsert_schema(id, std::move(def));
+    store.upsert_schema(id, std::move(def), false);
     return store.upsert_subject(
       pps::seq_marker{}, std::move(sub), version, id, deleted);
 }

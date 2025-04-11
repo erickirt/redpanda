@@ -13,6 +13,7 @@
 
 #include "base/vlog.h"
 #include "config/configuration.h"
+#include "container/fragmented_vector.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "pandaproxy/logger.h"
@@ -29,6 +30,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/coroutine/as_future.hh>
 #include <seastar/coroutine/exception.hh>
 
 #include <absl/algorithm/container.h>
@@ -253,17 +255,51 @@ ss::future<bool> sharded_store::upsert(
   schema_id id,
   schema_version version,
   is_deleted deleted) {
-    try {
-        schema = co_await make_canonical_schema(
-          schema.share(), normalize::no, false);
-    } catch (...) {
-        // do nothing. In case make_canonical_schema fails, continue with the
-        // schema as-is in the topic
+    auto canonical_fut = co_await ss::coroutine::as_future(
+      make_canonical_schema(schema.share(), normalize::no, false));
+    bool processing_failed = canonical_fut.failed();
+    if (processing_failed) {
+        canonical_fut.ignore_ready_future();
+    } else {
+        schema = canonical_fut.get();
     }
+
     auto [sub, def] = std::move(schema).destructure();
-    co_await upsert_schema(id, std::move(def));
+    // mark schemas that failed to be processed here. They will be given
+    // one more chance once we have loaded all the topic to the store.
+    co_await upsert_schema(id, std::move(def), processing_failed);
     co_return co_await upsert_subject(
       marker, std::move(sub), version, id, deleted);
+}
+
+ss::future<> sharded_store::process_marked_schemas() {
+    return _store.invoke_on_all([this](store& store) {
+        return ss::do_with(
+          store.extract_marked_schemas(), [this, &store](auto& marked) {
+              return ss::do_for_each(marked, [this, &store](auto id) {
+                  auto schema = store.get_schema_definition(id);
+                  if (schema.has_failure()) {
+                      // schema not found, ignore
+                      return ss::now();
+                  }
+                  return make_canonical_schema(
+                           {{}, std::move(schema).assume_value()},
+                           normalize::no,
+                           false)
+                    .then([id, &store](auto canonical) {
+                        // Update the stored form of this schema to its
+                        // canonical form
+                        store.upsert_schema(
+                          id, std::move(canonical).def(), false);
+                    })
+                    .handle_exception([](const std::exception_ptr&) {
+                        // processing attempt failed on marked schema. This is
+                        // not an issue of forward references. Ignore error and
+                        // keep schema in the store as-is
+                    });
+              });
+          });
+    });
 }
 
 ss::future<bool> sharded_store::has_schema(schema_id id) {
@@ -658,12 +694,14 @@ sharded_store::clear_compatibility(seq_marker marker, subject sub) {
       });
 }
 
-ss::future<bool>
-sharded_store::upsert_schema(schema_id id, schema_definition def) {
+ss::future<bool> sharded_store::upsert_schema(
+  schema_id id, schema_definition def, bool mark_schema) {
     co_await maybe_update_max_schema_id(id);
     co_return co_await _store.invoke_on(
-      shard_for(id), _smp_opts, [id, def{std::move(def)}](store& s) mutable {
-          return s.upsert_schema(id, std::move(def));
+      shard_for(id),
+      _smp_opts,
+      [id, mark_schema, def{std::move(def)}](store& s) mutable {
+          return s.upsert_schema(id, std::move(def), mark_schema);
       });
 }
 
