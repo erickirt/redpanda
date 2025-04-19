@@ -117,6 +117,7 @@ redpanda_cc_library(
         "//src/v/kafka/data:partition_proxy",
         "//src/v/kafka/utils:txn_reader",
         "//src/v/model",
+        "//src/v/utils:human",
         "//src/v/utils:retry_chain_node",
         "@seastar",
     ],
