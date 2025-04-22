@@ -40,7 +40,21 @@ Header = collections.namedtuple(
                'producer_epoch', 'base_seq', 'record_count'))
 
 SEGMENT_NAME_PATTERN = re.compile(
-    "(?P<base_offset>\d+)-(?P<term>\d+)-v(?P<version>\d)\.log")
+    r"(?P<base_offset>\d+)-(?P<term>\d+)-v(?P<version>\d)\.log")
+
+
+def human_bytes(bytes: int):
+    """Convert bytes to human readable MiB."""
+    if bytes < 1024:
+        return f"{bytes} B"
+    elif bytes < 1024**2:
+        return f"{bytes / 1024:.2f} KiB"
+    elif bytes < 1024**3:
+        return f"{bytes / 1024**2:.2f} MiB"
+    elif bytes < 1024**4:
+        return f"{bytes / 1024**3:.2f} GiB"
+    else:
+        return f"{bytes / 1024**4:.2f} TiB"
 
 
 class CorruptBatchError(Exception):
@@ -223,6 +237,9 @@ class Batch:
             # it appears that we may have hit a truncation point if all of the
             # fields in the header are zeros
             if all(map(lambda v: v == 0, header)):
+                logger.info(
+                    f"Truncation point detected at {f.tell()} (all zeros in header)"
+                )
                 return
             records_size = header.batch_size - HEADER_SIZE
             data = f.read(records_size)
@@ -257,8 +274,8 @@ class BatchIterator:
         if b is None:
             fsize = os.stat(self.path).st_size
             if fsize != self.file.tell():
-                logger.warn(
-                    f"Incomplete read of {self.path}: {self.file.tell()}/{fsize}"
+                logger.warning(
+                    f"Incomplete read of {self.path}: {human_bytes(self.file.tell())}/{human_bytes(fsize)}"
                 )
             raise StopIteration()
         self.idx += 1
