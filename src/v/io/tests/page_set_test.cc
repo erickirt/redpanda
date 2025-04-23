@@ -99,12 +99,14 @@ TEST(PageSet, Erase) {
     EXPECT_NE(set.begin(), set.end());
 
     // remove the first page. set is not empty
-    set.erase(set.find(5));
+    auto next = set.erase(set.find(5));
     EXPECT_NE(set.begin(), set.end());
+    EXPECT_EQ(next, set.begin());
 
     // remove the second
-    set.erase(set.find(25));
+    next = set.erase(set.find(25));
 
     // now the set is empty
     EXPECT_EQ(set.begin(), set.end());
+    EXPECT_EQ(next, set.end());
 }

@@ -76,8 +76,10 @@ public:
 
     /**
      * Remove the page pointed to be \p it.
+     *
+     * Returns an iterator to the next page in the set.
      */
-    void erase(const_iterator it);
+    const_iterator erase(const_iterator it);
 
     /**
      * Return an iterator to the first page in the set.

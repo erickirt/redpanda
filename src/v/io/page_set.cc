@@ -24,8 +24,8 @@ page_set::const_iterator page_set::find(uint64_t offset) const {
     return const_iterator(pages_.find(offset));
 }
 
-void page_set::erase(page_set::const_iterator it) {
-    pages_.erase(it.base_reference());
+page_set::const_iterator page_set::erase(page_set::const_iterator it) {
+    return const_iterator{pages_.erase(it.base_reference())};
 }
 
 page_set::const_iterator page_set::begin() const {
