@@ -91,6 +91,11 @@ public:
      */
     [[nodiscard]] const_iterator end() const;
 
+    /**
+     * Returns the number of pages in the set.
+     */
+    [[nodiscard]] size_t size() const;
+
 private:
     map_type pages_;
 };

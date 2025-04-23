@@ -45,4 +45,6 @@ page_set::insert(seastar::lw_shared_ptr<page> page) {
     return {const_iterator(res.first), res.second};
 }
 
+size_t page_set::size() const { return pages_.size(); }
+
 } // namespace experimental::io

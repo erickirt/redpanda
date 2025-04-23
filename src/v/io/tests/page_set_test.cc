@@ -34,6 +34,19 @@ TEST(PageSet, FindReturnsEndWhenEmpty) {
     EXPECT_EQ(set.find(0), set.end());
 }
 
+TEST(PageSet, Size) {
+    io::page_set set;
+    EXPECT_EQ(set.size(), 0);
+    (void)set.insert(make_page(0, 10));
+    EXPECT_EQ(set.size(), 1);
+    (void)set.insert(make_page(10, 10));
+    EXPECT_EQ(set.size(), 2);
+    set.erase(set.begin());
+    EXPECT_EQ(set.size(), 1);
+    set.erase(set.begin());
+    EXPECT_EQ(set.size(), 0);
+}
+
 TEST(PageSet, InsertOne) {
     io::page_set set;
 
