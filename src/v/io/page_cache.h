@@ -50,6 +50,15 @@ public:
     explicit page_cache(config cfg);
 
     /**
+     * The seastar reclaimer callback captures `this`.
+     */
+    page_cache(const page_cache&) = delete;
+    page_cache& operator=(const page_cache&) = delete;
+    page_cache(page_cache&&) noexcept = delete;
+    page_cache& operator=(page_cache&&) noexcept = delete;
+    ~page_cache() = default;
+
+    /**
      * Insert @page into the cache.
      *
      * The page must not already be stored in the cache.
@@ -84,8 +93,32 @@ public:
     [[nodiscard]] stats stats() const noexcept;
 
 private:
+    using reclaimer = seastar::memory::reclaimer;
+    using reclaim_result = seastar::memory::reclaiming_result;
+
+    bool _is_reclaiming{false};
+    struct batch_reclaiming_lock {
+        explicit batch_reclaiming_lock(page_cache& cache) noexcept
+          : ref(cache)
+          , prev(ref._is_reclaiming) {
+            ref._is_reclaiming = true;
+        }
+        ~batch_reclaiming_lock() noexcept { ref._is_reclaiming = prev; }
+        batch_reclaiming_lock(const batch_reclaiming_lock&) = delete;
+        batch_reclaiming_lock(batch_reclaiming_lock&&) = delete;
+        batch_reclaiming_lock& operator=(const batch_reclaiming_lock&) = delete;
+        batch_reclaiming_lock& operator=(batch_reclaiming_lock&&) = delete;
+
+    private:
+        page_cache& ref;
+        bool prev;
+    };
+    [[nodiscard]] bool is_memory_reclaiming() const { return _is_reclaiming; }
+    reclaim_result reclaim(reclaimer::request) noexcept;
+
     evict::stats evict_stats_;
     cache_type cache_;
+    reclaimer reclaimer_;
 };
 
 } // namespace experimental::io
