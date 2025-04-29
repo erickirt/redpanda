@@ -221,7 +221,6 @@ public:
     // deletion/eviction, and compaction.
     bool has_compactible_offsets(const compaction_config& cfg) const;
 
-    void release_batch_cache_index() { _cache.reset(); }
     // Calls `_cache->reset()`, iff the optional `_cache` has a value. This
     // leaves the object in a re-usable state. If there is no contained object
     // (i.e `_cache == std::nullopt`), this function is a no-op.
