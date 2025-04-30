@@ -348,6 +348,10 @@ TEST_P(CompactionFixtureParamTest, TestDedupeOnePass) {
                                       model::offset(0))
                                     .get();
     ASSERT_EQ(consumed_kvs, consumed_kvs_restarted);
+
+    for (const auto& seg : log->segments()) {
+        ASSERT_EQ(seg->offsets().get_base_offset(), seg->index().base_offset());
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -389,6 +393,10 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPass) {
     ASSERT_EQ(segments_compacted_2, segments_compacted_3);
 
     ASSERT_NO_FATAL_FAILURE(check_records(cardinality, num_segments - 1).get());
+
+    for (const auto& seg : disk_log.segments()) {
+        ASSERT_EQ(seg->offsets().get_base_offset(), seg->index().base_offset());
+    }
 }
 
 TEST_F(CompactionFixtureTest, TestChunkedCompaction) {
@@ -478,6 +486,10 @@ TEST_F(CompactionFixtureTest, TestChunkedCompaction) {
     num_chunked_compaction_runs
       = disk_log.get_probe().get_chunked_compaction_runs();
     ASSERT_EQ(num_chunked_compaction_runs, 1);
+
+    for (const auto& seg : disk_log.segments()) {
+        ASSERT_EQ(seg->offsets().get_base_offset(), seg->index().base_offset());
+    }
 }
 
 TEST_F(CompactionFixtureTest, TestDedupeMultiPassAddedSegment) {
@@ -564,6 +576,10 @@ TEST_F(CompactionFixtureTest, TestDedupeMultiPassAddedSegment) {
       disk_log.get_last_compaction_window_start_offset().has_value());
 
     ASSERT_NO_FATAL_FAILURE(check_records(cardinality, num_segments - 1).get());
+
+    for (const auto& seg : disk_log.segments()) {
+        ASSERT_EQ(seg->offsets().get_base_offset(), seg->index().base_offset());
+    }
 }
 
 class CompactionFixtureBatchSizeParamTest
@@ -1451,6 +1467,9 @@ TEST_P(
         auto num_expected_data_batches = placeholder_batch_enabled ? 0 : 1;
         check_num_data_batches(seg_0_batches, num_expected_data_batches);
     }
+
+    ASSERT_EQ(
+      segs[0]->offsets().get_base_offset(), segs[0]->index().base_offset());
 }
 
 INSTANTIATE_TEST_SUITE_P(
