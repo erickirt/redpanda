@@ -424,6 +424,7 @@ redpanda_cc_btest(
     ],
     tags = ["exclusive"],
     deps = [
+        "//src/v/cluster",
         "//src/v/config",
         "//src/v/container:fragmented_vector",
         "//src/v/features:enterprise_feature_messages",
