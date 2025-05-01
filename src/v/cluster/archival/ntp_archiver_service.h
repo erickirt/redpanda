@@ -334,10 +334,13 @@ public:
         model::offset local_start_offset,
         const cloud_storage::partition_manifest& manifest)>;
 
+    // TODO(oren): maybe stick metadata in here...
+    // need it to get a segment name for the call site (logging). not sure how
+    // important that actually is
     struct find_reupload_candidate_result {
         std::optional<ssx::checkpoint_mutex_units> units;
-        std::optional<upload_candidate_with_locks> locks;
-        archival_stm_fence read_write_fence;
+        std::optional<segment_collector_stream> upload_stream{};
+        archival_stm_fence read_write_fence{};
     };
 
     /// Find upload candidate
@@ -452,6 +455,10 @@ private:
     ss::future<bool> do_upload_local(
       archival_stm_fence fence,
       upload_candidate_with_locks candidate,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
+    ss::future<bool> do_upload_local(
+      archival_stm_fence fence,
+      segment_collector_stream strm,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
     ss::future<bool> do_upload_remote(
       upload_candidate_with_locks candidate,

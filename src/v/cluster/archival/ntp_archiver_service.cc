@@ -162,6 +162,9 @@ cloud_storage::segment_meta convert_segment_meta(
       .committed_offset = strm.end_offset,
       .base_timestamp = strm.min_timestamp,
       .max_timestamp = strm.max_timestamp,
+      // NOTE(oren): old code uses base - from_log_offset(base)
+      // which is equivalent to base - (base - delta) = delta
+      // so here we just use delta. Seems fine?
       .delta_offset = parent.log()->offset_delta(strm.start_offset),
       .ntp_revision = rev,
       .archiver_term = archiver_term,
@@ -3637,14 +3640,12 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
       .emit_rw_fence_cmd = emit_read_write_fence(_feature_table),
     };
     if (!may_begin_uploads()) {
-        co_return find_reupload_candidate_result{
-          std::nullopt, std::nullopt, {}};
+        co_return find_reupload_candidate_result{};
     }
     auto run = scanner(_parent.raft_start_offset(), manifest());
     if (!run.has_value()) {
         vlog(_rtclog.debug, "Scan didn't resulted in upload candidate");
-        co_return find_reupload_candidate_result{
-          std::nullopt, std::nullopt, {}};
+        co_return find_reupload_candidate_result{};
     } else {
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
@@ -3660,7 +3661,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
           run->meta.committed_offset);
         collector.collect_segments(
           segment_collector_mode::non_compacted_reupload);
-        auto candidate = co_await collector.make_upload_candidate(
+        auto candidate = co_await collector.make_upload_candidate_stream(
           _conf->segment_upload_timeout());
 
         co_return ss::visit(
@@ -3671,26 +3672,24 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                 "unexpected default re-upload candidate creation result");
           },
           [this, &run, &rw_fence, units = std::move(units)](
-            upload_candidate_with_locks& upload_candidate) mutable
+            segment_collector_stream& collector_stream) mutable
             -> find_reupload_candidate_result {
               if (
-                upload_candidate.candidate.content_length
-                  != run->meta.size_bytes
-                || upload_candidate.candidate.starting_offset
-                     != run->meta.base_offset
-                || upload_candidate.candidate.final_offset
-                     != run->meta.committed_offset) {
+                collector_stream.size != run->meta.size_bytes
+                || collector_stream.start_offset != run->meta.base_offset
+                || collector_stream.end_offset != run->meta.committed_offset) {
                   vlog(
                     _rtclog.error,
                     "Failed to make reupload candidate to match the run, "
-                    "candidate: "
-                    "{}, run: {}",
-                    upload_candidate.candidate,
+                    "candidate: {} run: {}",
+                    collector_stream,
                     run->meta);
-                  return {std::nullopt, std::nullopt, {}};
+                  return {};
               }
-
-              return {std::move(units), std::move(upload_candidate), rw_fence};
+              return {
+                .units = std::move(units),
+                .upload_stream = std::move(collector_stream),
+                .read_write_fence = rw_fence};
           },
           [this](
             skip_offset_range& skip_offsets) -> find_reupload_candidate_result {
@@ -3700,7 +3699,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                 log_level,
                 "Failed to make reupload candidate: {}",
                 skip_offsets.reason);
-              return {std::nullopt, std::nullopt, {}};
+              return {};
           },
           [this](
             candidate_creation_error& error) -> find_reupload_candidate_result {
@@ -3710,28 +3709,14 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
                 log_level,
                 "Failed to make reupload candidate: {}",
                 error);
-              return {std::nullopt, std::nullopt, {}};
+              return {};
           });
     }
-    // segment_name exposed_name;
-    upload_candidate candidate = {};
-    candidate.starting_offset = run->meta.base_offset;
-    candidate.content_length = run->meta.size_bytes;
-    candidate.final_offset = run->meta.committed_offset;
-    candidate.base_timestamp = run->meta.base_timestamp;
-    candidate.max_timestamp = run->meta.max_timestamp;
-    candidate.term = run->meta.segment_term;
-    candidate.remote_sources = run->segments;
-    // Reuploaded segment can only use new name format
-    run->meta.sname_format = cloud_storage::segment_name_format::v3;
-    candidate.exposed_name
-      = cloud_storage::partition_manifest::generate_remote_segment_name(
-        run->meta);
-    // Create a remote upload candidate
-    co_return find_reupload_candidate_result{
-      std::move(units),
-      upload_candidate_with_locks{std::move(candidate)},
-      rw_fence};
+    // OTHERWISE WE'RE REUPLOADING REMOTE SEGMENTS
+    // This is not currently supported, and is tricky to wire up to the
+    // stream-based interface, so just elide all this code for now and return an
+    // empty result
+    co_return find_reupload_candidate_result{};
 }
 
 cloud_storage::segment_name ntp_archiver::segment_name_for_stream(
@@ -3747,15 +3732,15 @@ ss::future<bool> ntp_archiver::upload(
   find_reupload_candidate_result find_res,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     ss::gate::holder holder(_gate);
-    if (!find_res.locks.has_value() || !find_res.units.has_value()) {
+    if (!find_res.upload_stream.has_value() || !find_res.units.has_value()) {
         // The method shouldn't be called if this is the case
         co_return false;
     }
     auto units = std::move(find_res.units);
-    if (find_res.locks->candidate.sources.size() > 0) {
+    if (find_res.upload_stream.value().size > 0) {
         co_return co_await do_upload_local(
           find_res.read_write_fence,
-          std::move(find_res.locks.value()),
+          std::move(find_res.upload_stream).value(),
           source_rtc);
     }
     // Currently, the uploading of remote segments is disabled and
@@ -3763,6 +3748,129 @@ ss::future<bool> ntp_archiver::upload(
     // The log could be truncated right after we scanned the manifest to
     // find upload candidate. In this case we will get an empty candidate
     // which is not a failure so we shuld return 'true'.
+    co_return true;
+}
+
+ss::future<bool> ntp_archiver::do_upload_local(
+  archival_stm_fence fence,
+  segment_collector_stream strm,
+  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    if (!may_begin_uploads()) {
+        co_return false;
+    }
+    if (!config::shard_local_cfg().cloud_storage_enable_segment_uploads()) {
+        co_return false;
+    }
+
+    auto sname = segment_name_for_stream(strm);
+
+    if (strm.is_compacted) {
+        vlog(
+          _rtclog.warn,
+          "Upload of the {} requested but sources are empty",
+          sname);
+        co_return false;
+    }
+
+    if (strm.size == 0) {
+        vlog(
+          _rtclog.warn,
+          "Upload of the {} requested but sources are empty",
+          sname);
+        co_return false;
+    }
+
+    auto meta = convert_segment_meta(strm, _parent, _rev, _start_term);
+    auto [tx_ranges, tx_size] = co_await get_aborted_transactions(strm, sname);
+    meta.metadata_size_hint = tx_size;
+    vlog(
+      _rtclog.debug,
+      "Starting segment upload in the background, name: {}, meta: {}",
+      sname,
+      meta);
+
+    auto upl_res = co_await upload_segment(
+      std::move(strm), meta, std::move(tx_ranges));
+
+    if (upl_res.result() != cloud_storage::upload_result::success) {
+        vlog(
+          _rtclog.warn,
+          "Failed to upload segment: {}, error: {}",
+          sname,
+          upl_res.result());
+        co_return false;
+    }
+
+    const bool checks_disabled
+      = config::shard_local_cfg()
+          .cloud_storage_disable_upload_consistency_checks.value();
+
+    if (!checks_disabled && upl_res.has_record_stats()) {
+        auto stats = upl_res.record_stats();
+        // Validate segment content. The 'stats' is computed when
+        // the actual segment is scanned and represents the 'ground truth' about
+        // its content. The 'meta' is the expected segment metadata. We
+        // shouldn't replicate it if it doesn't match the 'stats'.
+        if (!segment_meta_matches_stats(meta, stats, _rtclog)) {
+            co_return false;
+        }
+    }
+    if (!checks_disabled) {
+        // Validate metadata using the STM state
+        if (!manifest().safe_segment_meta_to_add(meta)) {
+            co_return false;
+        }
+    }
+
+    auto highest_producer_id
+      = _feature_table.local().is_active(
+          features::feature::cloud_metadata_cluster_recovery)
+          ? _parent.highest_producer_id()
+          : model::producer_id{};
+    auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout();
+
+    auto is_validated = checks_disabled ? cluster::segment_validated::no
+                                        : cluster::segment_validated::yes;
+    cluster::emit_read_write_fence rw_fence = std::nullopt;
+    if (fence.emit_rw_fence_cmd) {
+        vlog(
+          archival_log.debug,
+          "(2) fence value is: {}, manifest last applied "
+          "offset: {}, manifest in-sync offset: {}",
+          fence.read_write_fence,
+          _parent.archival_meta_stm()->manifest().get_applied_offset(),
+          _parent.archival_meta_stm()->get_insync_offset());
+        rw_fence = fence.read_write_fence;
+    }
+
+    auto error = co_await _parent.archival_meta_stm()->add_segments(
+      {meta},
+      std::nullopt,
+      highest_producer_id,
+      deadline,
+      _as,
+      is_validated,
+      rw_fence);
+
+    if (error != cluster::errc::success && error != cluster::errc::not_leader) {
+        vlog(
+          _rtclog.warn,
+          "archival metadata STM update failed: {}",
+          error.message());
+        co_return false;
+    }
+
+    if (
+      co_await upload_manifest(segment_merger_ctx_label, source_rtc)
+      != cloud_storage::upload_result::success) {
+        vlog(
+          _rtclog.info,
+          "archival metadata replicated but manifest is not re-uploaded");
+    } else {
+        // Write to archival_metadata_stm to mark our updated clean offset
+        // as a result of uploading the manifest successfully.
+        co_await flush_manifest_clean_offset();
+    }
     co_return true;
 }
 
