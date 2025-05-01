@@ -356,3 +356,24 @@ BOOST_AUTO_TEST_CASE(binary_compatibility_test) {
     BOOST_REQUIRE_EQUAL(expected_bytes.size_bytes(), actual_bytes.size_bytes());
     BOOST_REQUIRE(expected_bytes == actual_bytes);
 }
+
+BOOST_AUTO_TEST_CASE(index_overflow) {
+    storage::index_state state;
+
+    // Previous versions of Redpanda can have an index with offsets spanning
+    // greater than uint32 offset space. In these cases, the index is not
+    // reliable and querying the index should just return the first entry.
+    const model::timestamp dummy_ts;
+    const storage::offset_delta_time should_offset{false};
+    storage::offset_time_index time_idx{dummy_ts, should_offset};
+    constexpr long uint32_max = std::numeric_limits<uint32_t>::max();
+    state.add_entry(0, time_idx, 1);
+    state.add_entry(100, time_idx, 2);
+    state.add_entry(static_cast<uint32_t>(uint32_max + 1), time_idx, 3);
+    state.add_entry(static_cast<uint32_t>(uint32_max + 10), time_idx, 4);
+    state.max_offset = model::offset{uint32_max + 10};
+    auto res = state.find_nearest(model::offset(100));
+    BOOST_REQUIRE(res.has_value());
+    BOOST_CHECK_EQUAL(res->offset, model::offset{0});
+    BOOST_CHECK_EQUAL(res->filepos, 1);
+}
