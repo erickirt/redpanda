@@ -12,7 +12,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 
-from rptest.services.admin import OutboundDataMigration, InboundDataMigration
+from rptest.services.admin import OutboundDataMigration, InboundDataMigration, NamespacedTopic, InboundTopic, MigrationAction
 from rptest.services.redpanda import RedpandaService
 from requests.exceptions import ConnectionError
 
@@ -229,3 +229,79 @@ class DataMigrationTestMixin:
         if all(state not in ('planned', 'finished', 'cancelled')
                for state in states):
             self.assure_not_deletable(id, redpanda=redpanda)
+
+    def migrate_between_clusters(self, topics: list[NamespacedTopic],
+                                 source: RedpandaService,
+                                 dest: RedpandaService) -> None:
+        assert source != dest
+
+        out_migration = OutboundDataMigration(topics=topics,
+                                              consumer_groups=[])
+
+        out_migration_id = self.create_and_wait(out_migration, redpanda=source)
+        source.logger.info(
+            f"created outbound migration, id {out_migration_id}")
+
+        # TODO: Outbound migrations should provide a better way of determining
+        # location hints for migrated topic instances. Currently if we don't know the
+        # originating cluster UUID, we can't determine the location hint at all.
+        # Here we assume that the topic was first created on self.redpanda.
+        # Getting the remote revision by calling an unrelated API is inefficient
+        # and awkward as well.
+        orig_cluster_uuid = self.redpanda._admin.get_cluster_uuid()
+        in_topics = []
+        for topic in topics:
+            anomalies = source._admin.get_cloud_storage_anomalies(
+                namespace="kafka", topic=topic.topic, partition=0)
+            remote_revision_id = anomalies["revision_id"]
+
+            in_topics.append(
+                InboundTopic(topic,
+                             cluster_uuid=orig_cluster_uuid,
+                             remote_revision=remote_revision_id))
+
+        in_migration = InboundDataMigration(topics=in_topics,
+                                            consumer_groups=[])
+        in_migration_id = self.create_and_wait(in_migration, redpanda=dest)
+        dest.logger.info(f"created inbound migration, id {in_migration_id}")
+
+        source._admin.execute_data_migration_action(out_migration_id,
+                                                    MigrationAction.prepare)
+        self.wait_for_migration_states(out_migration_id, ['prepared'],
+                                       redpanda=source)
+        self.logger.info(f"prepared on source")
+
+        source._admin.execute_data_migration_action(out_migration_id,
+                                                    MigrationAction.execute)
+        self.wait_for_migration_states(out_migration_id, ['executed'],
+                                       redpanda=source)
+        self.logger.info(f"executed on source")
+
+        source._admin.execute_data_migration_action(out_migration_id,
+                                                    MigrationAction.finish)
+        self.wait_for_migration_states(out_migration_id, ['finished'],
+                                       redpanda=source)
+        self.logger.info(f"finished on source")
+
+        # TODO: currently migrations need to be executed sequentially (on source
+        # then on destination). Ideally the implementation should allow for concurrent
+        # execution (i.e. we could start some preparations on destination while
+        # source migration is still being executed).
+
+        dest._admin.execute_data_migration_action(in_migration_id,
+                                                  MigrationAction.prepare)
+        self.wait_for_migration_states(in_migration_id, ['prepared'],
+                                       redpanda=dest)
+        self.logger.info(f"prepared on dest")
+
+        dest._admin.execute_data_migration_action(in_migration_id,
+                                                  MigrationAction.execute)
+        self.wait_for_migration_states(in_migration_id, ['executed'],
+                                       redpanda=dest)
+        self.logger.info(f"executed on dest")
+
+        dest._admin.execute_data_migration_action(in_migration_id,
+                                                  MigrationAction.finish)
+        self.wait_for_migration_states(in_migration_id, ['finished'],
+                                       redpanda=dest)
+        self.logger.info(f"finished on dest")
