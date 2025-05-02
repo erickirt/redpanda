@@ -16,6 +16,7 @@
 #include "kafka/protocol/sasl_handshake.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/handlers/details/security.h"
+#include "kafka/server/handlers/metadata.h"
 #include "model/ktp.h"
 #include "model/timeout_clock.h"
 #include "random/generators.h"
@@ -346,6 +347,9 @@ FIXTURE_TEST(metadata_v9_authz_acl, metadata_fixture) {
 
 FIXTURE_TEST(metadata_empty_topic_name, metadata_fixture) {
     using kafka::api_version;
+    if (kafka::metadata_handler::max_supported < api_version{12}) {
+        return;
+    }
 
     auto client = make_kafka_client().get();
     client.connect().get();
@@ -381,6 +385,9 @@ FIXTURE_TEST(metadata_empty_topic_name, metadata_fixture) {
 
 FIXTURE_TEST(metadata_non_empty_topic_id, metadata_fixture) {
     using kafka::api_version;
+    if (kafka::metadata_handler::max_supported < api_version{12}) {
+        return;
+    }
     ss::sstring test_topic_name = "metadata_non_empty_topic_id";
 
     create_topic(test_topic_name, 1, 1);
@@ -417,7 +424,7 @@ FIXTURE_TEST(metadata_non_empty_topic_id, metadata_fixture) {
 FIXTURE_TEST(metadata_cluster_auth, metadata_fixture) {
     // Cluster authorized operations are returned only from v8 to v10
     using namespace kafka;
-    using api = kafka::metadata_api;
+    constexpr auto max_supported = kafka::metadata_handler::max_supported;
 
     auto client = make_kafka_client().get();
     client.connect().get();
@@ -434,7 +441,7 @@ FIXTURE_TEST(metadata_cluster_auth, metadata_fixture) {
     const auto cluster_ops = kafka::details::to_bit_field(
       kafka::details::get_allowed_operations<security::acl_cluster_name>());
 
-    for (api_version ver{1}; ver < api::max_valid; ++ver) {
+    for (api_version ver{1}; ver < max_supported; ++ver) {
         auto resp = client.dispatch(make_request(), ver).get();
         BOOST_REQUIRE(!resp.data.errored());
         const auto expected
