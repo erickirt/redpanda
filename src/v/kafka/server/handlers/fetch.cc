@@ -54,6 +54,34 @@
 #include <exception>
 #include <ranges>
 
+namespace {
+
+std::optional<kafka::leader_id_and_epoch> get_leader_id_and_epoch(
+  const cluster::metadata_cache& md_cache, const model::ktp& ktp) {
+    auto lt = md_cache.get_leader_term(ktp.as_tn_view(), ktp.get_partition());
+    if (lt && lt->leader) {
+        return kafka::leader_id_and_epoch{
+          .leader_id = *lt->leader,
+          .leader_epoch = kafka::leader_epoch_from_term(lt->term)};
+    }
+    return std::nullopt;
+}
+
+kafka::read_result make_errored_read_result(
+  const cluster::metadata_cache& md_cache,
+  const model::ktp& ktp,
+  kafka::error_code err) {
+    if (auto l = get_leader_id_and_epoch(md_cache, ktp); l.has_value()) {
+        // remap unknown to not_leader as it's in the metadata_cache
+        if (err == kafka::error_code::unknown_topic_or_partition) {
+            err = kafka::error_code::not_leader_for_partition;
+        }
+        return {err, std::move(*l)};
+    }
+    return kafka::read_result(err);
+}
+} // namespace
+
 namespace kafka {
 static constexpr std::chrono::milliseconds default_fetch_timeout = 5s;
 /**
@@ -291,6 +319,7 @@ static void adjust_memory_units(
  */
 static ss::future<read_result> do_read_from_ntp(
   cluster::partition_manager& cluster_pm,
+  const cluster::metadata_cache& md_cache,
   const replica_selector& replica_selector,
   ntp_fetch_config ntp_config,
   bool foreign_read,
@@ -318,10 +347,12 @@ static ss::future<read_result> do_read_from_ntp(
      */
     auto kafka_partition = make_partition_proxy(ntp_config.ktp(), cluster_pm);
     if (unlikely(!kafka_partition)) {
-        co_return read_result(error_code::unknown_topic_or_partition);
+        co_return make_errored_read_result(
+          md_cache, ntp_config.ktp(), error_code::unknown_topic_or_partition);
     }
     if (!ntp_config.cfg.read_from_follower && !kafka_partition->is_leader()) {
-        co_return read_result(error_code::not_leader_for_partition);
+        co_return make_errored_read_result(
+          md_cache, ntp_config.ktp(), error_code::not_leader_for_partition);
     }
 
     /**
@@ -330,7 +361,8 @@ static ss::future<read_result> do_read_from_ntp(
     auto leader_epoch_err = details::check_leader_epoch(
       ntp_config.cfg.current_leader_epoch, *kafka_partition);
     if (leader_epoch_err != error_code::none) {
-        co_return read_result(leader_epoch_err);
+        co_return make_errored_read_result(
+          md_cache, ntp_config.ktp(), leader_epoch_err);
     }
     auto offset_ec = co_await kafka_partition->validate_fetch_offset(
       ntp_config.cfg.start_offset,
@@ -403,6 +435,7 @@ namespace testing {
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& cluster_pm,
+  const cluster::metadata_cache& md_cache,
   const replica_selector& replica_selector,
   const model::ktp& ktp,
   fetch_config config,
@@ -413,6 +446,7 @@ ss::future<read_result> read_from_ntp(
   ssx::semaphore& memory_fetch_sem) {
     return do_read_from_ntp(
       cluster_pm,
+      md_cache,
       replica_selector,
       {{ktp.get_topic(), ktp.get_partition()}, std::move(config)},
       foreign_read,
@@ -463,6 +497,9 @@ static void fill_fetch_responses(
         fetch_response::partition_response resp;
         resp.partition_index = res.partition;
         resp.error_code = res.error;
+        if (res.current_leader) {
+            resp.current_leader = *res.current_leader;
+        }
 
         // These are set to -1 in the general error case.
         // Set to actual values in the success case or when the error is
@@ -552,6 +589,7 @@ static void fill_fetch_responses(
 
 static ss::future<chunked_vector<read_result>> fetch_ntps(
   cluster::partition_manager& cluster_pm,
+  const cluster::metadata_cache& md_cache,
   const replica_selector& replica_selector,
   chunked_vector<ntp_fetch_config> ntp_fetch_configs,
   read_distribution_probe& read_probe,
@@ -580,6 +618,7 @@ static ss::future<chunked_vector<read_result>> fetch_ntps(
 
         auto&& res = co_await do_read_from_ntp(
           cluster_pm,
+          md_cache,
           replica_selector,
           ntp_cfg,
           foreign_read,
@@ -656,6 +695,7 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
             // This is meant to help avoiding unintended cross shard access
             return fetch_ntps(
               mgr,
+              octx.rctx.metadata_cache(),
               octx.rctx.server().local().get_replica_selector(),
               std::move(configs),
               octx.rctx.server().local().read_probe(),
@@ -789,20 +829,23 @@ private:
         // are produced to without acks=all. The `last_visible_index` more
         // closely corresponds to the Kafka high watermark as well.
         std::vector<model::offset> last_visible_indexes(requests.size());
-        std::vector<std::tuple<size_t, model::partition_id>> errored_partitions;
+        std::vector<std::pair<size_t, read_result>> errored_partitions;
         size_t total_size{0};
         bool has_error{false};
 
         for (size_t i = 0; i < requests.size(); i++) {
             const auto& req = requests[i];
             auto part = _ctx.mgr.get(req.ktp());
-            if (!part) {
-                errored_partitions.emplace_back(i, req.ktp().get_partition());
-                continue;
-            }
-            auto consensus = part->raft();
+            auto consensus = part ? part->raft() : nullptr;
             if (!consensus) {
-                errored_partitions.emplace_back(i, req.ktp().get_partition());
+                errored_partitions.emplace_back(
+                  i,
+                  make_errored_read_result(
+                    _ctx.srv.metadata_cache(),
+                    req.ktp(),
+                    kafka::error_code::not_leader_for_partition));
+                errored_partitions.back().second.partition
+                  = req.ktp().get_partition();
                 continue;
             }
             last_visible_indexes[i] = consensus->last_visible_index();
@@ -813,6 +856,7 @@ private:
         // `fetch_ntps`.
         auto results = co_await fetch_ntps(
           _ctx.mgr,
+          _ctx.srv.metadata_cache(),
           _ctx.srv.get_replica_selector(),
           std::move(requests),
           _ctx.srv.read_probe(),
@@ -825,9 +869,8 @@ private:
         // If we weren't able to read the last_visible_index for a partition
         // before calling `fetch_ntps_in_parallel` then we need to
         // return with an error for that partition.
-        for (auto [i, partition] : errored_partitions) {
-            results[i] = read_result(error_code::not_leader_for_partition);
-            results[i].partition = partition;
+        for (auto& [i, result] : errored_partitions) {
+            results[i] = std::move(result);
         }
 
         for (const auto& r : results) {
