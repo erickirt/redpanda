@@ -75,8 +75,7 @@ public:
         co_await _reconciler->stop();
     }
 
-    ss::future<result<chunked_circular_buffer<model::record_batch>>>
-    write_and_debounce(
+    ss::future<result<chunked_vector<extent_meta>>> write_and_debounce(
       model::ntp ntp,
       chunked_vector<model::record_batch> r,
       std::chrono::milliseconds timeout) override {

@@ -125,6 +125,7 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_topics:extent_meta",
         "//src/v/container:chunked_circular_buffer",
         "//src/v/container:fragmented_vector",
         "//src/v/model",
