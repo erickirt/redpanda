@@ -307,3 +307,34 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "translation_task_test",
+    timeout = "short",
+    srcs = [
+        "translation_task_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":test_data_writer",
+        ":test_utils",
+        "//src/v/cloud_io/tests:s3_imposter",
+        "//src/v/cloud_io/tests:scoped_remote",
+        "//src/v/datalake:catalog_schema_manager",
+        "//src/v/datalake:cloud_data_io",
+        "//src/v/datalake:local_parquet_file_writer",
+        "//src/v/datalake:location",
+        "//src/v/datalake:record_schema_resolver",
+        "//src/v/datalake:record_translator",
+        "//src/v/datalake:table_creator",
+        "//src/v/datalake:translation_task",
+        "//src/v/datalake/translation:translation_probe",
+        "//src/v/iceberg:uri",
+        "//src/v/model",
+        "//src/v/storage:record_batch_builder",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
