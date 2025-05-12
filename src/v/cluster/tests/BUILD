@@ -753,6 +753,27 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_btest(
+    name = "idempotency_tests",
+    timeout = "short",
+    srcs = ["idempotency_tests.cc"],
+    deps = [
+        ":rm_stm_test_fixture",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/raft",
+        "//src/v/ssx:future_util",
+        "//src/v/test_utils:seastar_boost",
+        "//src/v/utils:unresolved_address",
+        "@boost//:test",
+        "@fmt",
+        "@seastar",
+        "@seastar//:testing",
+    ],
+)
+
 redpanda_cc_bench(
     name = "health_report_rpbench",
     srcs = ["health_bench.cc"],
