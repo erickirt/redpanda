@@ -620,6 +620,23 @@ redpanda_cc_btest(
 )
 
 redpanda_cc_btest(
+    name = "create_partitions_test",
+    timeout = "short",
+    srcs = [
+        "create_partitions_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        ":rebalancing_tests_fixture",
+        "//src/v/cluster",
+        "//src/v/model",
+        "//src/v/test_utils:seastar_boost",
+        "@boost//:test",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_btest(
     name = "decommissioning_test",
     timeout = "short",
     srcs = [
