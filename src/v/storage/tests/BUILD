@@ -880,6 +880,28 @@ redpanda_cc_gtest(
 )
 
 redpanda_cc_btest(
+    name = "compaction_e2e_multinode_test",
+    timeout = "moderate",
+    srcs = [
+        "compaction_e2e_multinode_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/cluster/tests:cluster_test_fixture",
+        "//src/v/cluster/tests:tx_compaction_utils",
+        "//src/v/kafka/server/tests:kafka_test_utils",
+        "//src/v/model",
+        "//src/v/storage/tests:manual_mixin",
+        "//src/v/test_utils:scoped_config",
+        "//src/v/test_utils:seastar_boost",
+        "@abseil-cpp//absl/container:btree",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_btest(
     name = "compaction_fuzz_test",
     timeout = "moderate",
     srcs = [
