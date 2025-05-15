@@ -430,6 +430,12 @@
             "in": "path",
             "required": true,
             "type": "integer"
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "produces": [
