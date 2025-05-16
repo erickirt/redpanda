@@ -1245,11 +1245,16 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def _get_subjects_subject_versions_version(self,
                                                subject,
                                                version,
+                                               format=None,
                                                headers=HTTP_GET_HEADERS,
                                                **kwargs):
+        params = {}
+        if format is not None:
+            params['format'] = format
         return self._request("GET",
                              f"subjects/{subject}/versions/{version}",
                              headers=headers,
+                             params=params,
                              **kwargs)
 
     def _get_subjects_subject_versions_version_referenced_by(
@@ -3577,6 +3582,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 "schema": schema_proto_def.strip(),
                 "type": "PROTOBUF",
                 "subject": "schema_proto",
+                "version": 1,
                 "id": 1,
                 "failing_format": [ignore_extensions, serialized]
             },
@@ -3584,6 +3590,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 "schema": schema_proto_b64.strip(),
                 "type": "PROTOBUF",
                 "subject": "schema_proto",
+                "version": 1,
                 "id": 1,
                 "failing_format": [ignore_extensions, serialized]
             },
@@ -3591,6 +3598,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 "schema": schema_avro_def.strip(),
                 "type": "AVRO",
                 "subject": "schema_avro",
+                "version": 1,
                 "id": 2,
                 "failing_format": [resolved]
             },
@@ -3598,6 +3606,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 "schema": json_number_schema_def.strip(),
                 "type": "JSON",
                 "subject": "schema_json",
+                "version": 1,
                 "id": 3,
             }
         }
@@ -3686,6 +3695,30 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                               expected_output=schema_proto_def.strip())
 
         test_runner(test_subjects_subject)
+
+        def test_subjects_subject_versions_version(schema_entry,
+                                                   successful,
+                                                   format=None):
+            subject = schema_entry["subject"]
+            version = schema_entry["version"]
+            schema = schema_entry["schema"]
+            result_raw = self._get_subjects_subject_versions_version(
+                subject=subject, version=version, format=format)
+
+            if successful:
+                assert result_raw.status_code == requests.codes.ok, \
+                        f"expected {requests.codes.ok} but got {result_raw.status_code} " \
+                        f"for subject {subject}, schema {schema} and format '{format}'"
+                result = result_raw.json()['schema'].strip()
+                assert result == schema.strip(), \
+                        f"expected:\n{schema}\ngot:\n{result}\n" \
+                        f"for subject {subject}, schema {schema} and format '{format}'"
+            else:
+                assert result_raw.status_code == 501, \
+                        f"expected {501} but got {result_raw.status_code} " \
+                        f"for subject {subject}, schema {schema} and format '{format}'"
+
+        test_runner(test_subjects_subject_versions_version)
 
 
 class SchemaRegistryModeNotMutableTest(SchemaRegistryEndpoints):
