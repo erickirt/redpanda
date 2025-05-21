@@ -789,7 +789,7 @@ redpanda_cc_gtest(
     ],
 )
 
-redpanda_cc_btest(
+redpanda_cc_gtest(
     name = "compaction_reducer_test",
     timeout = "short",
     srcs = [
@@ -799,11 +799,9 @@ redpanda_cc_btest(
         "//src/v/random:generators",
         "//src/v/storage",
         "//src/v/storage:logger",
+        "//src/v/test_utils:gtest",
         "//src/v/test_utils:random_bytes",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:test",
-        "@seastar",
-        "@seastar//:testing",
+        "@googletest//:gtest",
     ],
 )
 
