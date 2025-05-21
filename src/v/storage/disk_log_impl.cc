@@ -508,7 +508,9 @@ ss::future<compaction_result> disk_log_impl::segment_self_compact(
 }
 
 ss::future<> disk_log_impl::adjacent_merge_compact(
-  compaction_config cfg, std::optional<model::offset> new_start_offset) {
+  segment_set& segments,
+  compaction_config cfg,
+  std::optional<model::offset> new_start_offset) {
     vlog(
       gclog.trace,
       "[{}] applying 'compaction' log cleanup policy with config: {}",
@@ -554,62 +556,40 @@ ss::future<> disk_log_impl::adjacent_merge_compact(
         }
     };
 
-    // loop until we compact segment or reached end of segments set
-    while (!_segs.empty()) {
-        const auto end_it = std::prev(_segs.end());
-        auto seg_it = std::find_if(
-          _segs.begin(),
-          end_it,
-          [offsets_compactible](ss::lw_shared_ptr<segment>& s) {
-              return !s->has_appender() && s->is_compacted_segment()
-                     && !s->finished_self_compaction()
-                     && offsets_compactible(*s);
-          });
-        // nothing to compact
-        if (seg_it == end_it) {
-            break;
+    for (auto& seg : segments) {
+        if (cfg.asrc) {
+            cfg.asrc->check();
         }
 
-        auto segment = *seg_it;
-        auto result = co_await segment_self_compact(cfg, segment);
+        auto is_compactible_segment = !seg->has_appender()
+                                      && seg->is_compacted_segment()
+                                      && offsets_compactible(*seg);
+        // Skip over segments that that being truncated, or are uncompactible.
+        if (is_compactible_segment) {
+            auto result = co_await segment_self_compact(cfg, seg);
 
-        if (segment->is_closed()) {
-            // We can race here with a truncation operation that removes the
-            // full segment, since we are not under a rewrite lock.
-            continue;
-        }
-
-        vlog(
-          gclog.debug,
-          "[{}] segment {} compaction result: {}",
-          config().ntp(),
-          segment->reader().filename(),
-          result);
-        if (result.did_compact()) {
-            segment->clear_cached_disk_usage();
-            _compaction_ratio.update(result.compaction_ratio());
-            const ssize_t removed_bytes = ssize_t(result.size_before)
-                                          - ssize_t(result.size_after);
-            subtract_segment_bytes(segment, removed_bytes);
-
-            auto config_adjacent_merge_count
-              = config::shard_local_cfg()
-                  .log_compaction_adjacent_merge_self_compaction_count();
-            // >= to ensure proper behavior if the config value were to be
-            // changed to be lower than the active counter.
-            if (
-              config_adjacent_merge_count.has_value()
-              && ++_adjacent_merge_counter
-                   >= config_adjacent_merge_count.value()) {
-                _adjacent_merge_counter = 0;
-                break;
-            } else {
-                co_return;
+            if (seg->is_closed()) {
+                // We can race here with a truncation operation that removes the
+                // full segment, since we are not under a rewrite lock.
+                continue;
+            }
+            vlog(
+              gclog.debug,
+              "[{}] segment {} compaction result: {}",
+              config().ntp(),
+              seg->reader().filename(),
+              result);
+            if (result.did_compact()) {
+                seg->clear_cached_disk_usage();
+                _compaction_ratio.update(result.compaction_ratio());
+                const ssize_t removed_bytes = ssize_t(result.size_before)
+                                              - ssize_t(result.size_after);
+                subtract_segment_bytes(seg, removed_bytes);
             }
         }
     }
 
-    co_await compact_adjacent_segments(cfg);
+    co_await compact_adjacent_segment_ranges(cfg, new_start_offset);
 }
 
 segment_set disk_log_impl::find_sliding_range(
@@ -876,102 +856,6 @@ ss::future<bool> disk_log_impl::sliding_window_compact(
     co_return true;
 }
 
-std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
-disk_log_impl::find_adjacent_compaction_range(const compaction_config& cfg) {
-    /*
-     * adjacent segment compaction.
-     *
-     * the strategy is to choose a pair of adjacent segments and first combine
-     * them into a single segment that replaces the pair, and then perform
-     * self-compaction on the replacement segment.
-     */
-    if (_segs.size() < 2) {
-        return std::nullopt;
-    }
-
-    // sliding window over segments. currently restricted to two segments
-    auto range = std::make_pair(_segs.begin(), std::next(_segs.begin(), 2));
-
-    // Ensure that the adjacent segments do not span an offset space greater
-    // than the maximum value that can be represented by a uint32_t. This must
-    // be enforced due to use of roaring::bitmap in the compacted_offset_list,
-    // which is used to deduplicate records during self compaction and sliding
-    // window compaction. Overflows in this area could lead to incorrect
-    // compaction.
-    auto valid_offset_range = [](
-                                ss::lw_shared_ptr<segment>& first,
-                                ss::lw_shared_ptr<segment>& last) -> bool {
-        auto base_offset_first_seg = first->offsets().get_base_offset();
-        auto dirty_offset_last_seg = last->offsets().get_dirty_offset();
-        int64_t offset_delta = dirty_offset_last_seg()
-                               - base_offset_first_seg();
-        static constexpr int64_t u32_max = static_cast<int64_t>(
-          std::numeric_limits<uint32_t>::max());
-        return offset_delta <= u32_max;
-    };
-
-    while (true) {
-        // the simple compaction process in use right now builds a concatenation
-        // of segments so we avoid processing a group that is too large.
-        const auto total_size = std::accumulate(
-          range.first,
-          range.second,
-          size_t(0),
-          [](size_t acc, ss::lw_shared_ptr<segment>& seg) {
-              return acc + seg->size_bytes();
-          });
-
-        // batches in a segment have a term that is implicitly defined by the
-        // name of the file they are contained in. since we need to retain the
-        // term information for reach batch we'll avoid combining segments with
-        // different terms. this can be addressed in a later optimization.
-        const auto same_term = std::all_of(
-          range.first,
-          range.second,
-          [term = (*range.first)->offsets().get_term()](
-            ss::lw_shared_ptr<segment>& seg) {
-              return seg->offsets().get_term() == term;
-          });
-
-        // found a good range if all the tests pass
-        if (
-          same_term
-          && total_size < _manager.config().max_compacted_segment_size()
-          && valid_offset_range(*range.first, *std::prev(range.second))) {
-            break;
-        }
-
-        // no candidate range found, yet. advance the window if we aren't
-        // already at the end of the set. one option would also be to shrink the
-        // range from the lower end if the range is large enough. advanced
-        // scheduling is future work.
-        if (range.second == _segs.end()) {
-            return std::nullopt;
-        }
-        ++range.first;
-        ++range.second;
-    }
-
-    // the chosen segments all need to be stable.
-    // Each participating segment should individually pass the compactible
-    // offset check for the compacted segment to be stable.
-    // Additionally each segment should have finished self compaction. This
-    // is needed by transactions because the compaction index of segments
-    // with transactional batches is only populated during self compaction.
-    // Not having this check would result in concatenating with an empty
-    // compaction index and a data loss.
-    const auto unstable = std::any_of(
-      range.first, range.second, [&cfg](ss::lw_shared_ptr<segment>& seg) {
-          return !seg->finished_self_compaction() || seg->has_appender()
-                 || !seg->is_compactible(cfg);
-      });
-    if (unstable) {
-        return std::nullopt;
-    }
-
-    return range;
-}
-
 std::optional<
   std::vector<std::pair<segment_set::iterator, segment_set::iterator>>>
 disk_log_impl::find_adjacent_compaction_ranges(
@@ -998,7 +882,7 @@ disk_log_impl::find_adjacent_compaction_ranges(
             return true;
         }
         return !seg->finished_self_compaction() || seg->has_appender()
-               || !seg->has_compactible_offsets(cfg);
+               || !seg->is_compactible(cfg);
     };
 
     // Ensure that the adjacent segments do not span an offset space greater
@@ -1081,36 +965,65 @@ disk_log_impl::find_adjacent_compaction_ranges(
     return ranges;
 }
 
-ss::future<std::optional<compaction_result>>
-disk_log_impl::compact_adjacent_segments(storage::compaction_config cfg) {
-    std::optional<compaction_result> r;
-    if (auto range = find_adjacent_compaction_range(cfg); range) {
-        r = co_await do_compact_adjacent_segments(std::move(*range), cfg);
-        vlog(
-          gclog.debug,
-          "Adjacent segments of {}, compaction result: {}",
-          config().ntp(),
-          r);
-        if (r->did_compact()) {
-            _compaction_ratio.update(r->compaction_ratio());
+ss::future<std::optional<std::vector<compaction_result>>>
+disk_log_impl::compact_adjacent_segment_ranges(
+  storage::compaction_config cfg,
+  std::optional<model::offset> new_start_offset) {
+    std::vector<compaction_result> rs;
+    if (auto ranges = find_adjacent_compaction_ranges(cfg, new_start_offset);
+        ranges) {
+        // lightweight copy of segments in all of the found ranges. once a
+        // scheduling event occurs in this method we can't rely on the iterators
+        // in the range remaining valid. for example, a concurrent truncate may
+        // erase an element from the range. The act of compacting adjacent
+        // segments will also invalidate iterators pointing to the original
+        // _segs vector.
+        using vec_t = std::vector<ss::lw_shared_ptr<segment>>;
+        std::vector<vec_t> seg_ranges;
+        seg_ranges.reserve(ranges->size());
+        for (auto& range : *ranges) {
+            seg_ranges.emplace_back(range.first, range.second);
+        }
+        for (auto& range : seg_ranges) {
+            if (cfg.asrc) {
+                cfg.asrc->check();
+            }
+
+            auto r = co_await do_compact_adjacent_segments(range, cfg);
+            vlog(
+              gclog.debug,
+              "Adjacent segments of {}, compaction result: {}",
+              config().ntp(),
+              r);
+            if (r.did_compact()) {
+                _compaction_ratio.update(r.compaction_ratio());
+            }
+            rs.push_back(r);
         }
     } else {
         vlog(
           gclog.debug,
-          "Adjacent segments of {}, no adjacent pair",
+          "Adjacent segments of {}, no adjacent ranges",
           config().ntp());
     }
-    co_return r;
+    co_return rs;
 }
 
 ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
-  std::pair<segment_set::iterator, segment_set::iterator> range,
+  std::vector<ss::lw_shared_ptr<segment>>& segments,
   storage::compaction_config cfg) {
-    // lightweight copy of segments in range. once a scheduling event occurs in
-    // this method we can't rely on the iterators in the range remaining valid.
-    // for example, a concurrent truncate may erase an element from the range.
-    auto segments = std::vector<ss::lw_shared_ptr<segment>>(
-      range.first, range.second);
+    // This shouldn't be the case for any ranges returned from
+    // find_adjacent_compaction_ranges(), but it is checked regardless.
+    if (segments.size() < 2) {
+        const auto total_size = std::accumulate(
+          segments.begin(),
+          segments.end(),
+          size_t(0),
+          [](size_t acc, ss::lw_shared_ptr<segment>& seg) {
+              return acc + seg->size_bytes();
+          });
+        co_return compaction_result{total_size};
+    }
 
     const bool all_segments_self_compacted = std::ranges::all_of(
       segments, &segment::finished_self_compaction);
@@ -1142,17 +1055,12 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
         co_return compaction_result{total_size};
     }
 
-    if (gclog.is_enabled(ss::log_level::debug)) {
-        std::stringstream segments_str;
-        for (size_t i = 0; i < segments.size(); i++) {
-            fmt::print(segments_str, "Segment {}: {}, ", i + 1, *segments[i]);
-        }
-        vlog(
-          gclog.debug,
-          "Compacting {} adjacent segments: [{}]",
-          segments.size(),
-          segments_str.str());
-    }
+    vlog(
+      gclog.debug,
+      "Compacting {} adjacent segments over range: [{}:{}]",
+      segments.size(),
+      segments.front()->filename(),
+      segments.back()->filename());
 
     // Important that we take this lock _before_ any segment locks.
     auto segment_modify_lock = co_await _segment_rewrite_lock.get_units();
@@ -1189,28 +1097,29 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
     // This is guaranteed to have a value.
     auto ret = *opt_ret;
 
-    auto segment_to_remove = segments.back();
-    // We are going to remove one of the segments, but its bytes have not
-    // technically been removed- just moved to the new segment, `target`.
-    // remove_segment_permanently() will remove bytes, so to make sure the
-    // book-keeping stays correct, we must first add them here to ensure a
-    // net zero change post adjacent merge.
-    add_segment_bytes(segment_to_remove, segment_to_remove->size_bytes());
-
     // remove the now redundant segments, if they haven't already been removed.
     // this could occur if racing with functions like truncate which manipulate
     // the segment set before acquiring segment locks. this also means that the
     // input iterator range may not longer be valid so we must manually search
-    // the segment set.  the current adjacent segment compaction limits
-    // compaction to two segments, and we check that assumption here and use
-    // simplified clean-up routine.
+    // the segment set.
+    for (auto seg_it = std::next(segments.begin()); seg_it != segments.end();
+         ++seg_it) {
+        auto segment_to_remove = *seg_it;
 
-    vassert(segments.size() == 2, "Cannot compact more than two segments");
-    auto it = std::find(_segs.begin(), _segs.end(), segment_to_remove);
-    if (it != _segs.end()) {
-        _segs.erase(it, std::next(it));
-        co_await remove_segment_permanently(
-          segment_to_remove, "compact_adjacent_segments");
+        auto it = std::find(_segs.begin(), _segs.end(), segment_to_remove);
+        if (it != _segs.end()) {
+            // We are going to remove one of the segments, but its bytes have
+            // not technically been removed- just moved to the new segment,
+            // `target`. remove_segment_permanently() will remove bytes, so to
+            // make sure the book-keeping stays correct, we must first add them
+            // here to ensure a net zero change post adjacent merge.
+            add_segment_bytes(
+              segment_to_remove, segment_to_remove->size_bytes());
+
+            _segs.erase(it, std::next(it));
+            co_await remove_segment_permanently(
+              segment_to_remove, "compact_adjacent_segments");
+        }
     }
 
     _probe->add_adjacent_segments_compacted(segments.size() - 1);
@@ -1431,7 +1340,7 @@ ss::future<> disk_log_impl::do_compact(
 
     if (use_adjacent_merge) {
         co_return co_await adjacent_merge_compact(
-          compact_cfg, new_start_offset);
+          _segs, compact_cfg, new_start_offset);
     }
 
     // TODO: unify error handling.
@@ -1456,7 +1365,7 @@ ss::future<> disk_log_impl::do_compact(
       "segment compaction",
       config().ntp(),
       compacted ? "" : "not ");
-    co_await compact_adjacent_segments(compact_cfg);
+    co_await compact_adjacent_segment_ranges(compact_cfg, new_start_offset);
 }
 
 ss::future<bool> disk_log_impl::chunked_sliding_window_compact(

@@ -1786,23 +1786,20 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction) {
       0ms,
       as);
 
-    // There are 4 segments, and the last is the active segments. The first two
-    // will merge, and the third will be compacted but not merged.
+    // There are 4 segments, and the last is the active segments.
 
-    log->housekeeping(c_cfg).get();
-    ASSERT_EQ(log->segment_count(), 3);
-
-    // Check if it honors max_compactible offset by resetting it to the base
+    // Check if it honors max_compactible offset by setting it to the base
     // offset of first segment. Nothing should be compacted.
     const auto first_segment_offsets = log->segments().front()->offsets();
     c_cfg.compact.max_removable_local_log_offset
       = first_segment_offsets.get_base_offset();
     log->housekeeping(c_cfg).get();
-    ASSERT_EQ(log->segment_count(), 3);
+    ASSERT_EQ(log->segment_count(), 4);
 
-    // Now compact without restricting removable offset. The segment count
-    // will be reduced again.
+    // Now compact without restricting removable offset.
     c_cfg.compact.max_removable_local_log_offset = model::offset::max();
+
+    // The first three will merge.
     log->housekeeping(c_cfg).get();
     ASSERT_EQ(log->segment_count(), 2);
 
@@ -1927,14 +1924,9 @@ TEST_F(storage_test_fixture, max_adjacent_segment_compaction) {
 
     // self compaction steps
     // the first two segments are combined 2+2=4 < 6 MB
+    // the fourth, fifth and sixth can be combined 5 + 16KB + 16KB < 6 MB
     log->housekeeping(c_cfg).get();
-    ASSERT_EQ(disk_log->segment_count(), 5);
-
-    // the new first and second are too big 4+5 > 6 MB but the second and third
-    // can be combined 5 + 15KB < 6 MB
-    // then the next 16 KB can be folded in
-    log->housekeeping(c_cfg).get();
-    ASSERT_EQ(disk_log->segment_count(), 4);
+    ASSERT_EQ(disk_log->segment_count(), 3);
 
     // that's all that can be done. the next seg is an appender
     log->housekeeping(c_cfg).get();
@@ -1985,8 +1977,8 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction_range_u32_bounds) {
 
     ss::abort_source as;
     storage::compaction_config cfg(model::offset::max(), std::nullopt, as);
-    auto range = disk_log->find_adjacent_compaction_range(cfg);
-    ASSERT_TRUE(!range.has_value());
+    auto ranges = disk_log->find_adjacent_compaction_ranges(cfg);
+    ASSERT_TRUE(!ranges.has_value());
 
     // Set the last non-active segment's dirty offset to the uint32_t
     // max- this should make the segment eligible for adjacent compaction
@@ -1994,11 +1986,13 @@ TEST_F(storage_test_fixture, adjacent_segment_compaction_range_u32_bounds) {
     // uint32_t max.
     back_offset_tracker.set_offset(
       storage::segment::offset_tracker::dirty_offset_t{u32_max});
-    range = disk_log->find_adjacent_compaction_range(cfg);
-    ASSERT_TRUE(range.has_value());
+    ranges = disk_log->find_adjacent_compaction_ranges(cfg);
+    ASSERT_TRUE(ranges.has_value());
+    ASSERT_EQ(ranges->size(), 1);
+    auto& range = ranges->front();
 
     auto range_segments = std::vector<ss::lw_shared_ptr<storage::segment>>(
-      range->first, range->second);
+      range.first, range.second);
 
     // Compare filenames for equality
     ASSERT_EQ(range_segments[0]->filename(), segs[0]->filename());
@@ -2198,7 +2192,7 @@ TEST_F(storage_test_fixture, compaction_backlog_calculation) {
     // self compaction steps
     log->housekeeping(c_cfg).get();
 
-    ASSERT_EQ(disk_log->segment_count(), 4);
+    ASSERT_EQ(disk_log->segment_count(), 2);
     auto new_backlog_size = log->compaction_backlog();
     /**
      * after all self segments are compacted they shouldn't be included into the
@@ -2207,7 +2201,7 @@ TEST_F(storage_test_fixture, compaction_backlog_calculation) {
      */
     ASSERT_LT(
       new_backlog_size,
-      backlog_size - self_seg_compaction_sz + segments[3]->size_bytes());
+      backlog_size - self_seg_compaction_sz + segments[1]->size_bytes());
 }
 
 TEST_F(storage_test_fixture, not_compacted_log_backlog) {
@@ -5315,7 +5309,8 @@ TEST_F(storage_test_fixture, dirty_and_closed_bytes_bookkeeping) {
     };
 
     auto adjacent_merge_func = [&]() {
-        disk_log->adjacent_merge_compact(cfg.compact).get();
+        disk_log->adjacent_merge_compact(disk_log->segments(), cfg.compact)
+          .get();
     };
 
     auto sliding_window_func = [&]() {
