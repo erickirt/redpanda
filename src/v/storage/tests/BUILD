@@ -328,19 +328,19 @@ redpanda_cc_gtest(
     ],
 )
 
-redpanda_cc_btest(
+redpanda_cc_gtest(
     name = "appender_chunk_manipulations_test",
     timeout = "short",
     srcs = [
-        "appender_chunk_manipulations.cc",
+        "appender_chunk_manipulations_test.cc",
     ],
     deps = [
         "//src/v/config",
         "//src/v/random:generators",
         "//src/v/storage:segment_appender",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:test",
-        "@seastar//:testing",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
     ],
 )
 
