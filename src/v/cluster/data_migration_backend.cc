@@ -275,7 +275,7 @@ ss::future<> backend::work_once() {
 
     // defer RPC retries and topic work
     // todo: configure timeout
-    auto new_deadline = now + 2s;
+    auto new_deadline = now + 500ms;
     for (const auto& node_id : rpc_responses | std::views::keys) {
         if (_node_states.contains(node_id)) {
             _nodes_to_retry.try_emplace(node_id, new_deadline);
