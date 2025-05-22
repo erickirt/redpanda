@@ -738,18 +738,17 @@ redpanda_cc_gtest(
     ],
 )
 
-redpanda_cc_btest(
-    name = "log_retention_tests",
+redpanda_cc_gtest(
+    name = "log_retention_test",
     timeout = "short",
     srcs = [
-        "log_retention_tests.cc",
+        "log_retention_test.cc",
     ],
     deps = [
         "//src/v/model",
         "//src/v/storage/tests:disk_log_builder",
-        "//src/v/test_utils:fixture",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:test",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
         "@seastar",
         "@seastar//:testing",
     ],
