@@ -945,7 +945,7 @@ redpanda_cc_btest(
     ],
 )
 
-redpanda_cc_btest(
+redpanda_cc_gtest(
     name = "compaction_fuzz_test",
     timeout = "moderate",
     srcs = [
@@ -959,11 +959,10 @@ redpanda_cc_btest(
         "//src/v/random:generators",
         "//src/v/storage",
         "//src/v/storage:record_batch_builder",
-        "//src/v/test_utils:seastar_boost",
+        "//src/v/test_utils:gtest",
         "@abseil-cpp//absl/container:btree",
-        "@boost//:test",
+        "@googletest//:gtest",
         "@seastar",
-        "@seastar//:testing",
     ],
 )
 
