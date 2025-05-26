@@ -366,6 +366,7 @@ ss::future<> controller::start(
           std::move(limiter_conf),
           std::ref(_feature_table),
           config::shard_local_cfg().controller_snapshot_max_age_sec.bind(),
+          _scheduling_group,
           std::ref(clusterlog),
           _raft0.get(),
           raft::persistent_last_applied::yes,
