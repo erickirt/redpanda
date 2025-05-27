@@ -504,10 +504,10 @@ bool client_pool::borrow_one(unsigned other) {
       other,
       _pool.size(),
       _capacity);
-    // TODO: do not use the topmost element. Find the one
+    // TODO: do not use the bottommost (oldest) element. Find the one
     // with expired connection.
-    auto c = _pool.back();
-    _pool.pop_back();
+    auto c = _pool.front();
+    _pool.pop_front();
     update_usage_stats();
     c->shutdown();
     ssx::spawn_with_gate(_bg_gate, [c] { return c->stop().finally([c] {}); });
