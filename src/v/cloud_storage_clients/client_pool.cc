@@ -347,12 +347,18 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                     client = make_client();
                 } else {
                     vlog(pool_log.debug, "can't borrow connection, waiting");
-                    co_await ssx::with_timeout_abortable(
-                      _cvar.wait(), model::no_timeout, as);
-                    vlog(
-                      pool_log.debug,
-                      "cvar triggered, pool size: {}",
-                      _pool.size());
+                    // In-between failing to borrow from local pool and failing
+                    // to borrow from a remote pool (co_await/async-operation),
+                    // local pool may have gotten a client back. There is no
+                    // need to wait in such case.
+                    if (_pool.empty()) {
+                        co_await ssx::with_timeout_abortable(
+                          _cvar.wait(), model::no_timeout, as);
+                        vlog(
+                          pool_log.debug,
+                          "cvar triggered, pool size: {}",
+                          _pool.size());
+                    }
                 }
             }
         }
