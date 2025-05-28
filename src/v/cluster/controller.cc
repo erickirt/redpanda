@@ -469,7 +469,6 @@ ss::future<> controller::start(
       std::ref(_api),
       std::ref(_members_manager),
       std::ref(_members_frontend),
-      std::ref(_feature_table),
       _raft0,
       std::ref(_as));
 
