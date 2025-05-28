@@ -120,10 +120,7 @@ controller::controller(
   , _storage(storage)
   , _local_monitor(local_monitor)
   , _tp_updates_dispatcher(
-      _partition_allocator,
-      _tp_state,
-      _partition_leaders,
-      _partition_balancer_state)
+      _partition_allocator, _tp_state, _partition_balancer_state)
   , _security_manager(_credentials, _authorizer, _roles)
   , _raft_manager(raft_manager)
   , _feature_table(feature_table)
