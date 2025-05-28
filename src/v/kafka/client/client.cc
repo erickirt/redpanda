@@ -45,7 +45,7 @@
 
 namespace kafka::client {
 
-client::client(const YAML::Node& cfg, external_mitigate mitigater)
+client::client(const YAML::Node& cfg, std::optional<external_mitigate> mitigater)
   : _config{cfg}
   , _seeds{_config.brokers()}
   , _topic_cache{}
@@ -81,7 +81,7 @@ ss::future<> client::connect() {
           },
           [this, &retries](std::exception_ptr ex) {
               ++retries;
-              return _external_mitigate(ex);
+              return external_mitigate_error(ex);
           },
           _as);
     });
@@ -155,8 +155,15 @@ ss::future<> client::apply(metadata_response res) {
     }
 }
 
+ss::future<> client::external_mitigate_error(std::exception_ptr ex) const {
+    if (_external_mitigate) {
+        return (*_external_mitigate)(ex);
+    }
+    return ss::make_exception_future(ex);
+}
+
 ss::future<> client::mitigate_error(std::exception_ptr ex) {
-    return _external_mitigate(ex).handle_exception(
+    return external_mitigate_error(ex).handle_exception(
       [this](std::exception_ptr ex) {
           _gate.check();
           try {

@@ -65,21 +65,13 @@ private:
     ssx::semaphore _lock{1, "k/client"};
 };
 
-namespace impl {
-
-constexpr auto default_external_mitigate = [](std::exception_ptr ex) {
-    return ss::make_exception_future(ex);
-};
-
-} // namespace impl
-
 class client {
 public:
     using external_mitigate
       = ss::noncopyable_function<ss::future<>(std::exception_ptr)>;
     explicit client(
       const YAML::Node& cfg,
-      external_mitigate mitigater = impl::default_external_mitigate);
+      std::optional<external_mitigate> mitigater = std::nullopt);
 
     /// \brief Connect to all brokers.
     ss::future<> connect();
@@ -208,6 +200,10 @@ private:
     /// the error
     ss::future<> mitigate_error(std::exception_ptr ex);
 
+    /// \brief Handle errors by performing the optionally-configurable external
+    /// mitigation action that may fix the cause of the error
+    ss::future<> external_mitigate_error(std::exception_ptr ex) const;
+
     /// \brief Apply metadata update
     ss::future<> apply(metadata_response res);
 
@@ -244,8 +240,7 @@ private:
     /// \brief Wait for retries.
     ss::gate _gate;
 
-    ss::noncopyable_function<ss::future<>(std::exception_ptr)>
-      _external_mitigate;
+    std::optional<external_mitigate> _external_mitigate;
     ss::abort_source _as;
 };
 
