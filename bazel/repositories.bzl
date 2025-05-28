@@ -64,10 +64,11 @@ def data_dependency():
     http_archive(
         name = "jsoncons",
         build_file = "//bazel/thirdparty:jsoncons.BUILD",
-        sha256 = "f22fb163df1a12c2f9ee5f95cad9fc37c6cfbefe0ae6f30aba7440832ef70fbe",
-        strip_prefix = "jsoncons-1.3.2",
-        type = "tar.gz",  # oops forgot to set the extension when uploading
-        url = "https://vectorized-public.s3.us-west-2.amazonaws.com/dependencies/jsoncons-1.3.2",
+        sha256 = "078ba32cd1198cbeb1903fbf4881d4960b226bdf8083d9f5a927b96f0aa8d6dd",
+        strip_prefix = "jsoncons-ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8",
+        url = "https://github.com/danielaparker/jsoncons/archive/ffd2540bc9cfb54c16ef4d29d80622605d8dfbe8.tar.gz",
+        patches = ["//bazel/thirdparty:jsoncons-pr-603.patch"],
+        patch_args = ["-p1"],
     )
 
     http_archive(
