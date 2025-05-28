@@ -33,8 +33,12 @@ class ProducerSwarm(ClientSwarmBase):
                  max_record_size: Optional[int] = None,
                  keys: Optional[int] = None,
                  unique_topics: Optional[bool] = False,
-                 messages_per_second_per_producer: Optional[int] = None):
+                 messages_per_second_per_producer: Optional[int] = None,
+                 message_period: Optional[str] = None):
         super().__init__(context, redpanda, topic, log_level, properties)
+
+        assert not (messages_per_second_per_producer and
+                    message_period), "only one of these properties can be set"
 
         self._producers = assert_int(producers)
         self._records_per_producer = assert_int(records_per_producer)
@@ -47,6 +51,7 @@ class ProducerSwarm(ClientSwarmBase):
         self._max_record_size = assert_int_or_none(max_record_size)
         self._keys = assert_int_or_none(keys)
         self._unique_topics = unique_topics
+        self._message_period = message_period
 
     def _additional_args(self) -> str:
         cmd = ""
@@ -78,6 +83,9 @@ class ProducerSwarm(ClientSwarmBase):
 
         if self._messages_per_second_per_producer is not None:
             cmd += f" --messages-per-second {self._messages_per_second_per_producer}"
+
+        if self._message_period is not None:
+            cmd += f" --message-period {self._message_period}"
 
         return cmd
 
