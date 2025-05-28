@@ -406,7 +406,6 @@ ss::future<> controller::start(
       self(),
       std::ref(_credentials),
       std::ref(_ephemeral_credentials),
-      std::ref(_feature_table),
       std::ref(_connections));
 
     co_await _tp_frontend.start(
