@@ -14,6 +14,8 @@
 # limitations under the License.
 FROM public.ecr.aws/docker/library/ubuntu:jammy-20240911.1 AS os_base
 FROM os_base AS base
+# set to any random value to rebuild all layers from the base on down
+ARG BASE_CACHE_BREAK=0
 # 1 to use the download-utils caching, 0 to disable
 ARG DL_USE_CACHE=1
 ENV TZ="UTC" \
