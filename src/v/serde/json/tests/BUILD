@@ -8,10 +8,14 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf",
+        "//src/v/random:generators",
         "//src/v/serde/json:writer",
         "//src/v/test_utils:gtest",
         "@abseil-cpp//absl/cleanup",
+        "@abseil-cpp//absl/strings",
+        "@boost//:locale",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
+        "@rapidjson",
     ],
 )
