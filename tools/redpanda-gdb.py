@@ -1696,12 +1696,24 @@ class ntp_archiver:
         return f"ntp_archiver(mutex={self.mutex}, last_upload_time={self.last_upload_time}, uploads_active={self.uploads_active}, last_marked_clean_time={self.last_marked_clean_time}, gate_count={self.gate_count}, paused={self.paused})"
 
 
+class archival_metadata_stm:
+    def __init__(self, ref):
+        self.ref = ref
+        self.lock = named_samaphore(ref['_lock']['_sem'])
+        self.last_clean_at = model_offset(ref['_last_clean_at'])
+        self.last_dirty_at = model_offset(ref['_last_dirty_at'])
+
+    def __repr__(self):
+        return f"archival_metadata_stm(lock={self.lock}, last_clean_at={self.last_clean_at}, last_dirty_at={self.last_dirty_at})"
+
 
 class redpanda_partition:
     def __init__(self, ptr):
         self.ptr = ptr
         self.archiver = ntp_archiver(
             std_unique_ptr(ptr['_archiver']).dereference())
+        self.archival_meta = archival_metadata_stm(
+            seastar_shared_ptr(ptr['_archival_meta_stm']).get())
 
 
 class redpanda_partitions(gdb.Command):
