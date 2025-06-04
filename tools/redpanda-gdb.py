@@ -1148,26 +1148,25 @@ class offset_tracker:
 
     @property
     def base_offset(self):
-        return model_offset(self.ref['base_offset'])
+        return model_offset(self.ref['_base_offset'])
 
     @property
     def dirty_offset(self):
-        return model_offset(self.ref['dirty_offset'])
+        return model_offset(self.ref['_dirty_offset'])
 
     @property
     def term(self):
-        return model_offset(self.ref['term'])
+        return model_offset(self.ref['_term'])
 
     @property
     def committed_offset(self):
-        return model_offset(self.ref['committed_offset'])
+        return model_offset(self.ref['_committed_offset'])
 
     @property
     def stable_offset(self):
-        return model_offset(self.ref['stable_offset'])
+        return model_offset(self.ref['_stable_offset'])
 
     def __str__(self):
-
         return f"[base_offset: {self.base_offset}, dirty_offset: {self.dirty_offset}, term: {self.term} committed_offset: {self.committed_offset}, stable_offset: {self.stable_offset}]"
 
 
@@ -1336,6 +1335,11 @@ class disk_log_impl:
 
 
 class log_housekeeping_meta:
+    """
+    This is based on the v24.2.x implementation. When implementing decoding for
+    newer versions it is often sufficient to use a try/catch block to
+    incrementally fall back when field names and types change.
+    """
     log_housekeeping_meta_t = gdb.lookup_type("storage::log_housekeeping_meta")
 
     def __init__(self, ref):
