@@ -1707,6 +1707,16 @@ class archival_metadata_stm:
         return f"archival_metadata_stm(lock={self.lock}, last_clean_at={self.last_clean_at}, last_dirty_at={self.last_dirty_at})"
 
 
+class rm_stm:
+    def __init__(self, ref):
+        self.ref = ref
+        self.state_lock = seastar_basic_rwlock(ref['_state_lock'])
+        self.last_known_lso = model_offset(ref['_last_known_lso'])
+
+    def __repr__(self):
+        return f"rm_stm(state_lock={self.state_lock}, last_known_lso={self.last_known_lso})"
+
+
 class redpanda_partition:
     def __init__(self, ptr):
         self.ptr = ptr
@@ -1714,6 +1724,7 @@ class redpanda_partition:
             std_unique_ptr(ptr['_archiver']).dereference())
         self.archival_meta = archival_metadata_stm(
             seastar_shared_ptr(ptr['_archival_meta_stm']).get())
+        self.rm = rm_stm(seastar_shared_ptr(ptr['_rm_stm']).get())
 
 
 class redpanda_partitions(gdb.Command):
@@ -1733,7 +1744,8 @@ class redpanda_partitions(gdb.Command):
                     ntp = v['value']['first']
                     p = redpanda_partition(
                         seastar_lw_shared_ptr(v['value']['second']).get())
-                    print("ntp: {}, partition: {}, {}".format(model_ntp(ntp), p.archiver, p.archival_meta))
+                    print("ntp: {}, partition: {}, {}, {}".format(
+                        model_ntp(ntp), p.archiver, p.archival_meta, p.rm))
                 except Exception as e:
                     ntp = v['value']['first']
                     print("Skipping ntp {}: {}".format(model_ntp(ntp), e))
