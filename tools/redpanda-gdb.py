@@ -1774,6 +1774,72 @@ class seastar_output_stream:
         return f"seastar_output_stream(fd={self.fd}, size={self.size}, begin={self.begin}, end={self.end}, trim_to_size={self.trim_to_size}, batch_flushes={self.batch_flushes}, in_batch={self.in_batch}, flush={self.flush}, flushing={self.flushing}, ex={self.ex})"
 
 
+class seastar_pollable_fd:
+    def __init__(self, ref):
+        self.ref = ref
+        self.state_ptr = ref['_s']['px']
+        self.state = self.state_ptr.dynamic_cast(gdb.lookup_type('seastar::aio_pollable_fd_state').pointer()).dereference()
+
+    def __repr__(self):
+        return f"pollable_fd(state={self.state})"
+
+class statem:
+    def __init__(self, ref):
+        self.ref = ref
+        self.state = ref['state']
+        self.write_state = ref['write_state']
+        self.write_state_work = ref['write_state_work']
+        self.read_state = ref['read_state']
+        self.read_state_work = ref['read_state_work']
+        self.hand_state = ref['hand_state']
+        self.request_state = ref['request_state']
+        self.in_init = ref['in_init']
+        self.in_handshake = ref['in_handshake']
+        self.cleanuphand = ref['cleanuphand']
+
+    def __repr__(self):
+        return f"statem(state={self.state}, write_state={self.write_state}, write_state_work={self.write_state_work}, read_state={self.read_state}, read_state_work={self.read_state_work}, hand_state={self.hand_state}, request_state={self.request_state}, in_init={self.in_init}, in_handshake={self.in_handshake}, cleanuphand={self.cleanuphand})"
+
+
+class rlayer:
+    def __init__(self, ref):
+        self.ref = ref
+        self.read_ahead = ref['read_ahead']
+        self.rstate = ref['rstate']
+        self.packet_length = ref['packet_length']
+        self.wnum = ref['wnum']
+        self.empty_record_count = ref['empty_record_count']
+        self.wpend_tot = ref['wpend_tot']
+        self.wpend_type = ref['wpend_type']
+        self.wpend_ret = ref['wpend_ret']
+
+    def __repr__(self):
+        return f"rlayer(read_ahead={self.read_ahead}, rstate={self.rstate}, packet_length={self.packet_length}, wnum={self.wnum}, empty_record_count={self.empty_record_count}, wpend_tot={self.wpend_tot}, wpend_type={self.wpend_type}, wpend_ret={self.wpend_ret})"
+
+
+class ssl_st:
+    def __init__(self, ref):
+        self.ref = ref
+        self.version = ref['version']
+        self.error = ref['error']
+        self.error_code = ref['error_code']
+        self.init_num = ref['init_num']
+        self.init_off = ref['init_off']
+        self.renegotiate = ref['renegotiate']
+        self.key_update = ref['key_update']
+        self.s3_renegotiation = ref['s3']['renegotiate']
+        self.s3_total_renegotiations = ref['s3']['total_renegotiations']
+        self.s3_num_renegotiations = ref['s3']['num_renegotiations']
+        self.s3_change_cipher_spec = ref['s3']['change_cipher_spec']
+        self.s3_warn_alert = ref['s3']['warn_alert']
+        self.s3_fatal_alert = ref['s3']['fatal_alert']
+        self.rlayer = rlayer(ref['rlayer'])
+        self.statem = statem(ref['statem'])
+
+
+    def __repr__(self):
+        return f"ssl_st(statem={self.statem}, rlayer={self.rlayer}, version={self.version}, error={self.error}, error_code={self.error_code}, init_num={self.init_num}, init_off={self.init_off}, renegotiate= {self.renegotiate}, key_update= {self.key_update}, s3_renegotiation= {self.s3_renegotiation}, s3_total_renegotiations= {self.s3_total_renegotiations}, s3_num_renegotiations= {self.s3_num_renegotiations}, s3_change_cipher_spec= {self.s3_change_cipher_spec}, s3_warn_alert= {self.s3_warn_alert}, s3_fatal_alert= {self.s3_fatal_alert}"
+
 class seastar_data_source:
     def __init__(self, ref):
         self.ref = ref
@@ -1792,6 +1858,10 @@ class seastar_data_source:
         self.out_pending = self.session['_output_pending']
         self.session_ssl = std_unique_ptr(self.session['_ssl']).get().dereference()
         self.rbio = self.session_ssl['rbio'].dereference()
+
+        self.session_sock = std_unique_ptr(self.session['_sock']).get().dynamic_cast(gdb.lookup_type('seastar::net::posix_connected_socket_impl').pointer()).dereference()
+        self.session_sock_fd = seastar_pollable_fd(self.session_sock['_fd'])
+
     def __repr__(self):
         return f"""
 seastar_data_source(ref={self.ref}, 
@@ -1802,12 +1872,13 @@ session_eof={self.session_eof},
 session_error={self.session_error}, 
 session_shutdown={self.session_shutdown}, 
 session_out_pending={self.session_out_pending},
+session_sock_fd={self.session_sock_fd},
+session_sock={self.session_sock},
 ssl = {self.session_ssl}, 
 rbio={self.rbio}, 
 session_in={self.session_in},
-out_pending={self.out_pending})"
+out_pending={self.out_pending}),
 """
-
 
 class seastar_input_stream:
     def __init__(self, ref):
