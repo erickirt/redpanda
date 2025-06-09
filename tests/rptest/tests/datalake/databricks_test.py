@@ -7,6 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import dataclasses
+from typing import Callable
+
+from confluent_kafka import avro
+from confluent_kafka.avro import AvroProducer
+from databricks.sql.types import Row
 from ducktape.mark import matrix
 
 from rptest.context.databricks import DatabricksContext as DatabricksContext
@@ -24,6 +30,12 @@ from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import cleanup_on_early_exit
+
+
+def fetch_dbx_schema(dl: DatalakeServices, table_name: str) -> list[Row]:
+    return dl.query_engine(
+        QueryEngineType.DATABRICKS_SQL).make_client().cursor().execute(
+            f"describe {table_name}").fetchall()
 
 
 class DatabricksTest(RedpandaTest):
@@ -87,6 +99,117 @@ class DatabricksTest(RedpandaTest):
             DatalakeVerifier.oneshot(
                 self.redpanda, self.topic_name,
                 dl.query_engine(QueryEngineType.DATABRICKS_SQL))
+
+    @cluster(num_nodes=1)
+    @matrix(cloud_storage_type=supported_storage_types())
+    def test_e2e_with_schema(self, cloud_storage_type):
+        # TODO: Move this in the matrix decorator. Somehow.
+        if not DatabricksContext.available(self.test_context):
+            self.logger.warning(
+                "Skipping test because Databricks context is not available")
+            cleanup_on_early_exit(self)
+            return
+
+        if get_cloud_provider() != "aws":
+            self.logger.warning(
+                f"Skipping test because it is only supported on AWS, but the current cloud provider is {get_cloud_provider()}"
+            )
+            cleanup_on_early_exit(self)
+            return
+
+        count = 100
+
+        @dataclasses.dataclass
+        class TestCase:
+            schema_str: str
+            record_generator: Callable[[], object]
+            dbx_schema: list[Row]
+
+        test_cases = {
+            "root_primitive":
+            TestCase(
+                schema_str="""{"type": "long", "name": "a_number"}""",
+                record_generator=lambda: 42,
+                dbx_schema=[
+                    Row(col_name='redpanda',
+                        data_type=
+                        'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
+                        comment=None),
+                    Row(col_name='root', data_type='bigint', comment=None),
+                    Row(col_name='# Clustering Information',
+                        data_type='',
+                        comment=''),
+                    Row(col_name='# col_name',
+                        data_type='data_type',
+                        comment='comment'),
+                    Row(col_name='redpanda.timestamp',
+                        data_type='timestamp_ntz',
+                        comment=None)
+                ]),
+            "object_with_primitives":
+            TestCase(
+                schema_str="""{
+                         "type": "record",
+                         "name": "primitives",
+                         "fields": [
+                             {"name": "id", "type": "long" },
+                             {"name": "name", "type": "string" }
+                         ]}""",
+                record_generator=lambda: {
+                    "id": 42,
+                    "name": "test_name"
+                },
+                dbx_schema=[
+                    Row(col_name='redpanda',
+                        data_type=
+                        'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
+                        comment=None),
+                    Row(col_name='id', data_type='bigint', comment=None),
+                    Row(col_name='name', data_type='string', comment=None),
+                    Row(col_name='# Clustering Information',
+                        data_type='',
+                        comment=''),
+                    Row(col_name='# col_name',
+                        data_type='data_type',
+                        comment='comment'),
+                    Row(col_name='redpanda.timestamp',
+                        data_type='timestamp_ntz',
+                        comment=None)
+                ]),
+        }
+
+        with DatalakeServices(
+                self.test_context,
+                redpanda=self.redpanda,
+                include_query_engines=[QueryEngineType.DATABRICKS_SQL],
+                catalog_type=CatalogType.DATABRICKS_UNITY) as dl:
+            for tc_name, tc in test_cases.items():
+                self.redpanda.logger.debug(
+                    f"Running avro schema test case {tc_name}")
+                test_case_topic_name = f"{tc_name}_test_case"
+                table_name = f"redpanda.{test_case_topic_name}"
+                dl.create_iceberg_enabled_topic(
+                    test_case_topic_name,
+                    iceberg_mode="value_schema_id_prefix")
+                raw_schema = avro.loads(tc.schema_str)
+                producer = AvroProducer(
+                    {
+                        'bootstrap.servers':
+                        self.redpanda.brokers(),
+                        'schema.registry.url':
+                        self.redpanda.schema_reg().split(",")[0]
+                    },
+                    default_value_schema=raw_schema)
+                for _ in range(count):
+                    producer.produce(topic=test_case_topic_name,
+                                     value=tc.record_generator())
+                producer.flush()
+                dl.wait_for_translation(test_case_topic_name, msg_count=count)
+
+                actual_schema = fetch_dbx_schema(dl, table_name)
+                assert actual_schema == tc.dbx_schema, \
+                    f"Expected DBX schema {tc.dbx_schema} but got {actual_schema}"
+
 
     # This test does not work because Iceberg tables in the managed catalog
     # w/ their databricks sql engine are read only. I.e. there is no support
