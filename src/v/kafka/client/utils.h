@@ -125,10 +125,7 @@ ss::future<shared_broker_t> find_coordinator_with_retry_and_mitigation(
              client_config.retry_base_backoff(),
              [group_id, name, &cluster_brokers]() {
                  return cluster_brokers.any()
-                   .then([group_id](shared_broker_t broker) {
-                       return broker->dispatch(
-                         find_coordinator_request(group_id));
-                   })
+                   ->dispatch(find_coordinator_request(group_id))
                    .then([group_id, name](find_coordinator_response res) {
                        if (res.data.error_code != error_code::none) {
                            return ss::make_exception_future<

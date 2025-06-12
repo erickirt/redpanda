@@ -125,9 +125,15 @@ ss::future<> client::stop() noexcept {
 ss::future<> client::update_metadata(wait_or_start::tag) {
     return ss::try_with_gate(_gate, [this]() {
         vlog(_logger.debug, "updating metadata");
-        return _brokers.any()
-          .then([this](shared_broker_t broker) {
-              return broker->dispatch(metadata_request{.list_all_topics = true})
+        auto f = ss::now();
+        if (_brokers.empty()) {
+            // If there are no brokers, connect to the seeds
+            f = connect();
+        }
+        return f
+          .then([this] {
+              return _brokers.any()
+                ->dispatch(metadata_request{.list_all_topics = true})
                 .then([this](metadata_response res) {
                     // Create new seeds from the returned set of brokers if
                     // they're not empty
@@ -141,11 +147,11 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
                     }
 
                     return apply(std::move(res));
-                })
-                .finally([this]() { vlog(_logger.trace, "updated metadata"); });
+                });
           })
           .handle_exception_type(
-            [this](const broker_error&) { return connect(); });
+            [this](const broker_error&) { return connect(); })
+          .finally([this]() { vlog(_logger.trace, "updated metadata"); });
     });
 }
 
@@ -312,11 +318,8 @@ ss::future<produce_response> client::produce_records(
 
 ss::future<metadata_response> client::fetch_metadata(metadata_request req) {
     co_return co_await gated_retry_with_mitigation(
-      [this, req{std::move(req)}]() {
-          return _brokers.any().then(
-            [req{req.copy()}](shared_broker_t broker) mutable {
-                return broker->dispatch(std::move(req));
-            });
+      [this, req = std::move(req)]() {
+          return _brokers.any()->dispatch(req.copy());
       });
 }
 
@@ -324,15 +327,13 @@ ss::future<create_topics_response>
 client::create_topic(kafka::creatable_topic req) {
     return gated_retry_with_mitigation([this, req{std::move(req)}]() {
         auto controller = _controller;
-        return _brokers.find(controller)
-          .then([req](auto broker) mutable {
-              chunked_vector<kafka::creatable_topic> cv;
-              cv.push_back(std::move(req));
-              return broker->dispatch(kafka::create_topics_request{
+        auto broker = _brokers.find(controller);
+        chunked_vector<kafka::creatable_topic> cv;
+        cv.push_back(std::move(req));
+        return broker->dispatch(kafka::create_topics_request{
                 .data = {
                   .topics = std::move(cv),
-                }});
-          })
+                }})
           .then([controller](auto res) {
               auto ec = res.data.topics[0].error_code;
               switch (ec) {
@@ -431,10 +432,7 @@ client::do_list_offsets(const list_offsets_request& unsharded_req) {
 
     auto mapper = [this](auto kv) {
         auto node_id = kv.first;
-        return _brokers.find(node_id).then(
-          [req = std::move(kv.second)](shared_broker_t broker) mutable {
-              return broker->dispatch(std::move(req));
-          });
+        return _brokers.find(node_id)->dispatch(std::move(kv.second));
     };
 
     auto reducer = [](list_offsets_response result, list_offsets_response val) {
@@ -689,8 +687,6 @@ ss::future<kafka::describe_configs_response> client::describe_topics(
 ss::future<kafka::describe_configs_response> client::do_describe_topics(
   chunked_vector<model::topic> topics,
   std::optional<chunked_vector<ss::sstring>> configuration_keys) {
-    auto broker = co_await _brokers.any();
-
     chunked_vector<describe_configs_resource> dcr;
     dcr.reserve(topics.size());
     for (const auto& topic : topics) {
@@ -702,7 +698,7 @@ ss::future<kafka::describe_configs_response> client::do_describe_topics(
         });
     }
 
-    co_return co_await broker->dispatch(
+    co_return co_await _brokers.any()->dispatch(
       describe_configs_request{.data = {.resources = std::move(dcr)}});
 }
 

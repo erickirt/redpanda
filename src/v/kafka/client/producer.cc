@@ -142,7 +142,7 @@ producer::produce(model::topic_partition tp, model::record_batch&& batch) {
 ss::future<produce_response::partition>
 producer::do_send(model::topic_partition tp, model::record_batch batch) {
     auto leader = co_await _topic_cache.leader(tp);
-    auto broker = co_await _brokers.find(leader);
+    auto broker = _brokers.find(leader);
     auto res = co_await broker->dispatch(
       make_produce_request(std::move(tp), std::move(batch), _acks));
     auto topic = std::move(res.data.responses[0]);

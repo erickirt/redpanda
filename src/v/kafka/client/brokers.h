@@ -49,10 +49,10 @@ public:
     /// \brief Retrieve any broker.
     ///
     /// The broker returned is fetched using a round-robin strategy.
-    ss::future<shared_broker_t> any();
+    shared_broker_t any();
 
     /// \brief Retrieve the broker for the given node_id.
-    ss::future<shared_broker_t> find(model::node_id id);
+    shared_broker_t find(model::node_id id);
 
     /// \brief Remove a broker.
     ss::future<> erase(model::node_id id);
@@ -61,7 +61,7 @@ public:
     ss::future<> apply(chunked_vector<metadata_response::broker>&& brokers);
 
     /// \brief Returns true if there are no connected brokers
-    ss::future<bool> empty() const;
+    bool empty() const;
 
 private:
     const configuration& _config;

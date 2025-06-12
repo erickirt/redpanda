@@ -100,9 +100,7 @@ public:
     ss::future<typename std::invoke_result_t<Func>::api_type::response_type>
     dispatch(Func func) {
         return gated_retry_with_mitigation([this, func{std::move(func)}]() {
-            return _brokers.any().then([func](shared_broker_t broker) {
-                return broker->dispatch(func());
-            });
+            return _brokers.any()->dispatch(func());
         });
     }
 
@@ -179,9 +177,7 @@ public:
 
     ss::future<> update_metadata() { return _wait_or_start_update_metadata(); }
 
-    ss::future<bool> is_connected() const {
-        return _brokers.empty().then(std::logical_not<>());
-    }
+    bool is_connected() const { return !_brokers.empty(); }
 
     configuration& config() { return _config; }
 
