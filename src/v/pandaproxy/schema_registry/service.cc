@@ -46,6 +46,8 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <variant>
+
 namespace pandaproxy::schema_registry {
 
 using server = ctx_server<service>;
@@ -54,20 +56,36 @@ const security::acl_principal principal{
 
 class wrap {
 public:
-    wrap(ss::gate& g, one_shot& os, auth auth, server::function_handler h)
+    wrap(ss::gate& g, one_shot& os, auth auth, auth::function_handler h)
       : _g{g}
       , _os{os}
-      , _auth{auth}
-      , _h{std::move(h)} {}
-
+      , _auth{std::move(auth)}
+      , _h{std::move(h)} {
+        const auto is_h_deferred
+          = std::holds_alternative<auth::deferred_function_handler>(_h);
+        vassert(
+          _auth.is_deferred() == is_h_deferred,
+          "Deferred auth endpoints must use a deferred handler");
+    }
     ss::future<server::reply_t>
     operator()(server::request_t rq, server::reply_t rp) const {
-        _auth.handle_auth(rq);
+        auto auth_result = _auth.handle_auth(rq);
 
         co_await _os();
         auto guard = _g.hold();
         try {
-            co_return co_await _h(std::move(rq), std::move(rp));
+            co_return co_await ss::visit(
+              _h,
+              [&](const auth::regular_function_handler& h) {
+                  vassert(
+                    !auth_result.has_value(),
+                    "Authorization must not be deferred for non-deferred "
+                    "endpoints");
+                  return h(std::move(rq), std::move(rp));
+              },
+              [&](const auth::deferred_function_handler& h) {
+                  return h(std::move(rq), std::move(rp), _auth, auth_result);
+              });
         } catch (const kafka::client::partition_error& ex) {
             if (
               ex.error == kafka::error_code::unknown_topic_or_partition
@@ -84,7 +102,7 @@ private:
     ss::gate& _g;
     one_shot& _os;
     auth _auth;
-    server::function_handler _h;
+    auth::function_handler _h;
 };
 
 server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
@@ -509,5 +527,9 @@ ss::future<> service::stop() {
 }
 
 configuration& service::config() { return _config; }
+
+security::authorizer& service::authorizor() {
+    return _controller->get_authorizer().local();
+}
 
 } // namespace pandaproxy::schema_registry

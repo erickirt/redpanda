@@ -9,7 +9,9 @@
 
 #include "pandaproxy/schema_registry/auth.h"
 
+#include "config/configuration.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/schema_registry/authorization.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/service.h"
 #include "pandaproxy/server.h"
@@ -134,7 +136,9 @@ void audit_authz_failure(
 }
 
 void handle_authz(
-  server::request_t& rq, auth::level lvl, request_auth_result& auth_result) {
+  const server::request_t& rq,
+  auth::level lvl,
+  request_auth_result& auth_result) {
     try {
         switch (lvl) {
         case auth::level::superuser:
@@ -156,7 +160,8 @@ void handle_authz(
 
 } // namespace
 
-void auth::handle_auth(server::request_t& rq) const {
+std::optional<request_auth_result>
+auth::handle_auth(server::request_t& rq) const {
     rq.authn_method = config::get_authn_method(
       rq.service().config().schema_registry_api.value(),
       rq.req->get_listener_idx());
@@ -183,12 +188,22 @@ void auth::handle_auth(server::request_t& rq) const {
 
         // Will throw 403 if user enabled HTTP Basic Auth but
         // did not give the authorization header.
-        handle_authz(rq, _lvl, auth_result);
+        if (config::shard_local_cfg().schema_registry_enable_authorization) {
+            if (is_deferred()) {
+                // Defer the authorization handling to the method handler
+                return auth_result;
+            } else {
+                enterprise::handle_authz(rq, *this, auth_result);
+            }
+        } else {
+            handle_authz(rq, _lvl, auth_result);
+        }
     } else {
         rq.user = credential_t{};
         audit_authn_success(rq);
         audit_authz_success(rq);
     }
+    return std::nullopt;
 }
 
 } // namespace pandaproxy::schema_registry

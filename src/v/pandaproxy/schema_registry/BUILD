@@ -147,6 +147,7 @@ redpanda_cc_library(
     srcs = [
         "api.cc",
         "auth.cc",
+        "authorization.cc",
         "handlers.cc",
         "requests/acls.cc",
         "service.cc",
@@ -155,6 +156,7 @@ redpanda_cc_library(
     hdrs = [
         "api.h",
         "auth.h",
+        "authorization.h",
         "configuration.h",
         "fwd.h",
         "handlers.h",
