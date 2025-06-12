@@ -96,6 +96,26 @@ class DatabricksTest(RedpandaTest):
                                     msg_count=count,
                                     timeout=60)
 
+            actual_schema = fetch_dbx_schema(dl, f"redpanda.{self.topic_name}")
+            expected_schema = [
+                Row(col_name='redpanda',
+                    data_type=
+                    'struct<partition:int,offset:bigint,timestamp:timestamp_ntz,headers:array<struct<key:binary,value:binary>>,key:binary>',
+                    comment=None),
+                Row(col_name='value', data_type='binary', comment=None),
+                Row(col_name='# Clustering Information',
+                    data_type='',
+                    comment=''),
+                Row(col_name='# col_name',
+                    data_type='data_type',
+                    comment='comment'),
+                Row(col_name='redpanda.timestamp',
+                    data_type='timestamp_ntz',
+                    comment=None)
+            ]
+            assert actual_schema == expected_schema, \
+                f"Expected DBX schema {expected_schema} but got {actual_schema}"
+
             DatalakeVerifier.oneshot(
                 self.redpanda, self.topic_name,
                 dl.query_engine(QueryEngineType.DATABRICKS_SQL))
