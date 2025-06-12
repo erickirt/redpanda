@@ -1885,6 +1885,7 @@ class seastar_data_source:
         self.session_ssl = std_unique_ptr(
             self.session['_ssl']).get().dereference()
         self.rbio = self.session_ssl['rbio'].dereference()
+        self.wbio = self.session_ssl['wbio'].dereference()
 
         self.session_sock = std_unique_ptr(
             self.session['_sock']).get().dynamic_cast(
@@ -1906,6 +1907,7 @@ session_sock_fd={self.session_sock_fd},
 session_sock={self.session_sock},
 ssl = {self.session_ssl}, 
 rbio={self.rbio}, 
+wbio={self.wbio}, 
 session_in={self.session_in},
 out_pending={self.out_pending}),
 """
