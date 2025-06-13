@@ -496,13 +496,16 @@ ss::future<fetch_response> maybe_throw_exception(
 ss::future<fetch_response> client::fetch_partition(
   model::topic_partition tp,
   model::offset offset,
-  int32_t max_bytes,
-  std::chrono::milliseconds timeout) {
+  std::chrono::milliseconds timeout,
+  std::optional<int32_t> max_bytes) {
     const auto min_bytes = _config.consumer_request_min_bytes();
-    auto build_request =
-      [offset, min_bytes, max_bytes, timeout](model::topic_partition& tp) {
-          return make_fetch_request(tp, offset, min_bytes, max_bytes, timeout);
-      };
+    const int32_t max_bytes_value = max_bytes.value_or(
+      _config.consumer_request_max_bytes());
+    auto build_request = [offset, min_bytes, max_bytes_value, timeout](
+                           model::topic_partition& tp) {
+        return make_fetch_request(
+          tp, offset, min_bytes, max_bytes_value, timeout);
+    };
 
     return ss::do_with(
       std::move(build_request),

@@ -123,8 +123,8 @@ public:
     ss::future<fetch_response> fetch_partition(
       model::topic_partition tp,
       model::offset offset,
-      int32_t max_bytes,
-      std::chrono::milliseconds timeout);
+      std::chrono::milliseconds timeout,
+      std::optional<int32_t> max_bytes = std::nullopt);
 
     ss::future<member_id>
     create_consumer(const group_id& g_id, member_id name = kafka::no_member);
