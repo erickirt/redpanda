@@ -139,6 +139,9 @@ struct cloud_storage_location
     operator==(const cloud_storage_location&, const cloud_storage_location&)
       = default;
 
+    friend std::ostream&
+    operator<<(std::ostream&, const cloud_storage_location&);
+
     auto serde_fields() { return std::tie(hint); }
 };
 
@@ -221,6 +224,25 @@ struct copy_target
 
     friend bool operator==(const copy_target&, const copy_target&) = default;
     friend std::ostream& operator<<(std::ostream&, const copy_target&);
+};
+
+// A struct with information needed to unambiguously find topic data in cloud
+// storage.
+struct topic_location
+  : serde::
+      envelope<topic_location, serde::version<0>, serde::compat_version<0>> {
+    // Topic name when its data was first written to cloud storage.
+    model::topic_namespace remote_topic;
+    // Location hint used to disambiguate between different topic instances.
+    // Empty for topics still using legacy (pre v24.2) cloud storage paths.
+    std::optional<cloud_storage_location> location;
+
+    auto serde_fields() { return std::tie(remote_topic, location); }
+
+    friend bool operator==(const topic_location&, const topic_location&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream&, const topic_location&);
 };
 
 /**
