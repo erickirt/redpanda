@@ -791,6 +791,18 @@ status_ready(server::request_t rq, server::reply_t rp) {
     co_return rp;
 }
 
+namespace {
+void check_feature_ready(const server::request_t& rq) {
+    constexpr auto feature = features::feature::schema_registry_authz;
+    const auto& ft = rq.service().controller()->get_feature_table().local();
+    if (!ft.is_active(feature)) {
+        throw exception(
+          error_code::internal_server_error,
+          fmt::format("Feature '{}' is not yet available", feature));
+    }
+}
+} // namespace
+
 ss::future<server::reply_t>
 get_security_acls(server::request_t rq, server::reply_t rp) {
     auto& acl_store
@@ -861,6 +873,8 @@ post_security_acls(server::request_t rq, server::reply_t rp) {
             *acl.principal, *acl.host, *acl.operation, *acl.permission});
     }
 
+    check_feature_ready(rq);
+
     auto err_vec = co_await security_frontend.create_acls(bindings, 5s);
 
     auto it = std::find_if(err_vec.begin(), err_vec.end(), [](const auto& err) {
@@ -901,6 +915,8 @@ delete_security_acls(server::request_t rq, server::reply_t rp) {
           security::acl_entry_filter{
             acl.principal, acl.host, acl.operation, acl.permission});
     }
+
+    check_feature_ready(rq);
 
     auto deleted = co_await security_frontend.delete_acls(
       std::move(filters), 5s);
