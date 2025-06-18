@@ -38,7 +38,8 @@ struct segment_closed_exception final : std::exception {
 };
 namespace testing_details {
 class offset_tracker_accessor;
-};
+class segment_accessor;
+}; // namespace testing_details
 
 class segment {
 public:
@@ -371,6 +372,7 @@ private:
     std::optional<ss::lowres_clock::time_point> _first_write;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
+    friend class testing_details::segment_accessor;
 };
 
 /**
