@@ -24,15 +24,15 @@
 namespace experimental::cloud_topics {
 
 /// Dataplane API
-class api {
+class data_plane_api {
 public:
-    api() = default;
+    data_plane_api() = default;
 
-    api(const api&) = delete;
-    api& operator=(const api&) = delete;
-    api(api&&) noexcept = delete;
-    api& operator=(api&&) noexcept = delete;
-    virtual ~api() = default;
+    data_plane_api(const data_plane_api&) = delete;
+    data_plane_api& operator=(const data_plane_api&) = delete;
+    data_plane_api(data_plane_api&&) noexcept = delete;
+    data_plane_api& operator=(data_plane_api&&) noexcept = delete;
+    virtual ~data_plane_api() = default;
 
     virtual ss::future<> start() = 0;
     virtual ss::future<> stop() = 0;

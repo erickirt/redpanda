@@ -8,7 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "cloud_topics/app_impl.h"
+#include "cloud_topics/data_plane_impl.h"
 
 #include "base/outcome.h"
 #include "cloud_storage/cache_service.h"
@@ -30,7 +30,7 @@
 namespace experimental::cloud_topics {
 
 class impl
-  : public api
+  : public data_plane_api
   , public ss::enable_shared_from_this<impl> {
 public:
     impl(
@@ -110,7 +110,7 @@ private:
     std::unique_ptr<fetch_handler> _l0_resolver;
 };
 
-ss::shared_ptr<api> make_app(
+ss::shared_ptr<data_plane_api> make_data_plane(
   ss::sharded<cluster::partition_manager>* partition_manager,
   ss::sharded<cloud_io::remote>* remote,
   ss::sharded<cloud_storage::cache>* cache,
