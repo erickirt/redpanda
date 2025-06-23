@@ -1752,7 +1752,8 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
                     f"{RedpandaServiceBase.STDOUT_STDERR_CAPTURE} not found on {node.account.hostname}. Skipping log scan."
                 )
                 continue
-            _searchable_nodes.append(node)
+            _searchable_nodes.append(
+                (self.get_version_if_not_head(node), node))
 
         lsearcher = LogSearchLocal(self._context, allow_list, self.logger,
                                    RedpandaServiceBase.STDOUT_STDERR_CAPTURE)
@@ -2494,7 +2495,7 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
                                    self.logger,
                                    self.kubectl,
                                    test_start_time=test_start_time)
-        lsearcher.search_logs(self.pods)
+        lsearcher.search_logs([(None, pod) for pod in self.pods])
 
     def copy_cloud_logs(self, test_start_time):
         """Method makes sure that agent and cloud logs is copied after the test
