@@ -15,7 +15,6 @@
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/transport.h"
-#include "model/metadata.h"
 #include "net/connection.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
@@ -67,6 +66,7 @@ public:
     model::node_id id() const { return _node_id; }
 
     ss::future<> stop() {
+        _reconnect_as.request_abort();
         _reconnect_mutex.broken();
         co_await _gate.close();
         co_await _transport->stop();
@@ -145,6 +145,7 @@ private:
     ss::gate _gate;
     prefix_logger _logger;
     auth_state _authentication_state = auth_state::none;
+    ss::abort_source _reconnect_as;
 };
 
 using shared_broker_t = ss::lw_shared_ptr<broker>;
