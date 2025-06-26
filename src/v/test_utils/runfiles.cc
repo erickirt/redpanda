@@ -10,8 +10,7 @@
 
 namespace test_utils {
 
-std::string
-get_runfile_path(std::string_view path) {
+std::string get_runfile_path(std::string_view path) {
     using bazel::tools::cpp::runfiles::Runfiles;
     std::string error;
     std::unique_ptr<Runfiles> runfiles;
