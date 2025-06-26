@@ -134,11 +134,22 @@ object_index::partition object_index::partition::copy() const {
 
 size_t object_index::file_position_before_kafka_offset(
   const model::ntp& ntp, kafka::offset target) {
-    for (auto& partition : partitions) {
+    auto min_partition_after_target = partitions.end();
+    for (auto it = partitions.begin(); it != partitions.end(); ++it) {
+        const auto& partition = *it;
         if (partition.ntp != ntp) {
             continue;
         }
-        if (target < partition.first_offset || target > partition.last_offset) {
+        if (target > partition.last_offset) {
+            continue;
+        }
+        if (target < partition.first_offset) {
+            if (
+              min_partition_after_target == partitions.end()
+              || partition.first_offset
+                   < min_partition_after_target->first_offset) {
+                min_partition_after_target = it;
+            }
             continue;
         }
         auto rev = std::views::reverse(partition.indexes);
@@ -151,7 +162,9 @@ size_t object_index::file_position_before_kafka_offset(
         }
         return index_it->file_position;
     }
-    // If there is a partition that starts before
+    if (min_partition_after_target != partitions.end()) {
+        return min_partition_after_target->file_position;
+    }
     return npos;
 }
 

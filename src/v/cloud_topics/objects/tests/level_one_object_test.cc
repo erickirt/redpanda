@@ -119,8 +119,8 @@ TEST(L1ObjectsIndex, OffsetSearch) {
       .first_offset = 3_o,
       .last_offset = 65_o,
     });
-    std::map<kafka::offset, size_t> timequery_to_file_position = {
-      {2_o, object_index::npos},
+    std::map<kafka::offset, size_t> offset_to_filepos = {
+      {2_o, 0},
       {3_o, 0},
       {4_o, 0},
       {5_o, 100},
@@ -140,7 +140,7 @@ TEST(L1ObjectsIndex, OffsetSearch) {
       {65_o, 500},
       {66_o, object_index::npos},
     };
-    for (const auto& [seek, expected] : timequery_to_file_position) {
+    for (const auto& [seek, expected] : offset_to_filepos) {
         EXPECT_EQ(
           index.file_position_before_kafka_offset(
             index.partitions.front().ntp, seek),
@@ -236,6 +236,8 @@ TEST(L1Objects, OffsetSearch) {
 
     std::unordered_map<kafka::offset, kafka::offset>
       offset_lookup_to_batch_start = {
+        {1_o, 5_o},
+        {90_o, 100_o},
         {1199_o, 110_o},
         {115_o, 110_o},
         {1200_o, 1200_o},
@@ -249,14 +251,9 @@ TEST(L1Objects, OffsetSearch) {
         ASSERT_TRUE(std::holds_alternative<model::record_batch>(result));
         ASSERT_EQ(
           std::get<model::record_batch>(result).base_offset(),
-          kafka::offset_cast(expected));
+          kafka::offset_cast(expected))
+          << "for offset " << seek << " in partition " << ntp.tp.partition;
     }
-    EXPECT_EQ(
-      object_index::npos,
-      index_one.index.file_position_before_kafka_offset(ntp, 1_o));
-    EXPECT_EQ(
-      object_index::npos,
-      index_one.index.file_position_before_kafka_offset(ntp, 90_o));
     EXPECT_EQ(
       object_index::npos,
       index_one.index.file_position_before_kafka_offset(ntp, 9999_o));
@@ -269,6 +266,7 @@ TEST(L1Objects, OffsetSearch) {
 
     // 20 and 60 are indexed.
     offset_lookup_to_batch_start = {
+      {4_o, 5_o},
       {5_o, 5_o},
       {19_o, 5_o},
       {20_o, 20_o},
@@ -289,9 +287,6 @@ TEST(L1Objects, OffsetSearch) {
           std::get<model::record_batch>(result).base_offset(),
           kafka::offset_cast(expected));
     }
-    EXPECT_EQ(
-      object_index::npos,
-      index_two.index.file_position_before_kafka_offset(ntp, 4_o));
     EXPECT_EQ(
       object_index::npos,
       index_two.index.file_position_before_kafka_offset(ntp, 80_o));
