@@ -27,10 +27,6 @@ namespace {
 
 using server = pandaproxy::ctx_server<pandaproxy::schema_registry::service>;
 
-inline net::unresolved_address from_ss_sa(const ss::socket_address& sa) {
-    return {fmt::format("{}", sa.addr()), sa.port(), sa.addr().in_family()};
-}
-
 security::audit::authentication::used_cleartext
 is_cleartext(const ss::sstring& protocol) {
     return boost::iequals(protocol, "https")
@@ -41,9 +37,9 @@ security::audit::authentication_event_options
 make_authn_event_options(const server::request_t& rq) {
     return {
       .auth_protocol = rq.user.sasl_mechanism,
-      .server_addr = from_ss_sa(rq.req->get_server_address()),
+      .server_addr = net::unresolved_address{rq.req->get_server_address()},
       .svc_name = audit_svc_name,
-      .client_addr = from_ss_sa(rq.req->get_client_address()),
+      .client_addr = net::unresolved_address{rq.req->get_client_address()},
       .is_cleartext = is_cleartext(rq.req->get_protocol_name()),
       .user = {
         .name = rq.user.name.empty() ? "{{anonymous}}" : rq.user.name,
@@ -55,9 +51,9 @@ security::audit::authentication_event_options make_authn_event_error(
   std::string_view username,
   std::string_view reason) {
     return {
-      .server_addr = from_ss_sa(rq.req->get_server_address()),
+      .server_addr = net::unresolved_address{rq.req->get_server_address()},
       .svc_name = audit_svc_name,
-      .client_addr = from_ss_sa(rq.req->get_client_address()),
+      .client_addr = net::unresolved_address{rq.req->get_client_address()},
       .is_cleartext = is_cleartext(rq.req->get_protocol_name()),
       .user
       = {.name = ss::sstring{username}, .type_id = security::audit::user::type::unknown},
