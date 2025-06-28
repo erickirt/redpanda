@@ -14,20 +14,20 @@
 #include "bytes/iostream.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "reflection/type_traits.h"
-#include "serde/rw/rw.h"
-#include "serde/rw/vector.h"
-#include "storage/record_batch_builder.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <fmt/format.h>
 
 #include <algorithm>
 #include <bit>
 #include <cstring>
+#include <ranges>
 #include <type_traits>
 #include <utility>
 
@@ -121,9 +121,8 @@ constinit const static size_t batch_header_size = compute_batch_header_size();
 
 } // namespace
 
-object_index::partition object_index::partition::copy() const {
+footer::partition footer::partition::copy() const {
     return {
-      .ntp = ntp,
       .file_position = file_position,
       .indexes = indexes.copy(),
       .first_offset = first_offset,
@@ -131,23 +130,72 @@ object_index::partition object_index::partition::copy() const {
       .max_timestamp = max_timestamp,
     };
 }
+ss::future<>
+footer::partition::serde_async_read(iobuf_parser& p, serde::header h) {
+    using serde::read_nested;
+    file_position = read_nested<size_t>(p, h._bytes_left_limit);
+    first_offset = read_nested<kafka::offset>(p, h._bytes_left_limit);
+    last_offset = read_nested<kafka::offset>(p, h._bytes_left_limit);
+    max_timestamp = read_nested<model::timestamp>(p, h._bytes_left_limit);
+    auto size = read_nested<size_t>(p, h._bytes_left_limit);
+    indexes.reserve(size);
+    for (size_t i = 0; i < size; ++i) {
+        indexes.push_back(read_nested<index_entry>(p, h._bytes_left_limit));
+        co_await ss::coroutine::maybe_yield();
+    }
+}
 
-size_t object_index::file_position_before_kafka_offset(
+ss::future<> footer::partition::serde_async_write(iobuf& buf) const {
+    using serde::write;
+    write(buf, file_position);
+    write(buf, first_offset);
+    write(buf, last_offset);
+    write(buf, max_timestamp.value());
+    write(buf, indexes.size());
+    for (const auto& entry : indexes) {
+        write(buf, entry);
+        co_await ss::coroutine::maybe_yield();
+    }
+}
+
+ss::future<> footer::serde_async_read(iobuf_parser& p, serde::header h) {
+    using serde::read_async_nested;
+    using serde::read_nested;
+    auto size = read_nested<size_t>(p, h._bytes_left_limit);
+    for (size_t i = 0; i < size; ++i) {
+        auto ntp = co_await read_async_nested<model::ntp>(
+          p, h._bytes_left_limit);
+        auto partition = co_await read_async_nested<footer::partition>(
+          p, h._bytes_left_limit);
+        partitions.emplace_hint(
+          partitions.end(), std::move(ntp), std::move(partition));
+    }
+}
+
+ss::future<> footer::serde_async_write(iobuf& buf) const {
+    using serde::write;
+    using serde::write_async;
+    write(buf, partitions.size());
+    for (const auto& [ntp, p] : partitions) {
+        co_await write_async(buf, ntp);
+        co_await write_async(buf, p.copy());
+    }
+}
+
+size_t footer::file_position_before_kafka_offset(
   const model::ntp& ntp, kafka::offset target) {
-    auto min_partition_after_target = partitions.end();
-    for (auto it = partitions.begin(); it != partitions.end(); ++it) {
-        const auto& partition = *it;
-        if (partition.ntp != ntp) {
-            continue;
-        }
+    auto [it, end] = partitions.equal_range(ntp);
+    auto min_partition_after_target = end;
+    for (; it != end; ++it) {
+        const auto& partition = it->second;
         if (target > partition.last_offset) {
             continue;
         }
         if (target < partition.first_offset) {
             if (
-              min_partition_after_target == partitions.end()
+              min_partition_after_target == end
               || partition.first_offset
-                   < min_partition_after_target->first_offset) {
+                   < min_partition_after_target->second.first_offset) {
                 min_partition_after_target = it;
             }
             continue;
@@ -162,24 +210,27 @@ size_t object_index::file_position_before_kafka_offset(
         }
         return index_it->file_position;
     }
-    if (min_partition_after_target != partitions.end()) {
-        return min_partition_after_target->file_position;
+    if (min_partition_after_target != end) {
+        return min_partition_after_target->second.file_position;
     }
     return npos;
 }
 
-size_t object_index::file_position_before_max_timestamp(
+size_t footer::file_position_before_max_timestamp(
   const model::ntp& ntp, model::timestamp target) {
+    auto [begin, end] = partitions.equal_range(ntp);
     auto filtered = std::views::filter(
-      partitions, [&ntp, &target](const auto& p) {
-          return p.ntp == ntp && target <= p.max_timestamp;
+      std::ranges::subrange{begin, end}, [&target](const auto& entry) {
+          return target <= entry.second.max_timestamp;
       });
     auto min_it = std::ranges::min_element(
-      filtered, std::less<>{}, [](const auto& p) { return p.first_offset; });
+      filtered, std::less<>{}, [](const auto& entry) {
+          return entry.second.first_offset;
+      });
     if (min_it == filtered.end()) {
         return npos;
     }
-    const auto& index = min_it->indexes;
+    const auto& index = min_it->second.indexes;
     auto it = std::ranges::lower_bound(
       index, target, std::less<>{}, [](const auto& entry) {
           return entry.max_timestamp;
@@ -188,27 +239,25 @@ size_t object_index::file_position_before_max_timestamp(
     // bounds, the best we can do is start at the last well known offset (the
     // last index entry).
     if (it == index.end()) {
-        return min_it->indexes.back().file_position;
+        return min_it->second.indexes.back().file_position;
     }
     // If at the first entry, we must start at the file beginning, because the
     // the max is inclusive of those entries.
     if (it == index.begin()) {
-        return min_it->file_position;
+        return min_it->second.file_position;
     }
     return it->file_position;
 }
 
-object_index object_index::copy() const {
-    object_index copy;
-    copy.partitions.reserve(partitions.size());
-    for (const auto& p : partitions) {
-        copy.partitions.push_back(p.copy());
+footer footer::copy() const {
+    footer copy;
+    for (const auto& [ntp, p] : partitions) {
+        copy.partitions.emplace_hint(copy.partitions.end(), ntp, p.copy());
     }
     return copy;
 }
 
-ss::future<std::variant<object_index, size_t>>
-object_index::read_footer(iobuf buf) {
+ss::future<std::variant<footer, size_t>> footer::read(iobuf buf) {
     if (buf.size_bytes() < sizeof(uint32_t)) {
         throw std::runtime_error(fmt::format(
           "expected at least {} bytes in footer, got: {}",
@@ -235,7 +284,7 @@ object_index::read_footer(iobuf buf) {
               p.bytes_left(),
               size));
         }
-        co_return co_await serde::read_async<object_index>(p);
+        co_return co_await serde::read_async<footer>(p);
     }
     co_return (footer_size + sizeof(uint32_t)) - buf.size_bytes();
 }
@@ -250,8 +299,8 @@ public:
     ss::future<> start_partition(model::ntp ntp) final {
         end_partition();
         co_await serde_write_to_stream(data_type::partition_marker, ntp);
+        _current_ntp = ntp;
         _current_partition = {
-          .ntp = std::move(ntp),
           .file_position = _offset,
           .indexes = {},
           .first_offset = {},
@@ -266,7 +315,7 @@ public:
           "expected raft_data batches, got: {}",
           batch.header().type);
         dassert(
-          _current_partition.ntp != model::ntp{},
+          _current_ntp != model::ntp{},
           "wrote a data batch without starting a partition");
         dassert(
           _current_partition.last_offset
@@ -288,11 +337,10 @@ public:
               ? _current_partition.file_position
               : _current_partition.indexes.back().file_position;
         if ((_offset - last_index_write_position) >= _opts.indexing_frequency) {
-            _current_partition.indexes.push_back(
-              object_index::partition::index_entry{
-                .file_position = _offset,
-                .kafka_offset = model::offset_cast(batch.header().base_offset),
-                .max_timestamp = _current_partition.max_timestamp});
+            _current_partition.indexes.push_back(footer::partition::index_entry{
+              .file_position = _offset,
+              .kafka_offset = model::offset_cast(batch.header().base_offset),
+              .max_timestamp = _current_partition.max_timestamp});
         }
         co_await write_batch_to_stream(std::move(batch));
     }
@@ -317,10 +365,12 @@ public:
 
 private:
     void end_partition() {
-        if (_current_partition.ntp == model::ntp{}) {
+        if (_current_ntp == model::ntp{}) {
             return;
         }
-        _index.partitions.push_back(std::exchange(_current_partition, {}));
+        _index.partitions.emplace(
+          std::exchange(_current_ntp, {}),
+          std::exchange(_current_partition, {}));
     }
 
     template<typename T>
@@ -347,8 +397,9 @@ private:
 
     size_t _offset = 0;
     ss::output_stream<char> _output;
-    object_index _index;
-    object_index::partition _current_partition;
+    footer _index;
+    model::ntp _current_ntp;
+    footer::partition _current_partition;
     options _opts;
 };
 
@@ -380,7 +431,7 @@ public:
         case data_type::partition_marker:
             co_return co_await read_next_serde<model::ntp>();
         case data_type::footer:
-            co_return co_await read_next_serde<object_index>();
+            co_return co_await read_next_serde<footer>();
         }
     }
 

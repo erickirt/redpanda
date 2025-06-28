@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "absl/container/btree_map.h"
 #include "base/seastarx.h"
 #include "base/units.h"
 #include "container/fragmented_vector.h"
@@ -47,10 +48,10 @@ namespace experimental::cloud_topics::l1 {
 //    - Followed by fixed-width batch header (all header fields in order)
 //    - Followed by batch data (variable size recorded in the header)
 //
-// 3. Footer: A data type delimiter (1 byte) + size (4 bytes) + serialized object_index
+// 3. Footer: A data type delimiter (1 byte) + size (4 bytes) + serialized footer
 //    - Delimiter: 0x02 (data_type::footer)
-//    - Size: uint32_t size of the serialized object_index data
-//    - Data: Serialized object_index with all partition metadata
+//    - Size: uint32_t size of the serialized footer data
+//    - Data: Serialized footer with all partition metadata
 //
 // 4. Footer Size: Final 4 bytes containing uint32_t size of the footer data
 //    (including the delimiter byte and size field)
@@ -68,14 +69,11 @@ namespace experimental::cloud_topics::l1 {
 
 // This file defines the metadata/indexing structure for level one objects. It's
 // written as a footer in the object in cloud storage.
-struct object_index
-  : serde::
-      checksum_envelope<object_index, serde::version<0>, serde::version<0>> {
+struct footer
+  : serde::checksum_envelope<footer, serde::version<0>, serde::version<0>> {
     // Information about each partition in the object.
     struct partition
       : serde::envelope<partition, serde::version<0>, serde::version<0>> {
-        // The NTP for this partition.
-        model::ntp ntp;
         // The offset in the file where this partition's data starts (after the
         // partition marker).
         size_t file_position = 0;
@@ -117,15 +115,8 @@ struct object_index
         // The maximum timestamp in this entire partition.
         model::timestamp max_timestamp;
 
-        auto serde_fields() {
-            return std::tie(
-              ntp,
-              file_position,
-              indexes,
-              first_offset,
-              last_offset,
-              max_timestamp);
-        }
+        ss::future<> serde_async_read(iobuf_parser&, serde::header);
+        ss::future<> serde_async_write(iobuf&) const;
         bool operator==(const partition&) const = default;
 
         partition copy() const;
@@ -134,17 +125,18 @@ struct object_index
     // All of partitions in the object, along with their metadata.
     //
     // If there are multiple partitions written to an object, then they will
-    // appear multiple times within the vector in the order they where written.
+    // appear multiple times.
     //
     // However in terms of offsets, there *must* not be overlapping ranges
     // within the same file.
-    chunked_vector<partition> partitions;
+    absl::btree_multimap<model::ntp, partition> partitions;
 
-    object_index copy() const;
+    footer copy() const;
 
-    auto serde_fields() { return std::tie(partitions); }
+    ss::future<> serde_async_read(iobuf_parser&, serde::header);
+    ss::future<> serde_async_write(iobuf&) const;
 
-    bool operator==(const object_index&) const = default;
+    bool operator==(const footer&) const = default;
 
     // The value returned when an index search doesn't have contain matching
     // data.
@@ -184,9 +176,9 @@ struct object_index
     size_t
     file_position_before_max_timestamp(const model::ntp&, model::timestamp);
 
-    // Read the object_index using the suffix of an L1 object.
+    // Read the footer using the suffix of an L1 object.
     //
-    // Returns either the object_index, or the *additional* bytes needed to be
+    // Returns either the footer, or the *additional* bytes needed to be
     // prepended to the iobuf in order to complete reading the footer.
     //
     // REQUIRES: that the iobuf is at least the last 4 bytes of the file, but
@@ -197,24 +189,24 @@ struct object_index
     //
     // ```c++
     // size_t object_size = ...;
-    // auto iobuf = read_object(
+    // auto iobuf = co_await read_object(
     //   handle,
     //   {.offset = object_size - 1_KiB, .size = 1_KiB},
     // );
-    // auto result = l1::object_index::read_footer(iobuf.share());
-    // if (std::holds_alternative<l1::object_index>(result)) {
-    //   return std::get<l1::object_index>(result);
+    // auto result = co_await l1::footer::read(iobuf.share());
+    // if (std::holds_alternative<l1::footer>(result)) {
+    //   return std::get<l1::footer>(result);
     // }
     // size_t extra = std::get<size_t>(result);
-    // auto missing = read_object(
+    // auto missing = co_await read_object(
     //   handle,
     //   {.offset = object_size - 1_KiB - extra, .size = extra},
     // );
     // missing.append(std::move(iobuf));
-    // result = l1::object_index::read_footer(std::move(missing));
-    // return std::get<l1::object_index>(result);
+    // result = co_await l1::footer::read(std::move(missing));
+    // return std::get<l1::footer>(result);
     // ```
-    static ss::future<std::variant<object_index, size_t>> read_footer(iobuf);
+    static ss::future<std::variant<footer, size_t>> read(iobuf);
 };
 
 // A builder of an l1 object, which is a collection of partitions.
@@ -268,10 +260,10 @@ public:
 
     // Information about the finished object.
     struct object_info {
-        object_index index;
+        footer index;
         // The start offset of the footer in the written object.
         //
-        // The footer can be read using `object_index::read_footer`
+        // The footer can be read using `footer::read`
         size_t footer_offset = 0;
         // The size of the final object written to the output stream in bytes.
         size_t size_bytes = 0;
@@ -319,10 +311,10 @@ public:
 
     // When reading the next entry it maybe a raft data batch OR
     // it could be a partition marker, meaning the data for that partition ended
-    // and we are about to start reading the next partition. If an object_index
+    // and we are about to start reading the next partition. If an footer
     // is returned, then we've reached the end of the file and the footer is
     // returned.
-    using result = std::variant<model::ntp, model::record_batch, object_index>;
+    using result = std::variant<model::ntp, model::record_batch, footer>;
 
     // Read the "next" item from the L1 object.
     //
@@ -340,13 +332,13 @@ public:
 
 template<>
 struct fmt::formatter<
-  experimental::cloud_topics::l1::object_index::partition::index_entry> {
+  experimental::cloud_topics::l1::footer::partition::index_entry> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
     template<typename FormatContext>
     typename FormatContext::iterator format(
-      const experimental::cloud_topics::l1::object_index::partition::
-        index_entry& entry,
+      const experimental::cloud_topics::l1::footer::partition::index_entry&
+        entry,
       FormatContext& ctx) const {
         return fmt::format_to(
           ctx.out(),
@@ -358,18 +350,17 @@ struct fmt::formatter<
 };
 
 template<>
-struct fmt::formatter<experimental::cloud_topics::l1::object_index::partition> {
+struct fmt::formatter<experimental::cloud_topics::l1::footer::partition> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
     template<typename FormatContext>
     typename FormatContext::iterator format(
-      const experimental::cloud_topics::l1::object_index::partition& partition,
+      const experimental::cloud_topics::l1::footer::partition& partition,
       FormatContext& ctx) const {
         return fmt::format_to(
           ctx.out(),
-          "{{ntp: {}, file_position: {}, first_offset: {}, last_offset: {}, "
+          "{{file_position: {}, first_offset: {}, last_offset: {}, "
           "max_timestamp: {}, indexes: [{}]}}",
-          partition.ntp,
           partition.file_position,
           partition.first_offset,
           partition.last_offset,
@@ -379,14 +370,18 @@ struct fmt::formatter<experimental::cloud_topics::l1::object_index::partition> {
 };
 
 template<>
-struct fmt::formatter<experimental::cloud_topics::l1::object_index> {
+struct fmt::formatter<experimental::cloud_topics::l1::footer> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
     template<typename FormatContext>
     typename FormatContext::iterator format(
-      const experimental::cloud_topics::l1::object_index& index,
+      const experimental::cloud_topics::l1::footer& index,
       FormatContext& ctx) const {
-        return fmt::format_to(
-          ctx.out(), "{{partitions: [{}]}}", fmt::join(index.partitions, ", "));
+        auto out = fmt::format_to(ctx.out(), "{{partitions: [");
+        for (const auto& [ntp, partition] : index.partitions) {
+            out = fmt::format_to(
+              out, "{{ntp: {}, partition: {}}}, ", ntp, partition);
+        }
+        return fmt::format_to(out, "]}}");
     }
 };

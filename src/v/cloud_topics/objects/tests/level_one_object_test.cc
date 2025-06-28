@@ -78,7 +78,7 @@ std::unique_ptr<object_reader> make_reader(iobuf& buf) {
 }
 
 object_reader::result read_one_at(iobuf& buf, size_t offset) {
-    if (offset == object_index::npos) {
+    if (offset == footer::npos) {
         ss::throw_with_backtrace<std::runtime_error>(
           "Cannot read at npos offset, this is an invalid offset.");
     }
@@ -105,54 +105,41 @@ model::timestamp operator""_t(unsigned long long t) {
 } // namespace
 
 TEST(L1ObjectsIndex, OffsetSearch) {
-    object_index index;
-    index.partitions.push_back({
-      .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(0)},
-      .file_position = 0,
-      .indexes = {
-        {.file_position = 100, .kafka_offset = 5_o},
-        {.file_position = 200, .kafka_offset = 20_o},
-        {.file_position = 300, .kafka_offset = 30_o},
-        {.file_position = 400, .kafka_offset = 50_o},
-        {.file_position = 500, .kafka_offset = 60_o},
-      },
-      .first_offset = 3_o,
-      .last_offset = 65_o,
-    });
+    footer index;
+    index.partitions.emplace(
+      model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+      footer::partition{
+        .file_position = 0,
+        .indexes = {
+          {.file_position = 100, .kafka_offset = 5_o},
+          {.file_position = 200, .kafka_offset = 20_o},
+          {.file_position = 300, .kafka_offset = 30_o},
+          {.file_position = 400, .kafka_offset = 50_o},
+          {.file_position = 500, .kafka_offset = 60_o},
+        },
+        .first_offset = 3_o,
+        .last_offset = 65_o,
+      });
     std::map<kafka::offset, size_t> offset_to_filepos = {
-      {2_o, 0},
-      {3_o, 0},
-      {4_o, 0},
-      {5_o, 100},
-      {6_o, 100},
-      {19_o, 100},
-      {20_o, 200},
-      {21_o, 200},
-      {29_o, 200},
-      {30_o, 300},
-      {31_o, 300},
-      {49_o, 300},
-      {50_o, 400},
-      {51_o, 400},
-      {59_o, 400},
-      {60_o, 500},
-      {61_o, 500},
-      {65_o, 500},
-      {66_o, object_index::npos},
+      {2_o, 0},    {3_o, 0},    {4_o, 0},    {5_o, 100},           {6_o, 100},
+      {19_o, 100}, {20_o, 200}, {21_o, 200}, {29_o, 200},          {30_o, 300},
+      {31_o, 300}, {49_o, 300}, {50_o, 400}, {51_o, 400},          {59_o, 400},
+      {60_o, 500}, {61_o, 500}, {65_o, 500}, {66_o, footer::npos},
     };
     for (const auto& [seek, expected] : offset_to_filepos) {
         EXPECT_EQ(
           index.file_position_before_kafka_offset(
-            index.partitions.front().ntp, seek),
+            index.partitions.begin()->first, seek),
           expected)
           << " for offset " << seek;
     }
 }
 
 TEST(L1ObjectsIndex, TimestampSearch) {
-    object_index index;
-    index.partitions.push_back({
-      .ntp = model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+    footer index;
+    index.partitions.emplace(
+       model::ntp{"test_ns", "test_topic", model::partition_id(0)},
+    footer::partition{
       .file_position = 0,
       .indexes = {
         {.file_position = 100, .kafka_offset = 5_o, .max_timestamp = 1000_t},
@@ -180,12 +167,12 @@ TEST(L1ObjectsIndex, TimestampSearch) {
       {2501_t, 500},
       {2999_t, 500},
       {3000_t, 500},
-      {3001_t, object_index::npos},
+      {3001_t, footer::npos},
     };
     for (const auto& [seek, expected] : timequery_to_file_position) {
         EXPECT_EQ(
           index.file_position_before_max_timestamp(
-            index.partitions.front().ntp, seek),
+            index.partitions.begin()->first, seek),
           expected)
           << " for timestamp " << seek;
     }
@@ -245,9 +232,11 @@ TEST(L1Objects, OffsetSearch) {
       };
 
     for (const auto& [seek, expected] : offset_lookup_to_batch_start) {
-        auto result = read_one_at(
-          object_one,
-          index_one.index.file_position_before_kafka_offset(ntp, seek));
+        size_t pos = index_one.index.file_position_before_kafka_offset(
+          ntp, seek);
+        ASSERT_NE(pos, footer::npos) << "No position found for " << seek
+                                     << " in partition " << ntp.tp.partition;
+        auto result = read_one_at(object_one, pos);
         ASSERT_TRUE(std::holds_alternative<model::record_batch>(result));
         ASSERT_EQ(
           std::get<model::record_batch>(result).base_offset(),
@@ -255,7 +244,7 @@ TEST(L1Objects, OffsetSearch) {
           << "for offset " << seek << " in partition " << ntp.tp.partition;
     }
     EXPECT_EQ(
-      object_index::npos,
+      footer::npos,
       index_one.index.file_position_before_kafka_offset(ntp, 9999_o));
 
     // Index only the middle batches in partition 1
@@ -288,7 +277,7 @@ TEST(L1Objects, OffsetSearch) {
           kafka::offset_cast(expected));
     }
     EXPECT_EQ(
-      object_index::npos,
+      footer::npos,
       index_two.index.file_position_before_kafka_offset(ntp, 80_o));
 }
 
@@ -345,9 +334,8 @@ TEST(L1Objects, TimestampSearch) {
     for (const auto& [seek, expected] : timequery_to_batch_start) {
         auto pos = index_one.index.file_position_before_max_timestamp(
           ntp, seek);
-        ASSERT_NE(pos, object_index::npos)
-          << "No position found for " << seek << " in partition "
-          << ntp.tp.partition;
+        ASSERT_NE(pos, footer::npos) << "No position found for " << seek
+                                     << " in partition " << ntp.tp.partition;
         auto result = read_one_at(object_one, pos);
         ASSERT_TRUE(std::holds_alternative<model::record_batch>(result));
         ASSERT_EQ(
@@ -356,7 +344,7 @@ TEST(L1Objects, TimestampSearch) {
           << " for timestamp " << seek << " in partition " << ntp.tp.partition;
     }
     EXPECT_EQ(
-      object_index::npos,
+      footer::npos,
       index_one.index.file_position_before_max_timestamp(ntp, 2501_t));
 
     ntp.tp.partition = model::partition_id(1);
@@ -366,9 +354,8 @@ TEST(L1Objects, TimestampSearch) {
     for (const auto& [seek, expected] : timequery_to_batch_start) {
         auto pos = index_one.index.file_position_before_max_timestamp(
           ntp, seek);
-        ASSERT_NE(pos, object_index::npos)
-          << "No position found for " << seek << " in partition "
-          << ntp.tp.partition;
+        ASSERT_NE(pos, footer::npos) << "No position found for " << seek
+                                     << " in partition " << ntp.tp.partition;
         auto result = read_one_at(object_one, pos);
         ASSERT_TRUE(std::holds_alternative<model::record_batch>(result));
         ASSERT_EQ(
@@ -377,7 +364,7 @@ TEST(L1Objects, TimestampSearch) {
           << " for timestamp " << seek << " in partition " << ntp.tp.partition;
     }
     EXPECT_EQ(
-      object_index::npos,
+      footer::npos,
       index_one.index.file_position_before_max_timestamp(ntp, 5001_t));
 }
 
@@ -386,7 +373,7 @@ namespace {
 testing::AssertionResult expect_read_results(
   std::unique_ptr<object_reader> reader,
   const std::vector<batches_by_ntp>& expected,
-  const object_index& index) {
+  const footer& index) {
     auto _ = ss::defer([&reader] { reader->close().get(); });
     for (const auto& [ntp, specs] : expected) {
         auto partition = reader->read_next().get();
@@ -426,17 +413,16 @@ testing::AssertionResult expect_read_results(
         }
     }
     auto result = reader->read_next().get();
-    if (!std::holds_alternative<object_index>(result)) {
+    if (!std::holds_alternative<footer>(result)) {
         return testing::AssertionFailure()
                << "Expected object index at the end, but got "
                << result.index();
     }
 
-    if (std::get<object_index>(result) != index) {
+    if (std::get<footer>(result) != index) {
         return testing::AssertionFailure()
                << "Expected matching object index: " << fmt::format("{}", index)
-               << ", got: "
-               << fmt::format("{}", std::get<object_index>(result));
+               << ", got: " << fmt::format("{}", std::get<footer>(result));
     }
     return testing::AssertionSuccess();
 }
@@ -488,25 +474,24 @@ TEST(L1Objects, FullScan) {
     };
     auto [info, object] = make_object(specs_by_ntp);
     EXPECT_EQ(info.size_bytes, object.size_bytes());
-    std::variant<object_index, size_t> read_footer_result;
+    std::variant<footer, size_t> read_footer_result;
     ASSERT_NO_THROW(
-      read_footer_result = object_index::read_footer(
+      read_footer_result = footer::read(
                              object.share(
                                info.footer_offset,
                                object.size_bytes() - info.footer_offset))
                              .get());
-    ASSERT_TRUE(std::holds_alternative<object_index>(read_footer_result));
-    EXPECT_EQ(info.index, std::get<object_index>(read_footer_result));
+    ASSERT_TRUE(std::holds_alternative<footer>(read_footer_result));
+    EXPECT_EQ(info.index, std::get<footer>(read_footer_result));
     for (size_t missing_len : std::to_array<size_t>(
            {1,
             10,
             object.size_bytes() - info.footer_offset - sizeof(uint32_t)})) {
         size_t offset = info.footer_offset + missing_len;
         ASSERT_NO_THROW(
-          read_footer_result = object_index::read_footer(
-                                 object.share(
-                                   offset, object.size_bytes() - offset))
-                                 .get());
+          read_footer_result
+          = footer::read(object.share(offset, object.size_bytes() - offset))
+              .get());
         EXPECT_THAT(
           read_footer_result, testing::VariantWith<size_t>(missing_len));
     }
