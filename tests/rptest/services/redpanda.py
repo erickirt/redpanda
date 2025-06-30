@@ -361,13 +361,13 @@ def get_cloud_storage_type_and_url_style(
 ) -> List[CloudStorageTypeAndUrlStyle]:
     """
     Returns a list of compatible cloud storage types and url styles.
-    I.e, Returns [(CloudStorageType.S3, 'virtual_host'),
-                  (CloudStorageType.S3, 'path'),
-                  (CloudStorageType.ABS, 'virtual_host')]
+    I.e, Returns [[CloudStorageType.S3, 'virtual_host'],
+                  [CloudStorageType.S3, 'path'],
+                  [CloudStorageType.ABS, 'virtual_host']]
     """
     return [
         tus for tus_list in map(
-            lambda t: [(t, us) for us in get_cloud_storage_url_style(t)],
+            lambda t: [[t, us] for us in get_cloud_storage_url_style(t)],
             get_cloud_storage_type()) for tus in tus_list
     ]
 
