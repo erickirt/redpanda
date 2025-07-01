@@ -9,7 +9,6 @@
 
 #pragma once
 
-#include "cloud_topics/dl_overlay.h"
 #include "cloud_topics/dl_version.h"
 #include "container/fragmented_vector.h"
 #include "serde/envelope.h"
