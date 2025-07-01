@@ -406,6 +406,7 @@ redpanda_cc_gtest(
         "//src/v/kafka/client:utils",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:offset_commit",
+        "//src/v/kafka/protocol:produce",
         "//src/v/model",
         "//src/v/redpanda/tests:fixture",
         "//src/v/test_utils:gtest",
