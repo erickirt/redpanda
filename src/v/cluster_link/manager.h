@@ -24,7 +24,7 @@ namespace cluster_link {
 using ntp_leader = ss::bool_class<struct is_ntp_leader_tag>;
 
 /**
- * @brief Abstract class that provides accessors to panda link table
+ * @brief Abstract class that provides accessors to cluster link table
  *
  */
 class link_registry {
@@ -62,10 +62,10 @@ public:
 };
 
 /**
- * @brief Class used to manage panda links
+ * @brief Class used to manage cluster links
  *
  * This class will be notified of changes in Redpanda to create, modify, or
- * remove panda links and to handle leadership changes of partitions.
+ * remove cluster links and to handle leadership changes of partitions.
  */
 class manager {
 public:
@@ -82,7 +82,7 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    /// Used to notify that a panda link has been updated
+    /// Used to notify that a cluster link has been updated
     void on_link_change(model::id_t id);
     /// Used to notify manager in a change of NTP leadership
     void on_leadership_change(::model::ntp ntp, ntp_leader is_ntp_leader);

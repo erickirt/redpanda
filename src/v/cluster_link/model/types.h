@@ -23,11 +23,11 @@
 #include <seastar/util/bool_class.hh>
 
 namespace cluster_link::model {
-/// ID of the panda link - used internally based off of controller offset
+/// ID of the cluster link - used internally based off of controller offset
 using id_t = named_type<int64_t, struct id_tag>;
-/// UUID of the panda link - used externally
+/// UUID of the cluster link - used externally
 using uuid_t = named_type<uuid_t, struct uuid_tag>;
-/// Name of the panda link
+/// Name of the cluster link
 using name_t = named_type<ss::sstring, struct name_tag>;
 
 enum class mirror_topic_state : uint8_t {
@@ -142,9 +142,9 @@ struct link_state
     link_state& operator=(const link_state&) = delete;
     ~link_state() noexcept = default;
 
-    /// Type to indicate if the panda link is paused
+    /// Type to indicate if the cluster link is paused
     using paused_t = ss::bool_class<struct paused_tag>;
-    /// Flag indicating if the panda link has been paused
+    /// Flag indicating if the cluster link has been paused
     paused_t paused{paused_t::no};
     using mirror_topics_t
       = chunked_hash_map<::model::topic, mirror_topic_metadata>;
@@ -161,11 +161,11 @@ struct link_state
 };
 struct metadata
   : serde::envelope<metadata, serde::version<0>, serde::compat_version<0>> {
-    /// Name of the panda link
+    /// Name of the cluster link
     name_t name;
-    /// Unique identifier for the panda link
+    /// Unique identifier for the cluster link
     uuid_t uuid;
-    /// Connection settings for the panda link
+    /// Connection settings for the cluster link
     connection_config connection;
     /// The state of the link
     link_state state;

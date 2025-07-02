@@ -25,7 +25,7 @@
 
 namespace cluster_link {
 /**
- * @brief API access for panda link service
+ * @brief API access for cluster link service
  */
 class service {
 public:

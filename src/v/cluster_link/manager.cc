@@ -25,12 +25,12 @@ manager::manager(
   , _link_factory(std::move(link_factory))
   , _queue(
       [](const std::exception_ptr& ex) {
-          vlog(cllog.warn, "unexpected panda link manager error: {}", ex);
+          vlog(cllog.warn, "unexpected cluster link manager error: {}", ex);
       },
       ssx::work_queue::is_paused_t::yes) {}
 
 ss::future<> manager::start() {
-    vlog(cllog.info, "Starting panda link manager");
+    vlog(cllog.info, "Starting cluster link manager");
     auto ids = _registry->get_all_link_ids();
     for (auto id : ids) {
         co_await handle_on_link_change(id);
@@ -39,7 +39,8 @@ ss::future<> manager::start() {
 }
 
 ss::future<> manager::stop() {
-    vlog(cllog.info, "Stopping panda link manager");
+    vlog(cllog.info, "Stopping cluster link manager");
+
     co_await _queue.shutdown();
     for (auto& [_, link] : _links) {
         co_await link->stop();
@@ -47,7 +48,7 @@ ss::future<> manager::stop() {
 }
 
 void manager::on_link_change(model::id_t id) {
-    vlog(cllog.trace, "Panda link with id={} has changed", id);
+    vlog(cllog.trace, "Cluster link with id={} has changed", id);
     _queue.submit([this, id] { return handle_on_link_change(id); });
 }
 
@@ -58,15 +59,15 @@ void manager::on_leadership_change(::model::ntp ntp, ntp_leader is_ntp_leader) {
 ss::future<> manager::handle_on_link_change(model::id_t id) {
     static constexpr auto retry_delay = 10s;
 
-    vlog(cllog.trace, "Handling panda link change for id={}", id);
+    vlog(cllog.trace, "Handling cluster link change for id={}", id);
     auto link_opt = _registry->find_link_by_id(id);
     if (!link_opt) {
-        vlog(cllog.debug, "Detected panda link id={} has been removed", id);
+        vlog(cllog.debug, "Detected cluster link id={} has been removed", id);
         auto it = _links.find(id);
         if (it != _links.end()) {
             // Stop and remove the link
             try {
-                vlog(cllog.debug, "Stopping panda link with id={}", id);
+                vlog(cllog.debug, "Stopping cluster link with id={}", id);
                 co_await it->second->stop();
                 _links.erase(it);
             } catch (const std::exception& e) {
@@ -93,7 +94,7 @@ ss::future<> manager::handle_on_link_change(model::id_t id) {
         // Link already exists, update its configur
         vlog(
           cllog.debug,
-          "Updating panda link id={} with new config: {}",
+          "Updating cluster link id={} with new config: {}",
           id,
           link_metadata);
         it->second->update_config(link_metadata.copy());

@@ -67,7 +67,7 @@ service::service(
 service::~service() = default;
 
 ss::future<> service::start() {
-    vlog(cllog.info, "Starting panda link service");
+    vlog(cllog.info, "Starting cluster link service");
     _manager = std::make_unique<manager>(
       _self,
       std::make_unique<link_registry_adapter>(&_plf->local()),
@@ -81,7 +81,7 @@ ss::future<> service::start() {
 }
 
 ss::future<> service::stop() {
-    vlog(cllog.info, "Stopping panda link service");
+    vlog(cllog.info, "Stopping cluster link service");
     unregister_notifications();
     co_await _manager->stop();
 }

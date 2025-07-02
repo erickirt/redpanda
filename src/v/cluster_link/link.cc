@@ -19,19 +19,21 @@ link::link(model::metadata config)
   : _config(std::move(config)) {}
 
 ss::future<> link::start() {
-    vlog(cllog.info, "Starting panda link {} ({})", _config.name, _config.uuid);
+    vlog(
+      cllog.info, "Starting cluster link {} ({})", _config.name, _config.uuid);
     return ss::now();
 }
 
 ss::future<> link::stop() {
-    vlog(cllog.info, "Stopping panda link {} ({})", _config.name, _config.uuid);
+    vlog(
+      cllog.info, "Stopping cluster link {} ({})", _config.name, _config.uuid);
     return ss::now();
 }
 
 void link::update_config(model::metadata config) {
     vlog(
       cllog.debug,
-      "Updating panda link {} ({}): {}",
+      "Updating cluster link {} ({}): {}",
       _config.name,
       _config.uuid,
       config);
