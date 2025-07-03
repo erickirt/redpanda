@@ -39,6 +39,7 @@
 #include "model/record.h"
 #include "raft/errc.h"
 #include "raft/fundamental.h"
+#include "ssx/async_algorithm.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
@@ -50,6 +51,7 @@
 #include <fmt/ranges.h>
 
 #include <chrono>
+#include <ranges>
 #include <system_error>
 
 using cluster::cloud_metadata::group_offsets;
@@ -1800,6 +1802,35 @@ group_manager::describe_partition_producers(const model::ntp& ntp) {
         }
     }
     return response;
+}
+
+ss::future<std::error_code> group_manager::empty_and_delete_groups(
+  const model::ntp& ntp, const chunked_vector<group_id>& groups) {
+    co_await ssx::async_for_each(groups, [this, &ntp](const group_id& group) {
+        auto g = get_group(group);
+        if (!g) {
+            vlog(cg_klog.warn, "Group {} not found on ntp {}", group, ntp);
+            return;
+        }
+        g->remove_full_members();
+    });
+
+    std::vector<std::pair<model::ntp, group_id>> groups_with_ntps{
+      std::from_range,
+      groups | std::views::transform([&ntp](const group_id& group_id) {
+          return std::make_pair(ntp, group_id);
+      })};
+    auto delete_results = co_await delete_groups(std::move(groups_with_ntps));
+    auto codes = std::views::transform(
+      delete_results, &deletable_group_result::error_code);
+    auto first_bad_code = std::ranges::find_if(codes, [](const auto& ec) {
+        return ec != kafka::error_code::none
+               && ec != kafka::error_code::group_id_not_found;
+    });
+    if (first_bad_code == codes.end()) {
+        co_return std::error_code{};
+    }
+    co_return std::error_code{*first_bad_code};
 }
 
 ss::future<std::vector<deletable_group_result>> group_manager::delete_groups(
