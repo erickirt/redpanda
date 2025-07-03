@@ -713,20 +713,20 @@ ss::future<result<model::offset>> group_manager::set_blocked_for_groups(
 
     const auto affected_gids
       = group_ids
-        | std::views::filter([this, to_block](const kafka::group_id& group_id) {
-              return to_block != _blocked_groups.contains(group_id);
+        | std::views::filter([&p, to_block](const kafka::group_id& group_id) {
+              return to_block != p->blocked_groups.contains(group_id);
           })
         | std::ranges::to<chunked_vector<kafka::group_id>>();
 
     // in case we return early with an exception or another error
-    auto revert_blocking = ss::defer([this, &affected_gids, to_block] {
+    auto revert_blocking = ss::defer([p, &affected_gids, to_block] {
         if (to_block) {
-            _blocked_groups.erase(affected_gids.begin(), affected_gids.end());
+            p->blocked_groups.erase(affected_gids.begin(), affected_gids.end());
         }
     });
     if (to_block) {
         // block early to avoid racing with new transactions
-        _blocked_groups.insert(affected_gids.begin(), affected_gids.end());
+        p->blocked_groups.insert(affected_gids.begin(), affected_gids.end());
 
         auto last_error = cluster::tx::errc::none;
         co_await ss::max_concurrent_for_each(
@@ -766,7 +766,7 @@ ss::future<result<model::offset>> group_manager::set_blocked_for_groups(
 
     // unblock only when replicated
     if (!to_block) {
-        _blocked_groups.erase(affected_gids.cbegin(), affected_gids.cend());
+        p->blocked_groups.erase(affected_gids.cbegin(), affected_gids.cend());
     }
 
     revert_blocking.cancel();
@@ -1067,7 +1067,7 @@ ss::future<> group_manager::recover_partition(
           return do_recover_group(
             term, p, std::move(pair.first), std::move(pair.second));
       });
-    _blocked_groups = std::move(ctx.blocked_groups);
+    p->blocked_groups = std::move(ctx.blocked_groups);
 }
 
 ss::future<> group_manager::do_recover_group(
@@ -1873,11 +1873,6 @@ error_code group_manager::validate_group_status(
   const group_id& group,
   api_key api,
   bool allow_blocked) const {
-    if (unlikely(!allow_blocked && _blocked_groups.contains(group))) {
-        vlog(cg_klog.debug, "Group {} is blocked for operation {}", group, api);
-        return error_code::invalid_group_id;
-    }
-
     if (!valid_group_id(group, api)) {
         vlog(
           cg_klog.debug,
@@ -1888,7 +1883,12 @@ error_code group_manager::validate_group_status(
     }
 
     if (const auto it = _partitions.find(ntp); it != _partitions.end()) {
-        if (!it->second->partition->is_leader()) {
+        auto& p = it->second;
+        if (unlikely(!allow_blocked && p->blocked_groups.contains(group))) {
+            return error_code::invalid_group_id;
+        }
+
+        if (!p->partition->is_leader()) {
             vlog(
               cg_klog.debug,
               "Group {} operation {} sent to non-leader coordinator {}",
@@ -1901,7 +1901,7 @@ error_code group_manager::validate_group_status(
          * Check if term changed, this can happen if a node that stepped down
          * became a leader again.
          */
-        if (it->second->partition->term() != it->second->term()) {
+        if (p->partition->term() != p->term()) {
             vlog(
               cg_klog.info,
               "Group {} operation {} for partition {} processed while term "
@@ -1910,12 +1910,12 @@ error_code group_manager::validate_group_status(
               group,
               api,
               ntp,
-              it->second->term(),
-              it->second->partition->term());
+              p->term(),
+              p->partition->term());
             return error_code::not_coordinator;
         }
 
-        if (it->second->loading) {
+        if (p->loading) {
             vlog(
               cg_klog.debug,
               "Group {} operation {} sent to loading coordinator {}",

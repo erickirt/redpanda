@@ -244,6 +244,7 @@ private:
         ss::lw_shared_ptr<cluster::partition> partition;
         ss::lw_shared_ptr<ssx::rwlock> catchup_lock;
         model::term_id term{-1};
+        chunked_hash_set<kafka::group_id> blocked_groups;
 
         explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p);
         ~attached_partition() noexcept;
@@ -321,7 +322,6 @@ private:
     ss::sharded<consumer_group_lag_metrics_frontend>& _lag_metrics_frontend;
     config::configuration& _conf;
     absl::node_hash_map<group_id, group_ptr> _groups;
-    chunked_hash_set<kafka::group_id> _blocked_groups;
     absl::node_hash_map<model::ntp, ss::lw_shared_ptr<attached_partition>>
       _partitions;
 
