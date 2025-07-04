@@ -940,7 +940,7 @@ class SchemaRegistryRedpandaClient:
 
         # Error codes that may appear during normal API operation, do not
         # indicate an issue with the service
-        acceptable_errors = {409, 422, 404, 501}
+        acceptable_errors = {401, 403, 404, 409, 422, 501}
 
         def accept_response(resp):
             return 200 <= resp.status_code < 300 or resp.status_code in acceptable_errors
@@ -4167,6 +4167,15 @@ class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
         admin.create_user(username=self.user.username,
                           password=self.user.password,
                           algorithm=self.user.mechanism)
+
+        def user_exists():
+            for node in self.redpanda.nodes:
+                users = admin.list_users(node=node)
+                if self.user.username not in users:
+                    return False
+            return True
+
+        wait_until(user_exists, timeout_sec=10, backoff_sec=1)
 
     @cluster(num_nodes=3)
     def test_schemas_types(self):
