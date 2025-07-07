@@ -2333,7 +2333,7 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
 
     def match_api_record(self,
                          record,
-                         endpoint,
+                         endpoint: ACLTestEndpoint,
                          status_id: Optional[StatusID] = None,
                          operation: Optional[str] = None):
         if record['class_uid'] == ClassUID.API_ACTIVITY and \
@@ -2354,6 +2354,12 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
             )
             return False
 
+        if endpoint.resource() not in record['resources']:
+            self.logger.debug(
+                f"Validating api activity record: False (resources): {endpoint.resource()} not in {record['resources']}"
+            )
+            return False
+
         requires_user = not any(
             a.get("policy", {}).get("desc") == "authorization disabled"
             for a in record['actor']['authorizations'])
@@ -2369,7 +2375,7 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
         url_string = record['http_request']['url']['url_string']
         match = regex.match(url_string)
         self.logger.debug(f"Validating api activity record: {url_string}")
-        if match and match.group('handler') == endpoint:
+        if match and match.group('handler') == endpoint.path:
             return True
 
         return False
@@ -2378,10 +2384,8 @@ class AuditLogTestSchemaRegistryACLs(AuditLogTestSchemaRegistryBase):
         operation = endpoint.name.lower()
         name = f'sr {operation} call'
         records = self.find_matching_record(
-            lambda record: self.match_api_record(record,
-                                                 endpoint.path,
-                                                 status_id=status_id,
-                                                 operation=operation),
+            lambda record: self.match_api_record(
+                record, endpoint, status_id=status_id, operation=operation),
             lambda record_count: record_count >= 1, name)
         assert self.aggregate_count(records) == 1, \
             f'{name}: Expected one record found for {self.aggregate_count(records)}: {records}'

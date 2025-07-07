@@ -6180,6 +6180,10 @@ class ACLTestEndpoint:
         """Create the ACL required for this endpoint"""
         raise NotImplementedError
 
+    def resource(self) -> dict:
+        """Return the resource required by the request"""
+        raise NotImplementedError
+
 
 class GetConfigEndpoint(ACLTestEndpoint):
     name = "GET_CONFIG"
@@ -6196,6 +6200,9 @@ class GetConfigEndpoint(ACLTestEndpoint):
                                      resource_type="REGISTRY",
                                      pattern_type="LITERAL",
                                      operation="DESCRIBE_CONFIGS")
+
+    def resource(self) -> dict:
+        return {'name': '', 'type': 'registry'}
 
 
 class PutConfigEndpoint(ACLTestEndpoint):
@@ -6215,6 +6222,9 @@ class PutConfigEndpoint(ACLTestEndpoint):
                                      resource_type="REGISTRY",
                                      pattern_type="LITERAL",
                                      operation="ALTER_CONFIGS")
+
+    def resource(self) -> dict:
+        return {'name': '', 'type': 'registry'}
 
 
 class GetConfigSubjectEndpoint(ACLTestEndpoint):
@@ -6240,6 +6250,9 @@ class GetConfigSubjectEndpoint(ACLTestEndpoint):
                                      pattern_type="LITERAL",
                                      operation="DESCRIBE_CONFIGS")
 
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
+
 
 class PutConfigSubjectEndpoint(ACLTestEndpoint):
     name = "PUT_CONFIG_SUBJECT"
@@ -6259,6 +6272,9 @@ class PutConfigSubjectEndpoint(ACLTestEndpoint):
                                      resource_type="SUBJECT",
                                      pattern_type="LITERAL",
                                      operation="ALTER_CONFIGS")
+
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
 
 
 class DeleteConfigSubject(ACLTestEndpoint):
@@ -6285,6 +6301,9 @@ class DeleteConfigSubject(ACLTestEndpoint):
                                      pattern_type="LITERAL",
                                      operation="ALTER_CONFIGS")
 
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
+
 
 class GetMode(ACLTestEndpoint):
     name = "GET_MODE"
@@ -6301,6 +6320,9 @@ class GetMode(ACLTestEndpoint):
                                      resource_type="REGISTRY",
                                      pattern_type="LITERAL",
                                      operation="DESCRIBE_CONFIGS")
+
+    def resource(self) -> dict:
+        return {'name': '', 'type': 'registry'}
 
 
 class PutMode(ACLTestEndpoint):
@@ -6319,6 +6341,9 @@ class PutMode(ACLTestEndpoint):
                                      resource_type="REGISTRY",
                                      pattern_type="LITERAL",
                                      operation="ALTER_CONFIGS")
+
+    def resource(self) -> dict:
+        return {'name': '', 'type': 'registry'}
 
 
 class GetModeSubject(ACLTestEndpoint):
@@ -6344,6 +6369,9 @@ class GetModeSubject(ACLTestEndpoint):
                                      pattern_type="LITERAL",
                                      operation="DESCRIBE_CONFIGS")
 
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
+
 
 class PutModeSubject(ACLTestEndpoint):
     name = "PUT_MODE_SUBJECT"
@@ -6363,6 +6391,9 @@ class PutModeSubject(ACLTestEndpoint):
                                      resource_type="SUBJECT",
                                      pattern_type="LITERAL",
                                      operation="ALTER_CONFIGS")
+
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
 
 
 class DeleteModeSubject(ACLTestEndpoint):
@@ -6388,6 +6419,9 @@ class DeleteModeSubject(ACLTestEndpoint):
                                      pattern_type="LITERAL",
                                      operation="ALTER_CONFIGS")
 
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
+
 
 class PostSubjectVersions(ACLTestEndpoint):
     name = "POST_SUBJECT_VERSIONS"
@@ -6405,6 +6439,9 @@ class PostSubjectVersions(ACLTestEndpoint):
                                      resource_type="SUBJECT",
                                      pattern_type="LITERAL",
                                      operation="WRITE")
+
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
 
 
 class GetSchemasIdsIdVersions(ACLTestEndpoint):
@@ -6424,6 +6461,9 @@ class GetSchemasIdsIdVersions(ACLTestEndpoint):
     def create_acl(self):
         return self.test._create_acl("*", "REGISTRY", "LITERAL", "DESCRIBE")
 
+    def resource(self) -> dict:
+        return {'name': '', 'type': 'registry'}
+
 
 class GetSchemasIdsIdSubjects(ACLTestEndpoint):
     name = "GET_SCHEMAS_IDS_ID_SUBJECTS"
@@ -6441,6 +6481,9 @@ class GetSchemasIdsIdSubjects(ACLTestEndpoint):
 
     def create_acl(self):
         return self.test._create_acl("*", "REGISTRY", "LITERAL", "DESCRIBE")
+
+    def resource(self) -> dict:
+        return {'name': '', 'type': 'registry'}
 
 
 class GetSubjectVersions(ACLTestEndpoint):
@@ -6461,6 +6504,9 @@ class GetSubjectVersions(ACLTestEndpoint):
         return self.test._create_acl(self.test.subject, "SUBJECT", "LITERAL",
                                      "DESCRIBE")
 
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
+
 
 class PostSubject(ACLTestEndpoint):
     name = "POST_SUBJECT"
@@ -6479,6 +6525,9 @@ class PostSubject(ACLTestEndpoint):
     def create_acl(self):
         return self.test._create_acl(self.test.subject, "SUBJECT", "LITERAL",
                                      "READ")
+
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
 
 
 class GetSubjectVersionsVersion(ACLTestEndpoint):
@@ -6499,6 +6548,9 @@ class GetSubjectVersionsVersion(ACLTestEndpoint):
         return self.test._create_acl(self.test.subject, "SUBJECT", "LITERAL",
                                      "READ")
 
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
+
 
 class GetSubjectVersionsVersionSchema(ACLTestEndpoint):
     name = "GET_SUBJECT_VERSIONS_VERSION_SCHEMA"
@@ -6517,6 +6569,9 @@ class GetSubjectVersionsVersionSchema(ACLTestEndpoint):
     def create_acl(self):
         return self.test._create_acl(self.test.subject, "SUBJECT", "LITERAL",
                                      "READ")
+
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
 
 
 class GetSubjectVersionsVersionReferencedBy(ACLTestEndpoint):
@@ -6544,6 +6599,9 @@ class GetSubjectVersionsVersionReferencedBy(ACLTestEndpoint):
         """
         return 2
 
+    def resource(self) -> dict:
+        return {'name': '', 'type': 'registry'}
+
 
 class DeleteSubject(ACLTestEndpoint):
     name = "DELETE_SUBJECT"
@@ -6561,6 +6619,9 @@ class DeleteSubject(ACLTestEndpoint):
     def create_acl(self):
         return self.test._create_acl(self.test.subject, "SUBJECT", "LITERAL",
                                      "REMOVE")
+
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
 
 
 class DeleteSubjectVersion(ACLTestEndpoint):
@@ -6581,6 +6642,9 @@ class DeleteSubjectVersion(ACLTestEndpoint):
     def create_acl(self):
         return self.test._create_acl(self.test.subject, "SUBJECT", "LITERAL",
                                      "REMOVE")
+
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
 
 
 class CompatibilitySubjectVersion(ACLTestEndpoint):
@@ -6604,6 +6668,9 @@ class CompatibilitySubjectVersion(ACLTestEndpoint):
         return self.test._create_acl(self.test.subject, "SUBJECT", "LITERAL",
                                      "READ")
 
+    def resource(self) -> dict:
+        return {'name': self.test.subject, 'type': 'subject'}
+
 
 class GetSchemasTypes(ACLTestEndpoint):
     name = "GET_SCHEMAS_TYPES"
@@ -6621,6 +6688,9 @@ class GetSchemasTypes(ACLTestEndpoint):
     def create_acl(self):
         pass
 
+    def resource(self) -> dict:
+        return {'name': '', 'type': 'registry'}
+
 
 class GetStatusReady(ACLTestEndpoint):
     name = "SCHEMA_REGISTRY_STATUS_READY"
@@ -6637,6 +6707,9 @@ class GetStatusReady(ACLTestEndpoint):
 
     def create_acl(self):
         pass
+
+    def resource(self) -> dict:
+        return {'name': '', 'type': 'registry'}
 
 
 class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
