@@ -87,7 +87,12 @@ private:
       const outbound_partition_work_info&);
 
     ss::future<result<model::offset, errc>>
-    block(ss::lw_shared_ptr<partition> partition, bool block);
+    block_partition(ss::lw_shared_ptr<partition> partition, bool block);
+
+    ss::future<result<model::offset, errc>> block_groups(
+      const model::ntp& ntp,
+      const chunked_vector<kafka::group_id>& groups,
+      bool block);
 
     model::node_id _self;
     partition_leaders_table& _leaders_table;
