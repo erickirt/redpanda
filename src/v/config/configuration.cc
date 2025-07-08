@@ -4331,6 +4331,12 @@ configuration::configuration()
       "Enable cloud topics.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , development_enable_cluster_link(
+      *this,
+      "development_enable_cluster_link",
+      "Enable cluster linking.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",
