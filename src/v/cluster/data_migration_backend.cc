@@ -1634,15 +1634,35 @@ backend::work_scope backend::get_work_scope(
   const migration_metadata& metadata) {
     switch (metadata.state) {
     case state::preparing:
-        return {state::prepared, false, false, true};
+        return {
+          .sought_state = state::prepared,
+          .data_partition_work_needed = false,
+          .co_partition_work_needed = false,
+          .topic_work_needed = true};
     case state::executing:
-        return {state::executed, false, false, true};
+        return {
+          .sought_state = state::executed,
+          .data_partition_work_needed = false,
+          .co_partition_work_needed = false,
+          .topic_work_needed = true};
     case state::cut_over:
-        return {state::finished, false, false, true};
+        return {
+          .sought_state = state::finished,
+          .data_partition_work_needed = false,
+          .co_partition_work_needed = false,
+          .topic_work_needed = true};
     case state::canceling:
-        return {state::cancelled, false, false, true};
+        return {
+          .sought_state = state::cancelled,
+          .data_partition_work_needed = false,
+          .co_partition_work_needed = false,
+          .topic_work_needed = true};
     default:
-        return {{}, false, false, false};
+        return {
+          .sought_state = {},
+          .data_partition_work_needed = false,
+          .co_partition_work_needed = false,
+          .topic_work_needed = false};
     };
 }
 
@@ -1651,15 +1671,35 @@ backend::work_scope backend::get_work_scope(
   const migration_metadata& metadata) {
     switch (metadata.state) {
     case state::preparing:
-        return {state::prepared, true, false, false};
+        return {
+          .sought_state = state::prepared,
+          .data_partition_work_needed = true,
+          .co_partition_work_needed = false,
+          .topic_work_needed = false};
     case state::executing:
-        return {state::executed, true, true, false};
+        return {
+          .sought_state = state::executed,
+          .data_partition_work_needed = true,
+          .co_partition_work_needed = true,
+          .topic_work_needed = false};
     case state::cut_over:
-        return {state::finished, false, true, true};
+        return {
+          .sought_state = state::finished,
+          .data_partition_work_needed = false,
+          .co_partition_work_needed = true,
+          .topic_work_needed = true};
     case state::canceling:
-        return {state::cancelled, true, true, false};
+        return {
+          .sought_state = state::cancelled,
+          .data_partition_work_needed = true,
+          .co_partition_work_needed = true,
+          .topic_work_needed = false};
     default:
-        return {{}, false, false};
+        return {
+          .sought_state = {},
+          .data_partition_work_needed = false,
+          .co_partition_work_needed = false,
+          .topic_work_needed = false};
     };
 }
 
