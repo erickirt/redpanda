@@ -10,9 +10,9 @@
 #include "kafka/server/group_manager.h"
 
 #include "cluster/cloud_metadata/error_outcome.h"
-#include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
+#include "cluster/offsets_snapshot.h"
 #include "cluster/partition.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
@@ -56,9 +56,9 @@
 #include <ranges>
 #include <system_error>
 
-using cluster::cloud_metadata::group_offsets;
-using cluster::cloud_metadata::group_offsets_snapshot;
-using cluster::cloud_metadata::group_offsets_snapshot_result;
+using cluster::group_offsets;
+using cluster::group_offsets_snapshot;
+using cluster::group_offsets_snapshot_result;
 
 namespace kafka {
 

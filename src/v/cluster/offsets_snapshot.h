@@ -16,7 +16,7 @@
 #include "model/metadata.h"
 #include "serde/envelope.h"
 
-namespace cluster::cloud_metadata {
+namespace cluster {
 
 struct group_offsets
   : public serde::
@@ -87,6 +87,6 @@ struct group_offsets_snapshot
 };
 
 using group_offsets_snapshot_result
-  = result<std::vector<group_offsets_snapshot>, error_outcome>;
+  = result<std::vector<group_offsets_snapshot>, cloud_metadata::error_outcome>;
 
-} // namespace cluster::cloud_metadata
+} // namespace cluster

@@ -13,8 +13,8 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_map.h"
 #include "base/seastarx.h"
-#include "cluster/cloud_metadata/offsets_snapshot.h"
 #include "cluster/notification.h"
+#include "cluster/offsets_snapshot.h"
 #include "cluster/topic_table.h"
 #include "container/chunked_vector.h"
 #include "kafka/protocol/errors.h"
@@ -202,11 +202,11 @@ public:
     // Returns the groups being managed by the attached partition of the given
     // NTP, returning an error if the partition is not serving groups on this
     // shard (e.g. not leader, still loading groups, etc).
-    ss::future<cluster::cloud_metadata::group_offsets_snapshot_result>
+    ss::future<cluster::group_offsets_snapshot_result>
     snapshot_groups(const model::ntp&, size_t max_num_groups_per_snap = 1000);
 
     ss::future<kafka::error_code>
-      recover_offsets(cluster::cloud_metadata::group_offsets_snapshot);
+      recover_offsets(cluster::group_offsets_snapshot);
 
     size_t attached_partitions_count() const { return _partitions.size(); }
 
