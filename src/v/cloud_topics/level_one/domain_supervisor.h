@@ -23,16 +23,16 @@ namespace experimental::cloud_topics::l1 {
 // domains.
 //
 // There is only a single control plane per node and it runs on shard 0.
-class control_plane {
+class domain_supervisor {
     class impl;
 
 public:
-    explicit control_plane(cluster::controller*);
-    control_plane(const control_plane&) = delete;
-    control_plane(control_plane&&) = delete;
-    control_plane& operator=(const control_plane&) = delete;
-    control_plane& operator=(control_plane&&) = delete;
-    ~control_plane();
+    explicit domain_supervisor(cluster::controller*);
+    domain_supervisor(const domain_supervisor&) = delete;
+    domain_supervisor(domain_supervisor&&) = delete;
+    domain_supervisor& operator=(const domain_supervisor&) = delete;
+    domain_supervisor& operator=(domain_supervisor&&) = delete;
+    ~domain_supervisor();
 
     ss::future<> start();
     ss::future<> stop();

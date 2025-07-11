@@ -11,7 +11,7 @@
 #pragma once
 
 #include "cloud_topics/data_plane_api.h"
-#include "cloud_topics/level_one/control_plane.h"
+#include "cloud_topics/level_one/domain_supervisor.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -24,7 +24,7 @@ namespace experimental::cloud_topics {
 class app {
 public:
     explicit app(
-      ss::shared_ptr<data_plane_api>, std::unique_ptr<l1::control_plane>);
+      ss::shared_ptr<data_plane_api>, std::unique_ptr<l1::domain_supervisor>);
 
     app(const app&) = delete;
     app& operator=(const app&) = delete;
@@ -41,7 +41,7 @@ public:
 
 private:
     ss::shared_ptr<data_plane_api> _data_plane;
-    std::unique_ptr<l1::control_plane> _control_plane;
+    std::unique_ptr<l1::domain_supervisor> _domain_supervisor;
 };
 
 } // namespace experimental::cloud_topics

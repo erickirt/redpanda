@@ -12,23 +12,24 @@
 
 namespace experimental::cloud_topics {
 
-constexpr ss::shard_id control_plane_shard = 0;
+constexpr ss::shard_id domain_supervisor_shard = 0;
 
 app::app(
-  ss::shared_ptr<data_plane_api> dp, std::unique_ptr<l1::control_plane> l1_cp)
+  ss::shared_ptr<data_plane_api> dp,
+  std::unique_ptr<l1::domain_supervisor> l1_cp)
   : _data_plane(std::move(dp))
-  , _control_plane(std::move(l1_cp)) {}
+  , _domain_supervisor(std::move(l1_cp)) {}
 
 seastar::future<> app::start() {
-    if (ss::this_shard_id() == control_plane_shard) {
-        co_await _control_plane->start();
+    if (ss::this_shard_id() == domain_supervisor_shard) {
+        co_await _domain_supervisor->start();
     }
     co_await _data_plane->start();
 }
 
 seastar::future<> app::stop() {
-    if (ss::this_shard_id() == control_plane_shard) {
-        co_await _control_plane->stop();
+    if (ss::this_shard_id() == domain_supervisor_shard) {
+        co_await _domain_supervisor->stop();
     }
     co_await _data_plane->stop();
 }

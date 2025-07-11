@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "cloud_topics/level_one/control_plane.h"
+#include "cloud_topics/level_one/domain_supervisor.h"
 
 #include "cloud_topics/logger.h"
 #include "cluster/controller.h"
@@ -24,7 +24,7 @@ using namespace std::chrono_literals;
 
 namespace experimental::cloud_topics::l1 {
 
-class control_plane::impl {
+class domain_supervisor::impl {
     // Intentionally under the ss::sstring SSO size.
     static constexpr model::topic_view domain_topic_name = model::topic_view{
       std::string_view{"ct_l1_domain"}};
@@ -183,13 +183,13 @@ private:
     ss::abort_source _as;
 };
 
-control_plane::control_plane(cluster::controller* controller)
+domain_supervisor::domain_supervisor(cluster::controller* controller)
   : _impl(std::make_unique<impl>(controller)) {}
 
-control_plane::~control_plane() = default;
+domain_supervisor::~domain_supervisor() = default;
 
-ss::future<> control_plane::start() { return _impl->start(); }
+ss::future<> domain_supervisor::start() { return _impl->start(); }
 
-ss::future<> control_plane::stop() { return _impl->stop(); }
+ss::future<> domain_supervisor::stop() { return _impl->stop(); }
 
 } // namespace experimental::cloud_topics::l1

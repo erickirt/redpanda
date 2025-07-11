@@ -2094,7 +2094,7 @@ void application::wire_up_redpanda_services(
           }),
           ss::sharded_parameter([this, bucket] {
               return std::make_unique<
-                experimental::cloud_topics::l1::control_plane>(
+                experimental::cloud_topics::l1::domain_supervisor>(
                 controller.get());
           }))
           .get();

@@ -3,12 +3,12 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = ["//src/v/cloud_topics/level_one:__subpackages__"])
 
 redpanda_cc_library(
-    name = "control_plane",
+    name = "domain_supervisor",
     srcs = [
-        "control_plane.cc",
+        "domain_supervisor.cc",
     ],
     hdrs = [
-        "control_plane.h",
+        "domain_supervisor.h",
     ],
     include_prefix = "cloud_topics/level_one",
     visibility = ["//visibility:public"],
