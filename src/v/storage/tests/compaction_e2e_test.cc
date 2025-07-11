@@ -2079,7 +2079,7 @@ TEST_F(CompactionFixtureTest, TestBatchCacheResetAfterAdjacentMerge) {
 
     ss::abort_source never_abort;
     storage::compaction_config cfg(
-      model::offset::max(), std::nullopt, never_abort);
+      model::offset::max(), std::nullopt, std::nullopt, never_abort);
 
     // self compact everything up front so that it doesn't happen inline with
     // adjacent merge compaction. this would cause batch caches to be reset
