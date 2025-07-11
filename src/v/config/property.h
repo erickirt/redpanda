@@ -881,6 +881,14 @@ public:
           meta,
           def,
           [this](T new_value) -> std::optional<ss::sstring> {
+              if constexpr (reflection::is_std_optional<T>) {
+                  // Accept nullopt as a valid value for optional enums even if
+                  // it is not explicitly listed in the enum values.
+                  if (!new_value.has_value()) {
+                      return std::nullopt;
+                  }
+              }
+
               auto found = std::ranges::find_if(
                 _values, [&new_value](const T& v) { return v == new_value; });
               if (found == _values.end()) {
