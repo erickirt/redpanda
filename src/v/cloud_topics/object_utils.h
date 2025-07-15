@@ -10,6 +10,7 @@
 #pragma once
 
 #include "cloud_storage_clients/types.h"
+#include "cloud_topics/cluster_services.h"
 #include "cloud_topics/types.h"
 
 namespace experimental::cloud_topics {

@@ -9,13 +9,11 @@
  */
 #pragma once
 
-#include "utils/named_type.h"
+#include "cloud_topics/types.h"
 
 #include <seastar/core/future.hh>
 
 namespace experimental::cloud_topics {
-
-using cluster_epoch = named_type<int64_t, struct cloud_topics_epoch>;
 
 /*
  * This interface defines access to cluster-level services, such as a global
@@ -25,6 +23,7 @@ using cluster_epoch = named_type<int64_t, struct cloud_topics_epoch>;
  */
 class cluster_services {
 public:
+    cluster_services() = default;
     cluster_services(const cluster_services&) = delete;
     cluster_services& operator=(const cluster_services&) = delete;
     cluster_services(cluster_services&&) = delete;

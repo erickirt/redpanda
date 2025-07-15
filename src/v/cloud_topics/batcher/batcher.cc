@@ -38,8 +38,10 @@ template<class Clock>
 batcher<Clock>::batcher(
   core::write_pipeline<Clock>::stage stage,
   cloud_storage_clients::bucket_name bucket,
-  cloud_io::remote_api<Clock>& remote_api)
-  : _remote(remote_api)
+  cloud_io::remote_api<Clock>& remote_api,
+  cluster_services* cluster_services)
+  : _cluster_services(cluster_services)
+  , _remote(remote_api)
   , _bucket(std::move(bucket))
   , _upload_timeout(
       config::shard_local_cfg().cloud_storage_segment_upload_timeout_ms.bind())
@@ -125,7 +127,6 @@ batcher<Clock>::upload_object(object_id id, iobuf payload) {
     }
 
     co_return content_length;
-    ;
 }
 
 template<class Clock>
@@ -152,6 +153,7 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
         // collecting the write requests. The second invariant is enforced
         // by the strict order in which the ack() method is called
         // explicitly after the operation is either committed or failed.
+        auto epoch = co_await _cluster_services->current_epoch();
 
         auto list = _stage.pull_write_requests(
           10_MiB); // TODO: use configuration parameter
@@ -161,7 +163,7 @@ ss::future<result<bool>> batcher<Clock>::run_once() noexcept {
             co_return true;
         }
 
-        aggregator<Clock> aggregator;
+        aggregator<Clock> aggregator{object_id::create(epoch)};
         while (!list.requests.empty()) {
             auto& wr = list.requests.back();
             wr._hook.unlink();
