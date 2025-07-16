@@ -8,6 +8,31 @@ redpanda_cc_library(
     hdrs = [
         "parser.h",
     ],
+    implementation_deps = [":wire_format"],
+    include_prefix = "serde/protobuf",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/bytes:hash",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/container:chunked_hash_map",
+        "//src/v/container:fragmented_vector",
+        "@protobuf",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "wire_format",
+    srcs = [
+        "wire_format.cc",
+    ],
+    hdrs = [
+        "wire_format.h",
+    ],
+    implementation_deps = [
+        "//src/v/utils:vint",
+    ],
     include_prefix = "serde/protobuf",
     visibility = ["//visibility:public"],
     deps = [
@@ -17,7 +42,25 @@ redpanda_cc_library(
         "//src/v/container:chunked_hash_map",
         "//src/v/container:fragmented_vector",
         "//src/v/utils:vint",
-        "@protobuf",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "support",
+    hdrs = [
+        "support.h",
+    ],
+    include_prefix = "serde/protobuf",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":wire_format",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/container:fragmented_vector",
+        "//src/v/utils:fixed_string",
+        "@fmt",
         "@seastar",
     ],
 )

@@ -52,7 +52,6 @@ redpanda_cc_gtest(
         "//src/v/test_utils:gtest",
         "@fmt",
         "@googletest//:gtest",
-        "@googletest//:gtest_main",
         "@libprotobuf_mutator",
         "@protobuf",
         "@protobuf//:differencer",
@@ -75,5 +74,24 @@ redpanda_test_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "@protobuf",
+    ],
+)
+
+redpanda_cc_gtest(
+    name = "wire_format_test",
+    timeout = "short",
+    srcs = [
+        "wire_format_test.cc",
+    ],
+    cpu = 1,
+    memory = "128MiB",
+    deps = [
+        "//src/v/base",
+        "//src/v/bytes:iobuf",
+        "//src/v/bytes:iobuf_parser",
+        "//src/v/serde/protobuf:wire_format",
+        "//src/v/test_utils:gtest",
+        "@fmt",
+        "@googletest//:gtest",
     ],
 )
