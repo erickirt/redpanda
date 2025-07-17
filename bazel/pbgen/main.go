@@ -408,6 +408,7 @@ func (g *headerGenerator) generateService(service protoreflect.ServiceDescriptor
 	w.Println("public:")
 	w.Indent()
 	defer w.Dedent()
+	w.Printf("%s() = default;\n", cppName)
 	w.Printf("%s& operator=(const %s&) noexcept = delete;\n", cppName, cppName)
 	w.Printf("%s(const %s&) noexcept = delete;\n", cppName, cppName)
 	w.Printf("%s& operator=(%s&&) noexcept = delete;\n", cppName, cppName)
