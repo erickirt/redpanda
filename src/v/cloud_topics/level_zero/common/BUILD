@@ -5,6 +5,7 @@ package(
         "//src/v/cloud_topics:__pkg__",
         "//src/v/cloud_topics/batch_cache:__pkg__",
         "//src/v/cloud_topics/frontend:__pkg__",
+        "//src/v/cloud_topics/frontend/tests:__pkg__",
         "//src/v/cloud_topics/level_zero/batcher:__pkg__",
         "//src/v/cloud_topics/level_zero/batcher/tests:__pkg__",
         "//src/v/cloud_topics/level_zero/frontend_reader:__pkg__",
