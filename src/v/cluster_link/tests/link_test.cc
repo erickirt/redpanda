@@ -40,7 +40,8 @@ public:
       link_test* link_test,
       model::metadata metadata,
       partition_leader_cache* partition_leader_cache,
-      partition_manager* partition_manager);
+      partition_manager* partition_manager,
+      kafka::client::cluster cluster_connection);
 
     ss::future<> start() override;
     ss::future<> stop() override;
@@ -60,14 +61,16 @@ public:
       ::model::node_id self,
       model::metadata metadata,
       partition_leader_cache* partition_leader_cache,
-      partition_manager* partition_manager) override {
+      partition_manager* partition_manager,
+      kafka::client::cluster cluster_connection) override {
         return std::make_unique<test_link>(
           self,
           _task_reconciler_interval,
           _link_test,
           std::move(metadata),
           partition_leader_cache,
-          partition_manager);
+          partition_manager,
+          std::move(cluster_connection));
     }
 
 private:
@@ -208,13 +211,15 @@ test_link::test_link(
   link_test* link_test,
   model::metadata metadata,
   partition_leader_cache* partition_leader_cache,
-  partition_manager* partition_manager)
+  partition_manager* partition_manager,
+  kafka::client::cluster cluster_connection)
   : link(
       self,
       task_reconciler_interval,
       std::move(metadata),
       partition_leader_cache,
-      partition_manager)
+      partition_manager,
+      std::move(cluster_connection))
   , _link_test(link_test) {}
 
 ss::future<> test_link::start() {
@@ -366,13 +371,15 @@ public:
       ::model::node_id self,
       model::metadata metadata,
       partition_leader_cache* partition_leader_cache,
-      partition_manager* partition_manager) override {
+      partition_manager* partition_manager,
+      kafka::client::cluster cluster_connection) override {
         return std::make_unique<evil_link>(
           self,
           1s,
           std::move(metadata),
           partition_leader_cache,
-          partition_manager);
+          partition_manager,
+          std::move(cluster_connection));
     }
 };
 

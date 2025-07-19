@@ -56,13 +56,15 @@ public:
       ::model::node_id self,
       model::metadata config,
       partition_leader_cache* partition_leader_cache,
-      partition_manager* partition_manager) override {
+      partition_manager* partition_manager,
+      kafka::client::cluster cluster_connection) override {
         return std::make_unique<link>(
           self,
           link_reconciler_period,
           std::move(config),
           partition_leader_cache,
-          partition_manager);
+          partition_manager,
+          std::move(cluster_connection));
     }
 };
 

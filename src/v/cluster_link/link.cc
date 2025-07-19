@@ -53,16 +53,21 @@ link::link(
   ss::lowres_clock::duration task_reconciler_interval,
   model::metadata config,
   partition_leader_cache* partition_leader_cache,
-  partition_manager* partition_manager)
+  partition_manager* partition_manager,
+  kafka::client::cluster cluster_connection)
   : _self(self)
   , _config(std::move(config))
   , _partition_leader_cache(partition_leader_cache)
   , _partition_manager(partition_manager)
+  , _cluster_connection(std::move(cluster_connection))
   , _task_reconciler_interval(task_reconciler_interval) {}
 
 ss::future<> link::start() {
     vlog(
       cllog.info, "Starting cluster link {} ({})", _config.name, _config.uuid);
+    // Allow exception to propagate to the caller
+    co_await _cluster_connection.start();
+
     for (auto& [_, t] : _tasks) {
         if (should_start_task(t.get())) {
             vlog(
@@ -121,6 +126,12 @@ ss::future<> link::stop() {
               t->name(),
               res.assume_error().message());
         }
+    }
+
+    try {
+        co_await _cluster_connection.stop();
+    } catch (const std::exception& e) {
+        vlog(cllog.warn, "Error shutting down cluster connection: {}", e);
     }
 
     vlog(cllog.info, "Stopped link {} ({})", _config.name, _config.uuid);

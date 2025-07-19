@@ -14,6 +14,7 @@
 #include "cluster_link/model/types.h"
 #include "cluster_link/task.h"
 #include "cluster_link/types.h"
+#include "kafka/client/cluster.h"
 #include "kafka/data/rpc/deps.h"
 #include "utils/mutex.h"
 #include "utils/notification_list.h"
@@ -29,7 +30,8 @@ public:
       ss::lowres_clock::duration task_reconciler_interval,
       model::metadata config,
       kafka::data::rpc::partition_leader_cache* partition_leader_cache,
-      kafka::data::rpc::partition_manager* partition_manager);
+      kafka::data::rpc::partition_manager* partition_manager,
+      kafka::client::cluster cluster_connection);
     link(const link&) = delete;
     link(link&&) = delete;
     link& operator=(const link&) = delete;
@@ -79,6 +81,8 @@ private:
     model::metadata _config;
     kafka::data::rpc::partition_leader_cache* _partition_leader_cache;
     kafka::data::rpc::partition_manager* _partition_manager;
+    kafka::client::cluster _cluster_connection;
+
     notification_list<task_state_change_cb, task_state_notification_id>
       _task_state_change_notifications;
     ss::lowres_clock::duration _task_reconciler_interval;

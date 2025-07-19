@@ -96,14 +96,16 @@ public:
       ::model::node_id self,
       model::metadata metadata,
       partition_leader_cache* leader_cache,
-      partition_manager* pm) override {
+      partition_manager* pm,
+      kafka::client::cluster cluster_connection) override {
         auto name = metadata.name;
         auto created_link = std::make_unique<link>(
           self,
           _task_reconciler_interval,
           std::move(metadata),
           leader_cache,
-          pm);
+          pm,
+          std::move(cluster_connection));
 
         _links.emplace(std::move(name), created_link.get());
         return created_link;
