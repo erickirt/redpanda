@@ -184,7 +184,8 @@ TEST_P(task_manager_integration_test, create_task_no_controller) {
       ->get_manager()
       .invoke_on_all([](manager& m) {
           m.register_task_factory<test_task_factory>(
-            GetParam().is_locked_to_controller);
+             GetParam().is_locked_to_controller)
+            .get();
       })
       .get();
     {
@@ -222,7 +223,8 @@ TEST_P(task_manager_integration_test, create_task_with_controller) {
       ->get_manager()
       .invoke_on_all([](manager& m) {
           m.register_task_factory<test_task_factory>(
-            GetParam().is_locked_to_controller);
+             GetParam().is_locked_to_controller)
+            .get();
       })
       .get();
     fixture()->elect_leader(::model::controller_ntp, self(), std::nullopt);
@@ -256,7 +258,8 @@ TEST_P(task_manager_integration_test, controller_leadership_moved_on) {
       ->get_manager()
       .invoke_on_all([](manager& m) {
           m.register_task_factory<test_task_factory>(
-            GetParam().is_locked_to_controller);
+             GetParam().is_locked_to_controller)
+            .get();
       })
       .get();
 
@@ -341,7 +344,8 @@ TEST_P(task_manager_integration_test, controller_leadership_move_off) {
       ->get_manager()
       .invoke_on_all([](manager& m) {
           m.register_task_factory<test_task_factory>(
-            GetParam().is_locked_to_controller);
+             GetParam().is_locked_to_controller)
+            .get();
       })
       .get();
 
@@ -519,7 +523,7 @@ TEST_F_CORO(
     /// the task reconciliation mechanism can recover from the failure.
 
     co_await fixture()->get_manager().invoke_on_all(
-      [](manager& m) { m.register_task_factory<evil_task_factory>(); });
+      [](manager& m) { return m.register_task_factory<evil_task_factory>(); });
 
     fixture()->elect_leader(::model::controller_ntp, self(), std::nullopt);
 
@@ -586,7 +590,7 @@ TEST_F_CORO(
     /// the task reconciliation mechanism can recover from the failure.
 
     co_await fixture()->get_manager().invoke_on_all(
-      [](manager& m) { m.register_task_factory<evil_task_factory>(); });
+      [](manager& m) { return m.register_task_factory<evil_task_factory>(); });
 
     auto link_name = model::name_t("link1");
 
@@ -638,7 +642,7 @@ TEST_F_CORO(
     co_await fixture()->upsert_link(std::move(m1));
 
     co_await fixture()->get_manager().invoke_on_all(
-      [](manager& m) { m.register_task_factory<evil_task_factory>(); });
+      [](manager& m) { return m.register_task_factory<evil_task_factory>(); });
 
     auto report = co_await await_status_report(
       5s,

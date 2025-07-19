@@ -14,6 +14,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "cluster_link/deps.h"
 #include "cluster_link/link.h"
+#include "cluster_link/logger.h"
 #include "cluster_link/model/types.h"
 #include "cluster_link/task.h"
 #include "cluster_link/types.h"
@@ -62,7 +63,20 @@ public:
     /// Registers a task factory that will be used to create tasks when links
     /// are created
     template<typename T, typename... Args>
-    void register_task_factory(Args&&... args) {
+    ss::future<> register_task_factory(Args&&... args) {
+        auto fut = co_await ss::coroutine::as_future(
+          _link_task_reconciler_mutex.get_units(_as));
+        if (fut.failed()) {
+            auto ex = fut.get_exception();
+            if (ssx::is_shutdown_exception(ex)) {
+                vlog(
+                  cllog.info,
+                  "Task factory registration skipped due to shutdown");
+            } else {
+                vlog(cllog.error, "Task factory registration failed: {}", ex);
+            }
+            co_return;
+        }
         _task_factories.emplace_back(
           std::make_unique<T>(std::forward<Args>(args)...));
     }
