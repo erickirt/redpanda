@@ -33,7 +33,7 @@ model::record_batch make_random_batch(
     return model::test::make_random_batch(
       model::offset(o),
       num_records,
-      false,
+      true,
       model::record_batch_type::raft_data,
       std::vector<size_t>(num_records, batch_size),
       ts);
@@ -152,9 +152,7 @@ TEST_F(log_builder_fixture, timequery_multiple_messages_per_batch) {
           | add_batch(
             model::test::make_random_batch(model::test::record_batch_spec{
               .offset = model::offset(ts),
-              // It is sad but we can't properly query for timestamps inside
-              // compressed batches.
-              .allow_compression = false,
+              .allow_compression = true,
               .count = records_per_batch,
               .timestamp = model::timestamp(ts),
               .all_records_have_same_timestamp = true,
