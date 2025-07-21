@@ -161,6 +161,18 @@ field_outcome from_protobuf(
           msg_t->well_known_type() == pb::Descriptor::WELLKNOWNTYPE_TIMESTAMP) {
             return success(fd, iceberg::timestamp_type{});
         }
+        // special case for handling google.protobuf.Struct, Value, and
+        // ListValue - all serialize as JSON strings
+        if (msg_t->well_known_type() == pb::Descriptor::WELLKNOWNTYPE_STRUCT) {
+            return success(fd, iceberg::string_type{});
+        }
+        if (msg_t->well_known_type() == pb::Descriptor::WELLKNOWNTYPE_VALUE) {
+            return success(fd, iceberg::string_type{});
+        }
+        if (
+          msg_t->well_known_type() == pb::Descriptor::WELLKNOWNTYPE_LISTVALUE) {
+            return success(fd, iceberg::string_type{});
+        }
         auto st_result = struct_from_protobuf(*msg_t, stack);
         if (st_result.has_error()) {
             return st_result.error();
