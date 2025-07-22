@@ -568,6 +568,10 @@ public:
     ss::future<remake_learner_state_reply>
       do_remake_learner_state(remake_learner_state_request);
 
+    const configuration_manager& config_manager() const {
+        return _configuration_manager;
+    }
+
 private:
     friend replication_monitor;
     friend replicate_entries_stm;

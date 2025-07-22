@@ -194,6 +194,16 @@ ss::future<> channel::do_dispatch_message(msg msg) {
             msg.resp_data.set_value(std::move(resp_buf));
             break;
         }
+        case msg_type::remake_learner_state: {
+            auto req = co_await serde::read_async<remake_learner_state_request>(
+              req_parser);
+            auto resp = co_await get_service().remake_learner_state(
+              std::move(req), ctx);
+            iobuf resp_buf;
+            co_await serde::write_async(resp_buf, std::move(resp));
+            msg.resp_data.set_value(std::move(resp_buf));
+            break;
+        }
         }
     } catch (...) {
         msg.resp_data.set_to_current_exception();
@@ -256,6 +266,8 @@ static constexpr msg_type map_msg_type() {
         return msg_type::timeout_now;
     } else if constexpr (std::is_same_v<ReqT, transfer_leadership_request>) {
         return msg_type::transfer_leadership;
+    } else if constexpr (std::is_same_v<ReqT, remake_learner_state_request>) {
+        return msg_type::remake_learner_state;
     }
     __builtin_unreachable();
 }
@@ -862,6 +874,9 @@ std::ostream& operator<<(std::ostream& o, msg_type type) {
         return o;
     case msg_type::transfer_leadership:
         o << "transfer_leadership";
+        return o;
+    case msg_type::remake_learner_state:
+        o << "remake_learner_state";
         return o;
     }
 }

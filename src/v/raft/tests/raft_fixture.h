@@ -54,6 +54,7 @@ enum class msg_type {
     install_snapshot,
     timeout_now,
     transfer_leadership,
+    remake_learner_state
 };
 
 struct msg {
