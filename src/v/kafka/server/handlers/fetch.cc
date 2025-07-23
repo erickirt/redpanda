@@ -30,6 +30,8 @@
 #include "kafka/server/kafka_probe.h"
 #include "kafka/server/read_distribution_probe.h"
 #include "model/fundamental.h"
+#include "model/kitp.h"
+#include "model/ktp.h"
 #include "model/limits.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -1334,7 +1336,8 @@ void for_each_fetch_partition(const op_context& octx, const Func& f) {
         for (auto& topic : octx.request.data.topics) {
             f(topic.topic,
               topic.partitions | std::views::transform([&](const auto& p) {
-                  return fetch_session_partition{topic.topic, p};
+                  return fetch_session_partition{
+                    topic.topic_id, topic.topic, p};
               }));
         }
     } else {
@@ -1346,12 +1349,19 @@ void for_each_fetch_partition(const op_context& octx, const Func& f) {
         while (it != end) {
             // from the current position, find the range of partitions which
             // have the same topic, and pass that to the callback
-            const model::topic& current_topic = it->topic_partition.get_topic();
+            const auto& current = it->topic_partition;
             auto same_topic_end = std::find_if(
               it, end, [&](const kafka::fetch_session_partition& part) {
-                  return part.topic_partition.get_topic() != current_topic;
+                  const auto no_id = model::topic_id{};
+                  const auto& next = part.topic_partition;
+                  if (
+                    current.get_topic_id() == no_id
+                    || next.get_topic_id() == no_id) {
+                      return current.get_topic() != next.get_topic();
+                  }
+                  return next.get_topic_id() != current.get_topic_id();
               });
-            f(current_topic, std::ranges::subrange(it, same_topic_end));
+            f(current.get_topic(), std::ranges::subrange(it, same_topic_end));
             it = same_topic_end;
         }
     }
@@ -1390,6 +1400,12 @@ class simple_fetch_planner final : public fetch_planner::impl {
                       ++resp_it;
                   }
               };
+
+              // An empty topic name means that lookup by id failed during
+              // creation of the op_context.
+              if (unlikely(topic().empty())) {
+                  return fail_all_partitions(error_code::unknown_topic_id);
+              }
 
               /**
                * If not authorized do not include into a plan.
@@ -1438,8 +1454,9 @@ class simple_fetch_planner final : public fetch_planner::impl {
                       }
                   }
 
-                  auto& tp = fp.topic_partition;
-                  auto partition_id = tp.get_partition();
+                  const auto& kitp = fp.topic_partition;
+                  const auto partition_id = kitp.get_partition();
+                  model::ktp_with_hash ktp{kitp.get_topic(), partition_id};
 
                   if (unlikely(
                         metadata_cache.is_disabled(tn_view, partition_id))) {
@@ -1449,7 +1466,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                       continue;
                   }
 
-                  auto shard = octx.rctx.shards().shard_for(tp);
+                  auto shard = octx.rctx.shards().shard_for(ktp);
                   if (unlikely(!shard)) {
                       // there is given partition in topic metadata, return
                       // unknown_topic_or_partition error
@@ -1461,7 +1478,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                        * return not_leader_for_partition error to force metadata
                        * update.
                        */
-                      auto ec = metadata_cache.contains(tp.to_ntp())
+                      auto ec = metadata_cache.contains(kitp)
                                   ? error_code::not_leader_for_partition
                                   : error_code::unknown_topic_or_partition;
                       resp_it->set(
@@ -1470,7 +1487,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                       continue;
                   }
 
-                  auto fetch_md = octx.rctx.get_fetch_metadata_cache().get(tp);
+                  auto fetch_md = octx.rctx.get_fetch_metadata_cache().get(ktp);
                   auto max_bytes = std::min(
                     bytes_left_in_plan, size_t(fp.max_bytes));
                   /**
@@ -1481,7 +1498,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
                   }
 
                   plan.fetches_per_shard[*shard].push_back(
-                    tp,
+                    std::move(ktp),
                     fetch_config{
                       .start_offset = fp.fetch_offset,
                       .max_offset = model::model_limits<model::offset>::max(),
@@ -1640,6 +1657,26 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
         deadline = model::timeout_clock::now() + delay.value();
     }
 
+    if (rctx.header().version() >= api_version{13}) {
+        /*
+         * Populate topic names
+         *
+         * Topic names that are not authorized must not be returned, but the
+         * response does not serialize them, so this does not need to be undone.
+         */
+        const auto set_topic = [this](auto& t) {
+            auto tp_ns = rctx.metadata_cache().get_name_by_id(t.topic_id);
+            if (tp_ns.has_value()) {
+                t.topic = std::move(tp_ns->tp);
+            } else {
+                // An empty topic name will be translated to unknown_topic_id
+                // during plan creation
+            }
+        };
+        std::ranges::for_each(request.data.topics, set_topic);
+        std::ranges::for_each(request.data.forgotten_topics_data, set_topic);
+    }
+
     /*
      * TODO: max size is multifaceted. it needs to be absolute, but also
      * integrate with other resource contraints that are dynamic within the
@@ -1655,7 +1692,8 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
 // insert and reserve space for a new topic in the response
 void op_context::start_response_topic(const fetch_request::topic& topic) {
     response.data.responses.emplace_back(
-      fetchable_topic_response{.topic = topic.topic});
+      fetchable_topic_response{
+        .topic = topic.topic, .topic_id = topic.topic_id});
 }
 
 void op_context::start_response_partition(const fetch_request::partition& p) {
@@ -1680,16 +1718,18 @@ void op_context::create_response_placeholders() {
               start_response_partition(*v.partition);
           });
     } else {
-        model::topic last_topic;
+        std::optional<model::kitp_with_hash> last_topic;
         std::for_each(
           session_ctx.session()->partitions().cbegin_insertion_order(),
           session_ctx.session()->partitions().cend_insertion_order(),
           [this, &last_topic](const fetch_session_partition& fp) {
-              auto& topic = fp.topic_partition.get_topic();
-              if (last_topic != topic) {
+              auto& kitp = fp.topic_partition;
+              if (last_topic != kitp) {
                   response.data.responses.emplace_back(
-                    fetchable_topic_response{.topic = topic});
-                  last_topic = topic;
+                    fetchable_topic_response{
+                      .topic = kitp.get_topic(),
+                      .topic_id = kitp.get_topic_id()});
+                  last_topic = kitp;
               }
               fetch_response::partition_response p{
                 .partition_index = fp.topic_partition.get_partition(),
@@ -1784,7 +1824,9 @@ ss::future<response_ptr> op_context::send_response() && {
     for (auto it = response.begin(true); it != response.end(); ++it) {
         if (it->is_new_topic) {
             final_response.data.responses.emplace_back(
-              fetchable_topic_response{.topic = it->partition->topic});
+              fetchable_topic_response{
+                .topic = it->partition->topic,
+                .topic_id = it->partition->topic_id});
         }
 
         fetch_response::partition_response r{
@@ -1857,8 +1899,10 @@ void op_context::response_placeholder::set(
     // if we are not sessionless update session cache
     if (!_ctx->session_ctx.is_sessionless()) {
         auto& session_partitions = _ctx->session_ctx.session()->partitions();
-        auto key = model::topic_partition_view(
-          _it->partition->topic, _it->partition_response->partition_index);
+        auto key = model::kitp_view(
+          _it->partition->topic_id,
+          _it->partition->topic,
+          _it->partition_response->partition_index);
 
         if (auto it = session_partitions.find(key);
             it != session_partitions.end()) {
