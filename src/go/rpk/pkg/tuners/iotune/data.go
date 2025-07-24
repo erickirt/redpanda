@@ -301,6 +301,44 @@ func precompiledData() map[string]map[string]map[string]io {
 				// advertised:     1073344                      536672
 				"default": {"", 4 * 269588, 4 * 1263357056, 4 * 134608, 4 * 604995968, true},
 			},
+
+			// m6id values are copied from m7gd as they should have the same
+			// disks and behave the same from tests.
+			"m6id.large": {
+				// advertised:  33542             16771
+				"default": {"", 33638, 157521648, 16836, 75264032, true},
+			},
+
+			"m6id.xlarge": {
+				// advertised:  67084             33542
+				"default": {"", 67274, 315774176, 33676, 150679296, true},
+			},
+
+			"m6id.2xlarge": {
+				// advertised:  134168             67084
+				"default": {"", 134550, 631589440, 67358, 301293568, true},
+			},
+
+			"m6id.4xlarge": {
+				// advertised:  268336              134168
+				"default": {"", 269588, 1263357056, 134608, 604995968, true},
+			},
+
+			// see comments above for larger m7gd instance types
+			"m6id.8xlarge": {
+				// advertised:      536672                      268336
+				"default": {"", 2 * 269588, 2 * 1263357056, 2 * 134608, 2 * 604995968, true},
+			},
+
+			"m6id.12xlarge": {
+				// advertised:      805008                      402504
+				"default": {"", 3 * 269588, 3 * 1263357056, 3 * 134608, 3 * 604995968, true},
+			},
+
+			"m6id.16xlarge": {
+				// advertised:     1073344                      536672
+				"default": {"", 4 * 269588, 4 * 1263357056, 4 * 134608, 4 * 604995968, true},
+			},
 		},
 	}
 }
