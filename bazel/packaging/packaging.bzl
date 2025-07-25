@@ -3,6 +3,7 @@ A rule to create a redpanda tarball given inputs from the build system.
 """
 
 load("@bazel_skylib//lib:collections.bzl", "collections")
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain")
 
 def _is_versioned(file, starts_with):
@@ -240,7 +241,10 @@ def _tarball_package_configuration(ctx, package_content, fips_enabled):
 def _impl(ctx):
     use_dir = not ctx.attr.out.endswith(".tar.gz")
     out = ctx.actions.declare_directory(ctx.attr.out) if use_dir else ctx.actions.declare_file(ctx.attr.out)
-    package_content = _prepare_redpanda_package_content(ctx)
+    interpreter_path = "/opt/redpanda/lib"
+    if ctx.attr.install_path:
+        interpreter_path = "{}/lib".format(ctx.attr.install_path[BuildSettingInfo].value)
+    package_content = _prepare_redpanda_package_content(ctx, interpreter_path)
 
     fips_enabled = ctx.file.fips_module != None
     if fips_enabled != (ctx.file.fips_config != None):
@@ -331,6 +335,7 @@ redpanda_package = rule(
         ),
         "include_sysroot_libs": attr.bool(),
         "rpath_override": attr.string(mandatory = False),
+        "install_path": attr.label(),
         "_tool": attr.label(
             executable = True,
             allow_files = True,
