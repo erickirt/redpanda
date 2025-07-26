@@ -58,16 +58,7 @@ machine Storage {
 
   start state HandleRequest {
     on put_request_event do (request: put_request) {
-      objects += (next_object_id, request.object);
-      send request.source, put_response_event, (
-        request_id = request.request_id,
-        object_id = next_object_id);
-
-      announce monitor_storage_put_event, (
-        object_id = next_object_id,
-        object = request.object);
-
-      next_object_id = next_object_id + 1;
+      put(request.source, request.request_id, request.object);
     }
 
     on get_request_event do (request: get_request) {
@@ -75,5 +66,18 @@ machine Storage {
         request_id = request.request_id,
         object = objects[request.object_id]);
     }
+  }
+
+  fun put(source: machine, request_id: int, object: data) {
+    objects += (next_object_id, object);
+    send source, put_response_event, (
+      request_id = request_id,
+      object_id = next_object_id);
+
+    announce monitor_storage_put_event, (
+      object_id = next_object_id,
+      object = object);
+
+    next_object_id = next_object_id + 1;
   }
 }
