@@ -15,6 +15,7 @@ type L0_object = seq[int];
 
 machine CommitProtocol {
   var storage: Storage;
+  var epoch_service: EpochService;
   var requests: seq[produce_request];
 
   // the L0 object that will be built and uploaded
@@ -30,8 +31,9 @@ machine CommitProtocol {
   var request_id: int;
 
   start state Init {
-    entry (input: (storage: Storage, requests: seq[produce_request])) {
+    entry (input: (storage: Storage, epoch_service: EpochService, requests: seq[produce_request])) {
       storage = input.storage;
+      epoch_service = input.epoch_service;
       requests = input.requests;
       goto Commit;
     }

@@ -58,13 +58,15 @@ event broker_commit_event;
 
 machine Broker {
   var storage: Storage;
+  var epoch_service: EpochService;
   // received produce requests that will be committed together
   var produce_requests: seq[produce_request];
   var request_id: int;
 
   start state Init {
-    entry (config: (storage: Storage)) {
+    entry (config: (storage: Storage, epoch_service: EpochService)) {
       storage = config.storage;
+      epoch_service = config.epoch_service;
       goto WaitForRequest;
     }
   }
@@ -100,7 +102,7 @@ machine Broker {
 
     // Commit and reset the accumulated set of produce requests.
     on broker_commit_event do {
-      new CommitProtocol((storage = storage, requests = produce_requests));
+      new CommitProtocol((storage = storage, epoch_service = epoch_service, requests = produce_requests));
       produce_requests = default(seq[produce_request]);
     }
   }

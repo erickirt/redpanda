@@ -1,5 +1,6 @@
 module System = {
   Storage,
+  EpochService,
   Partition,
   Broker,
   Producer,
@@ -11,6 +12,7 @@ machine MultiPartitionProduceTest {
   start state Init {
     entry {
       var storage: Storage;
+      var epoch_service: EpochService;
       var broker: Broker;
       var producer: Producer;
       var partitions: set[Partition];
@@ -21,12 +23,13 @@ machine MultiPartitionProduceTest {
       num_batches = 10;
 
       storage = new Storage();
+      epoch_service = new EpochService();
 
       while (sizeof(partitions) < num_partitions) {
         partitions += (new Partition());
       }
 
-      broker = new Broker((storage = storage,));
+      broker = new Broker((storage = storage, epoch_service = epoch_service));
 
       producer = new Producer((
         broker = broker,
