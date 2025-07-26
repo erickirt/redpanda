@@ -49,8 +49,8 @@ event put_response_event : put_response;
 event get_request_event : get_request;
 event get_response_event : get_response;
 
-// Internal event for monitoring
-event monitor_storage_event: (object_id: int, object: data);
+// Internal event for monitoring put requests
+event monitor_storage_put_event: (object_id: int, object: data);
 
 machine Storage {
   var next_object_id: int;
@@ -63,7 +63,7 @@ machine Storage {
         request_id = request.request_id,
         object_id = next_object_id);
 
-      announce monitor_storage_event, (
+      announce monitor_storage_put_event, (
         object_id = next_object_id,
         object = request.object);
 

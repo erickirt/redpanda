@@ -33,15 +33,15 @@ spec ProduceRequestResponse observes produce_request_event, produce_response_eve
 // by modifying the `target` map below (see "set-target-configuration"). Note
 // that in general the target configuration needs to be co-designed with the
 // main test harness. For example, 2 produced batches, 1 object with 2 batches.
-spec SelectStorageConfiguration observes monitor_storage_event {
+spec SelectStorageConfiguration observes monitor_storage_put_event {
   var objects: map[int, L0d_object];
 
   start state Init {
-    on monitor_storage_event do handle_event;
+    on monitor_storage_put_event do handle_event;
   }
 
   hot state TargetConfig {
-    on monitor_storage_event do handle_event;
+    on monitor_storage_put_event do handle_event;
   }
 
   fun handle_event(e: (object_id: int, object: data)) {
