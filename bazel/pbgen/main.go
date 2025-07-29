@@ -9,9 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"unicode"
 
-	"github.com/redpanda-data/redpanda/proto/redpanda/core"
 	pbgen "github.com/redpanda-data/redpanda/proto/redpanda/pbgen/options"
 	rpcgen "github.com/redpanda-data/redpanda/proto/redpanda/pbgen/rpc"
 	"google.golang.org/protobuf/proto"
@@ -212,15 +210,6 @@ func rpcAlternativeRoute(f protoreflect.MethodDescriptor) string {
 	return rpcOpts.HttpRoute
 }
 
-func hasRPCVersion(f protoreflect.MethodDescriptor) bool {
-	opts := f.Options().(*descriptorpb.MethodOptions)
-	if !proto.HasExtension(opts, rpcgen.E_Rpc) {
-		return false
-	}
-	rpcOpts := proto.GetExtension(opts, rpcgen.E_Rpc).(*rpcgen.RPCOptions)
-	return rpcOpts.Version != core.Version_VERSION_UNSPECIFIED
-}
-
 // ----------------------------------------------------------
 
 type baseGenerator struct {
@@ -415,6 +404,8 @@ func (g *headerGenerator) generateService(service protoreflect.ServiceDescriptor
 	w.Printf("%s(%s&&) noexcept = delete;\n", cppName, cppName)
 	w.Printf("virtual ~%s() noexcept = default;\n", cppName)
 	w.Println()
+	w.Println("// Return the name of this RPC service")
+	w.Printf("std::string_view name() const override { return %q; }\n", service.FullName())
 	w.Println("// Call this to get all the routes defined for this service.")
 	w.Println("//")
 	w.Println("// NOTE: The service must outlive anything returned from this method.")
@@ -422,9 +413,6 @@ func (g *headerGenerator) generateService(service protoreflect.ServiceDescriptor
 	w.Println()
 	for i := range service.Methods().Len() {
 		method := service.Methods().Get(i)
-		if !hasRPCVersion(method) {
-			g.emitError(fmt.Errorf("method %s does not have a version, please add one.", method.FullName()))
-		}
 		g.leadingComments(method, w)
 		w.Printf(
 			"virtual seastar::future<%s> %s(%s) = 0;\n",
@@ -673,6 +661,7 @@ func (g *implGenerator) generateServiceRoutes(service protoreflect.ServiceDescri
 		for _, path := range paths {
 			w.Println("{")
 			w.Indent()
+			w.Printf(".name = %q,\n", method.FullName())
 			w.Printf(".path = %q,\n", path)
 			w.Printf(".authz_level = serde::pb::rpc::authz_level::%s,\n", rpcAuthzLevel(method))
 			w.Printf(".handler = std::bind_front(&%s::%s_handler_impl, this),\n", cppTypeName(service), pascalToSnakeCase(string(method.Name())))
@@ -691,7 +680,7 @@ func (g *implGenerator) generateServiceHandlers(service protoreflect.ServiceDesc
 			pascalToSnakeCase(string(method.Name())),
 		)
 		w.Indent()
-		w.Println(`if (req->get_header("Content-Type") != "application/proto" && req->get_header("Content-Type") != "application/json") {`)
+		w.Println(`if (auto ct = req->get_header("Content-Type"); ct != "application/proto" && ct != "application/json") {`)
 		w.Indent()
 		w.Println(`co_return serde::pb::rpc::unimplemented_exception("only application/proto or application/json content-type is supported").handle(std::move(reply));`)
 		w.Dedent()
@@ -1870,26 +1859,6 @@ func fullyQualifiedTypeName(d protoreflect.Descriptor) string {
 	ns := nameToCppNamespace(d.ParentFile())
 	name := cppTypeName(d)
 	return "::" + ns + "::" + name
-}
-
-func pascalToSnakeCase(s string) string {
-	var result strings.Builder
-	for i, r := range s {
-		if unicode.IsUpper(r) {
-			// Add underscore if not the first character and preceded by a letter
-			prev := rune(0)
-			if i > 0 {
-				prev = rune(s[i-1])
-			}
-			if unicode.IsLetter(prev) && unicode.IsLower(prev) {
-				result.WriteRune('_')
-			}
-			result.WriteRune(unicode.ToLower(r))
-		} else {
-			result.WriteRune(r)
-		}
-	}
-	return result.String()
 }
 
 // getOneofFieldVariantIndex returns the std::variant index of a field in a oneof
