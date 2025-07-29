@@ -91,7 +91,7 @@ redpanda_cc_gtest(
     deps = [
         "//src/v/base",
         "//src/v/cloud_topics:types",
-        "//src/v/cloud_topics/level_zero:read_pipeline",
+        "//src/v/cloud_topics/level_zero/pipeline:read_pipeline",
         "//src/v/cloud_topics/level_zero/reader:fetch_handler",
         "//src/v/cloud_topics/level_zero/reader/tests:materialized_extent_fixture",
         "//src/v/container:fragmented_vector",
