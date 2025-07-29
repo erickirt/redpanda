@@ -39,21 +39,21 @@ void enum_to_proto(const corpus& e, iobuf* buf) {
 }
 std::string_view enum_to_string(const corpus& e) {
   switch (e) {
-  case corpus::corpus_unspecified:
+  case corpus::unspecified:
     return "CORPUS_UNSPECIFIED";
-  case corpus::corpus_universal:
+  case corpus::universal:
     return "CORPUS_UNIVERSAL";
-  case corpus::corpus_web:
+  case corpus::web:
     return "CORPUS_WEB";
-  case corpus::corpus_images:
+  case corpus::images:
     return "CORPUS_IMAGES";
-  case corpus::corpus_local:
+  case corpus::local:
     return "CORPUS_LOCAL";
-  case corpus::corpus_news:
+  case corpus::news:
     return "CORPUS_NEWS";
-  case corpus::corpus_products:
+  case corpus::products:
     return "CORPUS_PRODUCTS";
-  case corpus::corpus_video:
+  case corpus::video:
     return "CORPUS_VIDEO";
   default:
     return "CORPUS_UNSPECIFIED";
@@ -63,18 +63,18 @@ void enum_from_json(serde::pb::json::peekable_parser* p, corpus* e) {
   switch (p->token()) {
   case serde::json::token::value_string: {
     constexpr static auto values = std::to_array<std::pair<std::string_view, corpus>>({
-      {"CORPUS_IMAGES", corpus::corpus_images},
-      {"CORPUS_LOCAL", corpus::corpus_local},
-      {"CORPUS_NEWS", corpus::corpus_news},
-      {"CORPUS_PRODUCTS", corpus::corpus_products},
-      {"CORPUS_UNIVERSAL", corpus::corpus_universal},
-      {"CORPUS_UNSPECIFIED", corpus::corpus_unspecified},
-      {"CORPUS_VIDEO", corpus::corpus_video},
-      {"CORPUS_WEB", corpus::corpus_web},
+      {"CORPUS_IMAGES", corpus::images},
+      {"CORPUS_LOCAL", corpus::local},
+      {"CORPUS_NEWS", corpus::news},
+      {"CORPUS_PRODUCTS", corpus::products},
+      {"CORPUS_UNIVERSAL", corpus::universal},
+      {"CORPUS_UNSPECIFIED", corpus::unspecified},
+      {"CORPUS_VIDEO", corpus::video},
+      {"CORPUS_WEB", corpus::web},
     });
     auto eq = std::ranges::equal_range(values, p->value_string(), std::less<>(), [](const auto& pair) { return pair.first; });
     if (eq.empty()) {
-      *e = corpus::corpus_unspecified;
+      *e = corpus::unspecified;
     } else {
       *e = eq.front().second;
     }
@@ -83,31 +83,31 @@ void enum_from_json(serde::pb::json::peekable_parser* p, corpus* e) {
   case serde::json::token::value_int: {
     switch (p->value_int()) {
     case 0:
-      *e = corpus::corpus_unspecified;
+      *e = corpus::unspecified;
       return;
     case 1:
-      *e = corpus::corpus_universal;
+      *e = corpus::universal;
       return;
     case 2:
-      *e = corpus::corpus_web;
+      *e = corpus::web;
       return;
     case 3:
-      *e = corpus::corpus_images;
+      *e = corpus::images;
       return;
     case 4:
-      *e = corpus::corpus_local;
+      *e = corpus::local;
       return;
     case 5:
-      *e = corpus::corpus_news;
+      *e = corpus::news;
       return;
     case 6:
-      *e = corpus::corpus_products;
+      *e = corpus::products;
       return;
     case 7:
-      *e = corpus::corpus_video;
+      *e = corpus::video;
       return;
     default:
-      *e = corpus::corpus_unspecified;
+      *e = corpus::unspecified;
       return;
     }
   }
@@ -134,13 +134,13 @@ void enum_to_proto(const protobuf3_test& e, iobuf* buf) {
 }
 std::string_view enum_to_string(const protobuf3_test& e) {
   switch (e) {
-  case protobuf3_test::protobuf3_test_unspecified:
+  case protobuf3_test::unspecified:
     return "PROTOBUF3_TEST_UNSPECIFIED";
-  case protobuf3_test::protobuf3_test_started:
+  case protobuf3_test::started:
     return "PROTOBUF3_TEST_STARTED";
-  case protobuf3_test::protobuf3_test_running:
+  case protobuf3_test::running:
     return "PROTOBUF3_TEST_RUNNING";
-  case protobuf3_test::protobuf3_test_finished:
+  case protobuf3_test::finished:
     return "PROTOBUF3_TEST_FINISHED";
   default:
     return "PROTOBUF3_TEST_UNSPECIFIED";
@@ -150,14 +150,14 @@ void enum_from_json(serde::pb::json::peekable_parser* p, protobuf3_test* e) {
   switch (p->token()) {
   case serde::json::token::value_string: {
     constexpr static auto values = std::to_array<std::pair<std::string_view, protobuf3_test>>({
-      {"PROTOBUF3_TEST_FINISHED", protobuf3_test::protobuf3_test_finished},
-      {"PROTOBUF3_TEST_RUNNING", protobuf3_test::protobuf3_test_running},
-      {"PROTOBUF3_TEST_STARTED", protobuf3_test::protobuf3_test_started},
-      {"PROTOBUF3_TEST_UNSPECIFIED", protobuf3_test::protobuf3_test_unspecified},
+      {"PROTOBUF3_TEST_FINISHED", protobuf3_test::finished},
+      {"PROTOBUF3_TEST_RUNNING", protobuf3_test::running},
+      {"PROTOBUF3_TEST_STARTED", protobuf3_test::started},
+      {"PROTOBUF3_TEST_UNSPECIFIED", protobuf3_test::unspecified},
     });
     auto eq = std::ranges::equal_range(values, p->value_string(), std::less<>(), [](const auto& pair) { return pair.first; });
     if (eq.empty()) {
-      *e = protobuf3_test::protobuf3_test_unspecified;
+      *e = protobuf3_test::unspecified;
     } else {
       *e = eq.front().second;
     }
@@ -166,19 +166,19 @@ void enum_from_json(serde::pb::json::peekable_parser* p, protobuf3_test* e) {
   case serde::json::token::value_int: {
     switch (p->value_int()) {
     case 0:
-      *e = protobuf3_test::protobuf3_test_unspecified;
+      *e = protobuf3_test::unspecified;
       return;
     case 1:
-      *e = protobuf3_test::protobuf3_test_started;
+      *e = protobuf3_test::started;
       return;
     case 1:
-      *e = protobuf3_test::protobuf3_test_running;
+      *e = protobuf3_test::running;
       return;
     case 2:
-      *e = protobuf3_test::protobuf3_test_finished;
+      *e = protobuf3_test::finished;
       return;
     default:
-      *e = protobuf3_test::protobuf3_test_unspecified;
+      *e = protobuf3_test::unspecified;
       return;
     }
   }
@@ -204,11 +204,11 @@ void enum_to_proto(const proto3_test& e, iobuf* buf) {
 }
 std::string_view enum_to_string(const proto3_test& e) {
   switch (e) {
-  case proto3_test::proto3_test_unspecified:
+  case proto3_test::unspecified:
     return "PROTO3_TEST_UNSPECIFIED";
-  case proto3_test::proto3_test_started:
+  case proto3_test::started:
     return "PROTO3_TEST_STARTED";
-  case proto3_test::proto3_test_finished:
+  case proto3_test::finished:
     return "PROTO3_TEST_FINISHED";
   default:
     return "PROTO3_TEST_UNSPECIFIED";
@@ -218,13 +218,13 @@ void enum_from_json(serde::pb::json::peekable_parser* p, proto3_test* e) {
   switch (p->token()) {
   case serde::json::token::value_string: {
     constexpr static auto values = std::to_array<std::pair<std::string_view, proto3_test>>({
-      {"PROTO3_TEST_FINISHED", proto3_test::proto3_test_finished},
-      {"PROTO3_TEST_STARTED", proto3_test::proto3_test_started},
-      {"PROTO3_TEST_UNSPECIFIED", proto3_test::proto3_test_unspecified},
+      {"PROTO3_TEST_FINISHED", proto3_test::finished},
+      {"PROTO3_TEST_STARTED", proto3_test::started},
+      {"PROTO3_TEST_UNSPECIFIED", proto3_test::unspecified},
     });
     auto eq = std::ranges::equal_range(values, p->value_string(), std::less<>(), [](const auto& pair) { return pair.first; });
     if (eq.empty()) {
-      *e = proto3_test::proto3_test_unspecified;
+      *e = proto3_test::unspecified;
     } else {
       *e = eq.front().second;
     }
@@ -233,16 +233,16 @@ void enum_from_json(serde::pb::json::peekable_parser* p, proto3_test* e) {
   case serde::json::token::value_int: {
     switch (p->value_int()) {
     case 0:
-      *e = proto3_test::proto3_test_unspecified;
+      *e = proto3_test::unspecified;
       return;
     case 1:
-      *e = proto3_test::proto3_test_started;
+      *e = proto3_test::started;
       return;
     case 2:
-      *e = proto3_test::proto3_test_finished;
+      *e = proto3_test::finished;
       return;
     default:
-      *e = proto3_test::proto3_test_unspecified;
+      *e = proto3_test::unspecified;
       return;
     }
   }

@@ -24,14 +24,14 @@ namespace example {
 // 
 // See: https://protobuf.dev/programming-guides/proto3/#enum
 enum class corpus : uint8_t {
-  corpus_unspecified = 0,
-  corpus_universal = 1,
-  corpus_web = 2,
-  corpus_images = 3,
-  corpus_local = 4,
-  corpus_news = 5,
-  corpus_products = 6,
-  corpus_video = 7,
+  unspecified = 0,
+  universal = 1,
+  web = 2,
+  images = 3,
+  local = 4,
+  news = 5,
+  products = 6,
+  video = 7,
 };
 void enum_to_proto(const corpus&, iobuf*);
 void enum_from_proto(iobuf_parser*, corpus*);
@@ -40,10 +40,10 @@ std::string_view enum_to_string(const corpus&);
 void enum_from_json(serde::pb::json::peekable_parser*, corpus*);
 
 enum class protobuf3_test : uint8_t {
-  protobuf3_test_unspecified = 0,
-  protobuf3_test_started = 1,
-  protobuf3_test_running = 1,
-  protobuf3_test_finished = 2,
+  unspecified = 0,
+  started = 1,
+  running = 1,
+  finished = 2,
 };
 void enum_to_proto(const protobuf3_test&, iobuf*);
 void enum_from_proto(iobuf_parser*, protobuf3_test*);
@@ -52,9 +52,9 @@ std::string_view enum_to_string(const protobuf3_test&);
 void enum_from_json(serde::pb::json::peekable_parser*, protobuf3_test*);
 
 enum class proto3_test : uint8_t {
-  proto3_test_unspecified = 0,
-  proto3_test_started = 1,
-  proto3_test_finished = 2,
+  unspecified = 0,
+  started = 1,
+  finished = 2,
 };
 void enum_to_proto(const proto3_test&, iobuf*);
 void enum_from_proto(iobuf_parser*, proto3_test*);
