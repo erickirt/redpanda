@@ -17,6 +17,271 @@
 
 namespace example {
 
+a::a() noexcept = default;
+a::a(a&&) noexcept = default;
+a& a::operator=(a&&) noexcept = default;
+a::~a() noexcept = default;
+bool a::operator==(const a&) const = default;
+c& a::get_c() { return c_; }
+const c& a::get_c() const { return c_; }
+void a::set_c(c&& v) { c_ = std::move(v); }
+seastar::future<> a::from_proto(serde::pb::wire_format_parser* parser, a* self) {
+  while (parser->bytes_left() > 0) {
+    auto tag = parser->read_tag();
+    switch (tag.field_number) {
+    case 1: { // c
+      auto msg_parser = parser->read_message<"example.A.c">(tag);
+      c sub_msg;
+      co_await c::from_proto(&msg_parser, &sub_msg);
+      self->set_c(std::move(sub_msg));
+      break;
+    }
+    default:
+      parser->skip_unknown(tag);
+      break;
+    }
+  }
+  co_return;
+}
+seastar::future<a> a::from_proto(iobuf buf) {
+  a self;
+  serde::pb::wire_format_parser parser{std::move(buf)};
+  co_await from_proto(&parser, &self);
+  parser.check_empty();
+  co_return self;
+}
+seastar::future<iobuf> a::to_proto() const {
+  iobuf buf;
+  {
+    // c
+    serde::pb::tag::write({.wire_type = serde::pb::wire_type::length, .field_number = 1}, &buf);
+    iobuf msg_buf = co_await get_c().to_proto();
+    serde::pb::write_length(static_cast<int32_t>(msg_buf.size_bytes()), &buf);
+    buf.append(std::move(msg_buf));
+  }
+  co_return buf;
+}
+seastar::future<iobuf> a::to_json() const {
+  serde::json::writer w;
+  w.begin_object();
+  w.key("c");
+  w.append_raw_json(co_await get_c().to_json());
+  w.end_object();
+  co_return std::move(w).finish();
+}
+seastar::future<> a::from_json(serde::pb::json::peekable_parser* parser, a* self) {
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, int32_t>>({
+    {"c", 1},
+  });
+  auto entries = serde::pb::json::object_key_generator(parser);
+  while (auto key = co_await entries()) {
+    auto fields = std::ranges::equal_range(key_to_field_number, *key, std::less<>(), [](const auto& pair) { return pair.first; });
+    if (fields.empty()) {
+      co_await parser->skip_value();
+      continue;
+    }
+    switch (fields.front().second) {
+    case 1: { // c
+      if (co_await parser->peek() == serde::json::token::value_null) {
+        co_await parser->next();
+      } else {
+        c v{};
+        co_await c::from_json(parser, &v);
+        self->set_c(std::move(v));
+      }
+      break;
+    }
+    default:
+      vassert(false, "codegen error unexpected field number: {}", fields.front().second);
+    }
+  }
+  co_return;
+}
+seastar::future<a> a::from_json(iobuf data) {
+  a self;
+  serde::pb::json::peekable_parser parser(std::move(data));
+  co_await from_json(&parser, &self);
+  co_await serde::pb::json::check_next_eof(&parser);
+  co_return self;
+}
+
+b::b() noexcept = default;
+b::b(b&&) noexcept = default;
+b& b::operator=(b&&) noexcept = default;
+b::~b() noexcept = default;
+bool b::operator==(const b&) const = default;
+c& b::get_c() { return c_; }
+const c& b::get_c() const { return c_; }
+void b::set_c(c&& v) { c_ = std::move(v); }
+a& b::get_a() { return a_; }
+const a& b::get_a() const { return a_; }
+void b::set_a(a&& v) { a_ = std::move(v); }
+seastar::future<> b::from_proto(serde::pb::wire_format_parser* parser, b* self) {
+  while (parser->bytes_left() > 0) {
+    auto tag = parser->read_tag();
+    switch (tag.field_number) {
+    case 1: { // c
+      auto msg_parser = parser->read_message<"example.B.c">(tag);
+      c sub_msg;
+      co_await c::from_proto(&msg_parser, &sub_msg);
+      self->set_c(std::move(sub_msg));
+      break;
+    }
+    case 2: { // a
+      auto msg_parser = parser->read_message<"example.B.a">(tag);
+      a sub_msg;
+      co_await a::from_proto(&msg_parser, &sub_msg);
+      self->set_a(std::move(sub_msg));
+      break;
+    }
+    default:
+      parser->skip_unknown(tag);
+      break;
+    }
+  }
+  co_return;
+}
+seastar::future<b> b::from_proto(iobuf buf) {
+  b self;
+  serde::pb::wire_format_parser parser{std::move(buf)};
+  co_await from_proto(&parser, &self);
+  parser.check_empty();
+  co_return self;
+}
+seastar::future<iobuf> b::to_proto() const {
+  iobuf buf;
+  {
+    // c
+    serde::pb::tag::write({.wire_type = serde::pb::wire_type::length, .field_number = 1}, &buf);
+    iobuf msg_buf = co_await get_c().to_proto();
+    serde::pb::write_length(static_cast<int32_t>(msg_buf.size_bytes()), &buf);
+    buf.append(std::move(msg_buf));
+  }
+  {
+    // a
+    serde::pb::tag::write({.wire_type = serde::pb::wire_type::length, .field_number = 2}, &buf);
+    iobuf msg_buf = co_await get_a().to_proto();
+    serde::pb::write_length(static_cast<int32_t>(msg_buf.size_bytes()), &buf);
+    buf.append(std::move(msg_buf));
+  }
+  co_return buf;
+}
+seastar::future<iobuf> b::to_json() const {
+  serde::json::writer w;
+  w.begin_object();
+  w.key("c");
+  w.append_raw_json(co_await get_c().to_json());
+  w.key("a");
+  w.append_raw_json(co_await get_a().to_json());
+  w.end_object();
+  co_return std::move(w).finish();
+}
+seastar::future<> b::from_json(serde::pb::json::peekable_parser* parser, b* self) {
+  constexpr static auto key_to_field_number = std::to_array<std::pair<std::string_view, int32_t>>({
+    {"a", 2},
+    {"c", 1},
+  });
+  auto entries = serde::pb::json::object_key_generator(parser);
+  while (auto key = co_await entries()) {
+    auto fields = std::ranges::equal_range(key_to_field_number, *key, std::less<>(), [](const auto& pair) { return pair.first; });
+    if (fields.empty()) {
+      co_await parser->skip_value();
+      continue;
+    }
+    switch (fields.front().second) {
+    case 1: { // c
+      if (co_await parser->peek() == serde::json::token::value_null) {
+        co_await parser->next();
+      } else {
+        c v{};
+        co_await c::from_json(parser, &v);
+        self->set_c(std::move(v));
+      }
+      break;
+    }
+    case 2: { // a
+      if (co_await parser->peek() == serde::json::token::value_null) {
+        co_await parser->next();
+      } else {
+        a v{};
+        co_await a::from_json(parser, &v);
+        self->set_a(std::move(v));
+      }
+      break;
+    }
+    default:
+      vassert(false, "codegen error unexpected field number: {}", fields.front().second);
+    }
+  }
+  co_return;
+}
+seastar::future<b> b::from_json(iobuf data) {
+  b self;
+  serde::pb::json::peekable_parser parser(std::move(data));
+  co_await from_json(&parser, &self);
+  co_await serde::pb::json::check_next_eof(&parser);
+  co_return self;
+}
+
+c::c() noexcept = default;
+c::c(c&&) noexcept = default;
+c& c::operator=(c&&) noexcept = default;
+c::~c() noexcept = default;
+bool c::operator==(const c&) const = default;
+seastar::future<> c::from_proto(serde::pb::wire_format_parser* parser, c* self) {
+  std::ignore = self;
+  while (parser->bytes_left() > 0) {
+    auto tag = parser->read_tag();
+    switch (tag.field_number) {
+    default:
+      parser->skip_unknown(tag);
+      break;
+    }
+  }
+  co_return;
+}
+seastar::future<c> c::from_proto(iobuf buf) {
+  c self;
+  serde::pb::wire_format_parser parser{std::move(buf)};
+  co_await from_proto(&parser, &self);
+  parser.check_empty();
+  co_return self;
+}
+seastar::future<iobuf> c::to_proto() const {
+  iobuf buf;
+  co_return buf;
+}
+seastar::future<iobuf> c::to_json() const {
+  serde::json::writer w;
+  w.begin_object();
+  w.end_object();
+  co_return std::move(w).finish();
+}
+seastar::future<> c::from_json(serde::pb::json::peekable_parser* parser, c* self) {
+  std::ignore = self;
+  constexpr static std::array<std::pair<std::string_view, int32_t>, 0> key_to_field_number = {};
+  auto entries = serde::pb::json::object_key_generator(parser);
+  while (auto key = co_await entries()) {
+    auto fields = std::ranges::equal_range(key_to_field_number, *key, std::less<>(), [](const auto& pair) { return pair.first; });
+    if (fields.empty()) {
+      co_await parser->skip_value();
+      continue;
+    }
+    switch (fields.front().second) {
+    default:
+      vassert(false, "codegen error unexpected field number: {}", fields.front().second);
+    }
+  }
+  co_return;
+}
+seastar::future<c> c::from_json(iobuf data) {
+  c self;
+  serde::pb::json::peekable_parser parser(std::move(data));
+  co_await from_json(&parser, &self);
+  co_await serde::pb::json::check_next_eof(&parser);
+  co_return self;
+}
+
 void enum_from_proto(iobuf_parser* p, corpus* e) {
   auto v = serde::pb::read_varint<int32_t, serde::pb::zigzag::no>(p);
   constexpr static auto values = std::to_array<int32_t>({

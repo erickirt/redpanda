@@ -377,11 +377,14 @@ func (g *headerGenerator) generateFile(w *codewriter) {
 		g.generateEnumSerde(enum, w)
 		w.Println()
 	}
-	// Now emit all messages.
-	for _, msg := range msgs {
+	// Now emit all messages, but do it in a best effort order to avoid
+	// circular dependencies. If you are still seeing circular dependencies,
+	// this sort is stable, so you can reorder messages to get the order you want.
+	for _, msg := range sortMessages(msgs) {
 		g.generateMessage(msg, w)
 		w.Println()
 	}
+	// Last emit services
 	for i := range g.file.Services().Len() {
 		service := g.file.Services().Get(i)
 		g.generateService(service, w)
@@ -1848,6 +1851,26 @@ func collectDescriptors(parent protoreflect.Descriptor) (msgs []protoreflect.Mes
 		}
 	}
 	return
+}
+
+func sortMessages(msgs []protoreflect.MessageDescriptor) []protoreflect.MessageDescriptor {
+	return sortCyclicalGraph(msgs, func(m protoreflect.MessageDescriptor) []protoreflect.MessageDescriptor {
+		var children []protoreflect.MessageDescriptor
+		for i := range m.Fields().Len() {
+			f := m.Fields().Get(i)
+			if f.IsMap() {
+				if child := f.MapKey().Message(); child != nil {
+					children = append(children, child)
+				}
+				if child := f.MapValue().Message(); child != nil {
+					children = append(children, child)
+				}
+			} else if child := f.Message(); child != nil {
+				children = append(children, child)
+			}
+		}
+		return children
+	})
 }
 
 // ----------------------------------------------------------
