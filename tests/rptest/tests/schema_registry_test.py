@@ -4401,6 +4401,28 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         self.assert_equal(result_raw.status_code, 200)
         self.assert_equal(result_raw.json()["id"], 1)
 
+    @cluster(num_nodes=3)
+    def test_schema_id_exhausted(self):
+        sub = "test-subject-1"
+
+        self.logger.debug("Post a schema with INT_MAX version")
+        result_raw = self.sr_client.post_subjects_subject_versions(
+            sub,
+            data=json.dumps({
+                "version": 2147483647,
+                "schema": schema1_def
+            }))
+        self.assert_equal(result_raw.status_code, 200)
+        self.assert_equal(result_raw.json()["id"], 1)
+
+        self.logger.debug(
+            "Post another schema - expect version exhausted error")
+        result_raw = self.sr_client.post_subjects_subject_versions(
+            sub, data=json.dumps({"schema": schema2_def}))
+        self.assert_equal(result_raw.status_code, 500)
+        self.assert_equal(result_raw.json()["message"],
+                          f"Versions exhausted for subject {sub}")
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
