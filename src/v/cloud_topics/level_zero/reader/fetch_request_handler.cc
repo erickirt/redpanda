@@ -11,10 +11,10 @@
 #include "cloud_topics/level_zero/reader/fetch_request_handler.h"
 
 #include "base/unreachable.h"
-#include "cloud_topics/dl_placeholder.h"
 #include "cloud_topics/level_zero/event_filter.h"
 #include "cloud_topics/level_zero/read_request.h"
 #include "cloud_topics/level_zero/reader/materialized_extent_reader.h"
+#include "cloud_topics/level_zero/stm/placeholder.h"
 #include "cloud_topics/logger.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"

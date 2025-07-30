@@ -5,6 +5,28 @@ package(default_visibility = [
 ])
 
 redpanda_cc_library(
+    name = "placeholder",
+    hdrs = [
+        "placeholder.h",
+    ],
+    include_prefix = "cloud_topics/level_zero/stm",
+    visibility = [
+        "//src/v/cloud_topics/batch_cache:__pkg__",
+        "//src/v/cloud_topics/frontend:__pkg__",
+        "//src/v/cloud_topics/level_zero/reader:__pkg__",
+        "//src/v/cloud_topics/level_zero/reader/tests:__pkg__",
+    ],
+    deps = [
+        "//src/v/cloud_topics:types",
+        "//src/v/serde",
+        "//src/v/serde:named_type",
+        "//src/v/serde:uuid",
+        "//src/v/utils:named_type",
+        "//src/v/utils:uuid",
+    ],
+)
+
+redpanda_cc_library(
     name = "dl_version",
     hdrs = ["dl_version.h"],
     include_prefix = "cloud_topics/level_zero/stm",

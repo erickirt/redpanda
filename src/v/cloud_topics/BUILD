@@ -47,22 +47,6 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "placeholder",
-    hdrs = [
-        "dl_placeholder.h",
-    ],
-    include_prefix = "cloud_topics",
-    deps = [
-        ":types",
-        "//src/v/serde",
-        "//src/v/serde:named_type",
-        "//src/v/serde:uuid",
-        "//src/v/utils:named_type",
-        "//src/v/utils:uuid",
-    ],
-)
-
-redpanda_cc_library(
     name = "data_plane_api",
     hdrs = [
         "data_plane_api.h",
