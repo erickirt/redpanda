@@ -497,15 +497,15 @@ seastar::future<iobuf> well_known_protos::to_json() const {
     w.append_raw_json(serde::pb::json::wellknown::duration_to_json(value));
   }
   w.end_object();
-  w.key("single_field_mask");
+  w.key("singleFieldMask");
   w.append_raw_json(serde::pb::json::wellknown::field_mask_to_json(get_single_field_mask()));
-  w.key("repeated_field_mask");
+  w.key("repeatedFieldMask");
   w.begin_array();
   for (const auto& e : get_repeated_field_mask()) {
     w.append_raw_json(serde::pb::json::wellknown::field_mask_to_json(e));
   }
   w.end_array();
-  w.key("field_mask_map");
+  w.key("fieldMaskMap");
   w.begin_object();
   for (const auto& [key, value] : get_field_mask_map()) {
     w.key(key);
