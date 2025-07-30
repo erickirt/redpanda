@@ -18,6 +18,16 @@
 
 namespace serde::pb {
 
+/**
+ * A field mask is a protobuf message that specifies which fields
+ * should be considered set in an other protobuf message.
+ *
+ * It is often used for partial updates, where only a subset of fields
+ * are modified.
+ *
+ * See: https://protobuf.dev/reference/protobuf/google.protobuf/#field-mask
+ * for more details.
+ */
 struct field_mask {
     chunked_vector<ss::sstring> paths;
 
