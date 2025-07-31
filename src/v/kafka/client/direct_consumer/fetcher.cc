@@ -151,6 +151,22 @@ ss::future<fetcher::partitions_with_epoch> fetcher::collect_partitions() {
               }
               to_process.to_include_in_fetch.push_back(fetch_state);
           });
+
+        if (!to_process.empty()) {
+            ret.partitions.push_back(std::move(to_process));
+        }
+    }
+
+    for (auto& [topic, partitions] : _partitions_to_forget) {
+        partitions_to_process to_process;
+        to_process.topic = topic;
+        ssx::async_counter cnt;
+        // TODO(oren): maybe the async isn't so necessary here and we can
+        // just copy straight across
+        co_await ssx::async_for_each_counter(
+          cnt, partitions, [&to_process](auto& p_fs) {
+              to_process.to_forget.push_back(p_fs.second);
+          });
         if (!to_process.empty()) {
             ret.partitions.push_back(std::move(to_process));
         }
@@ -178,8 +194,14 @@ ss::future<fetch_request> fetcher::make_fetch_request(
 
     for (const auto& topic_partitions : to_process) {
         fetch_topic f_topic;
+        forgotten_topic r_topic;
 
         const auto& to_include = topic_partitions.to_include_in_fetch;
+        const auto& to_forget = topic_partitions.to_forget;
+
+        vassert(
+          to_include.empty() || to_forget.empty(),
+          "Entry should have either included or forgotten partitions");
 
         if (!to_include.empty()) {
             f_topic.topic = topic_partitions.topic;
@@ -199,6 +221,19 @@ ss::future<fetch_request> fetcher::make_fetch_request(
                   f_topic.partitions.push_back(std::move(f_partition));
               });
             req.data.topics.push_back(std::move(f_topic));
+        }
+
+        if (!to_forget.empty()) {
+            r_topic.topic = topic_partitions.topic;
+            r_topic.partitions.reserve(to_forget.size());
+            ssx::async_counter cnt;
+            co_await ssx::async_for_each_counter(
+              cnt, to_forget, [&r_topic](model::partition_id pid) {
+                  r_topic.partitions.push_back(pid);
+              });
+            if (_session_state.incremental()) {
+                req.data.forgotten_topics_data.push_back(std::move(r_topic));
+            }
         }
     }
 
@@ -263,8 +298,7 @@ bool fetcher::maybe_update_fetch_offset(
 ss::future<> fetcher::do_fetch() {
     bool needs_backoff = false;
     try {
-        co_await _partitions_updated.wait(
-          [this] { return !_partitions.empty(); });
+        co_await _partitions_updated.wait([this] { return !is_idle(); });
 
         /**
          * Iterate once over all partitions that are assigned to the fetcher and
@@ -494,7 +528,17 @@ fetcher::process_fetch_response(
     // or just returned new data.
     for (const auto& to_process : partitions) {
         const auto& included = to_process.to_include_in_fetch;
+        const auto& forgotten = to_process.to_forget;
         const auto& topic = to_process.topic;
+
+        // vassert to enforce invariant by construction. this is an
+        // implementation detail. if this assert fires, that means a change
+        // to collect_partitions will require a corresponding change to this
+        // loop body.
+        vassert(
+          included.empty() || forgotten.empty(),
+          "partitions_to_process should have either included or forgotten "
+          "partitions, not both");
 
         if (!included.empty()) {
             auto tp_it = _partitions.find(topic);
@@ -512,6 +556,28 @@ fetcher::process_fetch_response(
                 if (p_it != ps.end() && !partition_err) {
                     p_it->second.incremental_include = false;
                 }
+            }
+        }
+
+        if (!forgotten.empty()) {
+            auto fgt_it = _partitions_to_forget.find(topic);
+            if (fgt_it == _partitions_to_forget.end()) {
+                continue;
+            }
+            auto& ps = fgt_it->second;
+            for (auto p_id : forgotten) {
+                if (auto p_it = ps.find(p_id); p_it != ps.end()) {
+                    vlog(
+                      logger().trace,
+                      "[broker: {}] Requested to forget {} in session {}",
+                      _id,
+                      model::topic_partition_view{topic, p_id},
+                      _session_state.session_id);
+                    ps.erase(p_it);
+                }
+            }
+            if (ps.empty()) {
+                _partitions_to_forget.erase(fgt_it);
             }
         }
     }
@@ -703,8 +769,7 @@ fetcher::unassign_partition(model::topic_partition_view tp_v) {
       "[broker: {}] Removing partition: {} assignment",
       _id,
       tp_v);
-    // TODO: for fetch sessions we will need to mark partitions to deletion so
-    // they can be removed from the fetch session
+    _partitions_to_forget[tp_v.topic][tp_v.partition] = tp_v.partition;
     auto fetch_offset = p_it->second.fetch_offset;
     partitions.erase(p_it);
     if (partitions.empty()) {

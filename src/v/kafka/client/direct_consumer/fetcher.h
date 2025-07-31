@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "base/format_to.h"
+#include "container/chunked_vector.h"
 #include "container/intrusive_list_helpers.h"
 #include "kafka/client/direct_consumer/api_types.h"
 #include "kafka/client/direct_consumer/data_queue.h"
@@ -170,7 +171,9 @@ public:
     ss::future<std::optional<kafka::offset>>
       unassign_partition(model::topic_partition_view);
 
-    bool is_idle() const { return _partitions.empty(); }
+    bool is_idle() const {
+        return _partitions.empty() && _partitions_to_forget.empty();
+    }
 
     void toggle_sessions(fetch_sessions_enabled);
 
@@ -195,9 +198,11 @@ private:
         model::topic topic;
         state_list to_include_in_fetch;
         state_list to_list_offsets;
+        chunked_vector<model::partition_id> to_forget;
 
         bool empty() const {
-            return to_include_in_fetch.empty() && to_list_offsets.empty();
+            return to_include_in_fetch.empty() && to_list_offsets.empty()
+                   && to_forget.empty();
         }
     };
     struct partitions_with_epoch {
@@ -254,6 +259,7 @@ private:
     model::node_id _id;
     fetch_session_state _session_state;
     topic_partition_map<partition_fetch_state> _partitions;
+    topic_partition_map<model::partition_id> _partitions_to_forget;
     ss::condition_variable _partitions_updated;
     ss::gate _gate;
     mutex _state_lock;
