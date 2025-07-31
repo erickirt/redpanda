@@ -259,6 +259,8 @@ ss::future<server::reply_t> put_mode(server::request_t rq, server::reply_t rp) {
                  .value_or(force::no);
     auto res = co_await rjson_parse(*rq.req, mode_handler<>{});
 
+    // Ensure we are up to date (eg. see all existing subjects for import mode)
+    co_await rq.service().writer().read_sync();
     co_await rq.service().writer().write_mode(std::nullopt, res.mode, frc);
 
     auto resp = ppj::rjson_serialize_iobuf(res);
@@ -556,12 +558,16 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     auto ids = co_await rq.service().schema_store().get_schema_version(
       schema.share());
 
+    const auto mode = co_await rq.service().schema_store().get_mode(
+      sub, default_to_global::yes);
+    const auto should_reinsert = mode == mode::import && ids.id != schema.id;
+
     schema_id schema_id{ids.id.value_or(invalid_schema_id)};
-    if (!ids.version.has_value()) {
-        schema.id = ids.id.value_or(invalid_schema_id);
-        schema.version = schema.version == invalid_schema_version
-                           ? ids.version.value_or(invalid_schema_version)
-                           : schema.version;
+    if (!ids.version.has_value() || should_reinsert) {
+        schema.id = (schema.id == invalid_schema_id)
+                      ? ids.id.value_or(invalid_schema_id)
+                      : schema.id;
+
         schema_id = co_await rq.service().writer().write_subject_version(
           std::move(schema));
     }
