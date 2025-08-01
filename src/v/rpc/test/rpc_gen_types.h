@@ -26,21 +26,41 @@
 #include <cstdint>
 
 namespace cycling {
-struct ultimate_cf_slx {
-    using rpc_serde_exempt = std::true_type;
+struct ultimate_cf_slx
+  : serde::
+      envelope<ultimate_cf_slx, serde::version<0>, serde::compat_version<0>> {
+    ultimate_cf_slx() = default;
+    ultimate_cf_slx(int x)
+      : x(x) {}
     int x = 42;
+    auto serde_fields() { return std::tie(x); }
 };
-struct nairo_quintana {
-    using rpc_serde_exempt = std::true_type;
+struct nairo_quintana
+  : serde::
+      envelope<nairo_quintana, serde::version<0>, serde::compat_version<0>> {
+    nairo_quintana() = default;
+    nairo_quintana(int x)
+      : x(x) {}
     int x = 43;
+    auto serde_fields() { return std::tie(x); }
 };
-struct san_francisco {
-    using rpc_serde_exempt = std::true_type;
+struct san_francisco
+  : serde::
+      envelope<san_francisco, serde::version<0>, serde::compat_version<0>> {
+    san_francisco() = default;
+    san_francisco(int x)
+      : x(x) {}
     int x = 44;
+    auto serde_fields() { return std::tie(x); }
 };
-struct mount_tamalpais {
-    using rpc_serde_exempt = std::true_type;
+struct mount_tamalpais
+  : serde::
+      envelope<mount_tamalpais, serde::version<0>, serde::compat_version<0>> {
+    mount_tamalpais() = default;
+    mount_tamalpais(int x)
+      : x(x) {}
     int x = 45;
+    auto serde_fields() { return std::tie(x); }
 };
 } // namespace cycling
 
