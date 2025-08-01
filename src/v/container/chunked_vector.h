@@ -561,7 +561,7 @@ private:
     }
 
 private:
-    friend class fragmented_vector_validator;
+    friend class chunked_vector_validator;
     fragmented_vector(const fragmented_vector&) noexcept = default;
 
     template<typename TT, size_t SS>
