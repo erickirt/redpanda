@@ -19,6 +19,7 @@
 #include "ssx/future-util.h"
 
 #include <seastar/core/sleep.hh>
+#include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
 
@@ -27,12 +28,30 @@ static constexpr model::node_id client_replica_id{-1};
 static constexpr std::chrono::milliseconds error_backoff(200);
 
 fetch_session_state::fetch_session_state(
+  model::node_id id,
+  prefix_logger& logger,
   fetch_sessions_enabled sessions_enabled)
-  : _fetch_sessions_enabled(sessions_enabled) {
+  : _id(id)
+  , _logger(&logger)
+  , _fetch_sessions_enabled(sessions_enabled) {
     reset();
 }
 
 void fetch_session_state::update_fetch_session(kafka::fetch_session_id id) {
+    auto deferred_log = ss::defer(
+      [this, prev_ss = session_state, prev_id = session_id] {
+          if (prev_id == session_id && prev_ss == session_state) {
+              return;
+          }
+          vlog(
+            _logger->trace,
+            "[broker: {}] {{session {}: {}}} -> {{session {}: {}}}",
+            _id,
+            prev_id,
+            prev_ss,
+            session_id,
+            session_state);
+      });
     switch (session_state) {
     case state::none:
         reset();
@@ -100,7 +119,7 @@ fetcher::fetcher(
   direct_consumer* parent, model::node_id id, fetch_sessions_enabled sessions)
   : _parent(parent)
   , _id(id)
-  , _session_state(sessions)
+  , _session_state(_id, logger(), sessions)
   , _state_lock("fetcher/state") {}
 
 void fetcher::start() {

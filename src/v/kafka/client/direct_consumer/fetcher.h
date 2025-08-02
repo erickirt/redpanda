@@ -38,7 +38,9 @@ struct fetch_session_state {
         needs_close,
     };
 
-    explicit fetch_session_state(
+    fetch_session_state(
+      model::node_id id,
+      prefix_logger& logger,
       fetch_sessions_enabled sessions_enabled = fetch_sessions_enabled::yes);
 
     /**
@@ -119,6 +121,8 @@ private:
             ++session_epoch;
         }
     }
+    model::node_id _id;
+    prefix_logger* _logger;
     fetch_sessions_enabled _fetch_sessions_enabled;
     fmt::iterator format_to(fmt::iterator it) const;
 };
