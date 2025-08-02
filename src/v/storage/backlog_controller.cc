@@ -76,11 +76,6 @@ ss::future<> backlog_controller::start() {
     _sampling_timer.arm(_sampling_interval);
 }
 
-void backlog_controller::update_setpoint(int64_t v) {
-    vlog(_log.info, "new setpoint value: {}", v);
-    _setpoint = v;
-}
-
 ss::future<> backlog_controller::stop() {
     _sampling_timer.cancel();
     return _gate.close();

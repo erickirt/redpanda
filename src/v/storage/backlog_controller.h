@@ -91,7 +91,6 @@ public:
     backlog_controller(
       std::unique_ptr<sampler>, ss::logger&, backlog_controller_config);
 
-    void update_setpoint(int64_t);
     ss::future<> start();
     ss::future<> stop();
 
