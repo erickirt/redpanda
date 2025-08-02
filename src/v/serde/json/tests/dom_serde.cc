@@ -12,6 +12,8 @@
 #include "serde/json/parser.h"
 #include "serde/json/tests/dom.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace serde::json::test::dom {
 
 ss::future<value> parse_document_serde(iobuf buf) {

@@ -2632,7 +2632,7 @@ partition_manifest_serde_from_partition_manifest(const partition_manifest& m)
         (([&]<typename Src>(auto& dest, const Src& src) {
              if constexpr (std::is_same_v<Src, segment_meta_cstore>) {
                  dest = src.to_iobuf();
-             } else if constexpr (reflection::is_fragmented_vector<Src>) {
+             } else if constexpr (reflection::is_chunked_vector<Src>) {
                  dest = src.copy();
              } else {
                  dest = src;

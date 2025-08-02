@@ -14,6 +14,7 @@
 #include "model/record_batch_types.h"
 
 #include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>

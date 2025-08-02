@@ -118,6 +118,7 @@ redpanda_cc_library(
         ":conversion_outcome",
         "//src/v/iceberg:values",
         "//src/v/serde/parquet:value",
+        "@seastar",
     ],
 )
 

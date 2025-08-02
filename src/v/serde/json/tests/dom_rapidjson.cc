@@ -15,6 +15,8 @@
 #include "json/istreamwrapper.h"
 #include "json/reader.h"
 
+#include <seastar/core/coroutine.hh>
+
 #include <rapidjson/error/en.h>
 
 namespace serde::json::test::dom {

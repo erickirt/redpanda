@@ -57,7 +57,7 @@ template<typename T>
 concept is_std_vector = ::detail::is_specialization_of_v<T, std::vector>;
 
 template<typename T>
-concept is_fragmented_vector
+concept is_chunked_vector
   = ::detail::is_specialization_of_sized_v<T, fragmented_vector>;
 
 template<typename T>

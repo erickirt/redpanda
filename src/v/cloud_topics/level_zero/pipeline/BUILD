@@ -29,6 +29,7 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/common:extent_meta",
         "//src/v/container:chunked_vector",
         "//src/v/model",
+        "@seastar",
     ],
 )
 

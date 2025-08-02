@@ -15,6 +15,8 @@
 #include "datalake/coordinator/translated_offset_range.h"
 #include "model/fundamental.h"
 
+#include <seastar/core/coroutine.hh>
+
 #include <gtest/gtest.h>
 
 #include <vector>

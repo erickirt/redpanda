@@ -624,6 +624,7 @@ redpanda_cc_library(
         "//src/v/container:chunked_vector",
         "//src/v/model",
         "//src/v/utils:prefix_logger",
+        "@seastar",
     ],
 )
 
@@ -781,6 +782,7 @@ redpanda_cc_library(
         "//src/v/base",
         "//src/v/container:chunked_vector",
         "@boost//:container_hash",
+        "@fmt",
         "@seastar",
     ],
 )
@@ -1146,6 +1148,7 @@ redpanda_cc_library(
         ":table_metadata",
         ":unresolved_partition_spec",
         "//src/v/utils:prefix_logger",
+        "@seastar",
     ],
 )
 
@@ -1166,6 +1169,7 @@ redpanda_cc_library(
         ":action",
         ":schema",
         ":table_metadata",
+        "@seastar",
     ],
 )
 

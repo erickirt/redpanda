@@ -15,6 +15,8 @@
 #include "serde/parquet/metadata.h"
 #include "serde/parquet/value.h"
 
+#include <seastar/core/future.hh>
+
 namespace serde::parquet {
 
 // A serialized page for a column along with the page header metadata

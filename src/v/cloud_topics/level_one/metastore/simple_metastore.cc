@@ -14,6 +14,8 @@
 #include "cloud_topics/level_one/metastore/state_update.h"
 #include "cloud_topics/logger.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace experimental::cloud_topics::l1 {
 
 object_id simple_object_builder::get_or_create_object_for(
