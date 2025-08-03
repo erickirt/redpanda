@@ -80,7 +80,6 @@ redpanda_cc_library(
         "topic_mount_manifest.cc",
         "topic_path_utils.cc",
         "tx_range_manifest.cc",
-        "types.cc",
     ],
     hdrs = [
         "access_time_tracker.h",
@@ -132,7 +131,6 @@ redpanda_cc_library(
         "topic_mount_manifest.h",
         "topic_path_utils.h",
         "tx_range_manifest.h",
-        "types.h",
     ],
     implementation_deps = [
         "//src/v/json",
@@ -143,6 +141,7 @@ redpanda_cc_library(
     deps = [
         ":remote_label",
         ":topic_mount_manifest_path",
+        ":types",
         "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/bytes:iobuf_parser",
@@ -215,5 +214,30 @@ redpanda_cc_library(
         "@re2",
         "@seastar",
         "@zlib",
+    ],
+)
+
+redpanda_cc_library(
+    name = "types",
+    srcs = [
+        "types.cc",
+    ],
+    hdrs = [
+        "types.h",
+    ],
+    implementation_deps = [
+        "//src/v/utils:to_string",
+    ],
+    include_prefix = "cloud_storage",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "//src/v/cloud_io:io_result",
+        "//src/v/cloud_io:transfer_details",
+        "//src/v/model",
+        "//src/v/ssx:semaphore",
+        "//src/v/utils:named_type",
+        "@abseil-cpp//absl/container:node_hash_set",
+        "@seastar",
     ],
 )

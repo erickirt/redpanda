@@ -11,6 +11,7 @@
 #include "cloud_storage/types.h"
 
 #include "absl/container/node_hash_set.h"
+#include "utils/to_string.h" // IWYU pragma: keep
 
 namespace cloud_storage {
 
