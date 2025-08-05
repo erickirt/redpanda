@@ -88,8 +88,8 @@ MetricSample = collections.namedtuple(
 
 @dataclass
 class UsageStats:
-    bytes_read: int = 0
-    bytes_written: int = 0
+    disk_bytes_read: int = 0
+    disk_bytes_written: int = 0
     batches_read: int = 0
     batches_written: int = 0
 
@@ -4235,10 +4235,10 @@ class RedpandaService(RedpandaServiceBase):
                 self.logger.warning(f"Cannot check metrics - {e}")
                 return 0
 
-        self._usage_stats.bytes_read += _metrics_sum(
+        self._usage_stats.disk_bytes_read += _metrics_sum(
             "vectorized_io_queue_total_read_bytes_total")
 
-        self._usage_stats.bytes_written += _metrics_sum(
+        self._usage_stats.disk_bytes_written += _metrics_sum(
             "vectorized_io_queue_total_write_bytes_total")
         self._usage_stats.batches_read += _metrics_sum(
             "vectorized_storage_log_batches_read")
