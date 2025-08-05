@@ -147,7 +147,9 @@ ss::future<> service::start() {
 ss::future<> service::stop() {
     vlog(cllog.info, "Stopping cluster link service");
 
-    co_await _manager->stop();
+    if (_manager) {
+        co_await _manager->stop();
+    }
 }
 
 ss::future<result<model::metadata>>
