@@ -88,7 +88,6 @@ struct produce_reply
 struct topic_partitions
   : serde::
       envelope<topic_partitions, serde::version<0>, serde::compat_version<0>> {
-
     auto serde_fields() { return std::tie(topic, partitions); }
 
     topic_partitions copy() const {
@@ -103,7 +102,6 @@ struct topic_partitions
 struct partition_offsets
   : serde::
       envelope<partition_offsets, serde::version<0>, serde::compat_version<0>> {
-
     auto serde_fields() { return std::tie(high_watermark, last_stable_offset); }
 
     kafka::offset high_watermark;
@@ -114,7 +112,6 @@ struct partition_offset_result
       partition_offset_result,
       serde::version<0>,
       serde::compat_version<0>> {
-
     partition_offset_result() = default;
 
     explicit partition_offset_result(cluster::errc err)
@@ -137,7 +134,6 @@ struct get_offsets_request
       get_offsets_request,
       serde::version<0>,
       serde::compat_version<0>> {
-
     get_offsets_request() = default;
 
     explicit get_offsets_request(chunked_vector<topic_partitions> topics)
@@ -156,7 +152,6 @@ struct get_offsets_reply
       : partition_offsets(std::move(partition_offsets)) {}
 
     auto serde_fields() { return std::tie(partition_offsets); }
-
 
     partition_offsets_map partition_offsets;
 };
