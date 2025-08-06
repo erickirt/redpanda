@@ -77,6 +77,10 @@ redpanda_cc_library(
     hdrs = [
         "app.h",
     ],
+    implementation_deps = [
+        ":cluster_services_interface",
+        ":data_plane_impl",
+    ],
     include_prefix = "cloud_topics",
     visibility = [
         "//src/v/cloud_topics/frontend:__pkg__",
@@ -87,11 +91,14 @@ redpanda_cc_library(
     ],
     deps = [
         "//src/v/base",
-        "//src/v/cloud_topics:data_plane_api",
+        "//src/v/cloud_topics:state_accessors",
         "//src/v/cloud_topics/level_one/domain:domain_supervisor",
+        "//src/v/cloud_topics/level_one/metastore:frontend",
         "//src/v/cloud_topics/level_zero/common:extent_meta",
+        "//src/v/cluster",
         "//src/v/container:chunked_vector",
         "//src/v/model",
+        "//src/v/ssx:sharded_service_container",
         "//src/v/storage",
         "@seastar",
     ],
