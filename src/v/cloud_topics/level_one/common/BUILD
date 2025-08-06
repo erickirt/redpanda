@@ -61,3 +61,16 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "abstract_io",
+    srcs = ["abstract_io.cc"],
+    hdrs = ["abstract_io.h"],
+    include_prefix = "cloud_topics/level_one/common",
+    deps = [
+        ":object_id",
+        "//src/v/container:chunked_vector",
+        "//src/v/utils:named_type",
+        "@seastar",
+    ],
+)
