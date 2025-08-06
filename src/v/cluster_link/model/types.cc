@@ -119,7 +119,7 @@ auto fmt::formatter<cluster_link::model::scram_credentials>::format(
   -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{username={}, password=****, mechanism={}}}",
+      "{{username: {}, password: ****, mechanism: {}}}",
       c.username,
       c.mechanism);
 }
@@ -144,15 +144,15 @@ auto fmt::formatter<cluster_link::model::tls_file_or_value>::format(
     return ss::visit(
       t,
       [&ctx](const cluster_link::model::tls_file_path& p) {
-          return fmt::format_to(ctx.out(), "{{file={}}}", p());
+          return fmt::format_to(ctx.out(), "{{file: {}}}", p());
       },
       [this, &ctx](const cluster_link::model::tls_value& v) {
           if (_is_sensitive) {
-              return fmt::format_to(ctx.out(), "{{value=****}}");
+              return fmt::format_to(ctx.out(), "{{value: ****}}");
           }
           // If not sensitive, we can show the value
           // This is useful for debugging purposes.
-          return fmt::format_to(ctx.out(), "{{value={}}}", v());
+          return fmt::format_to(ctx.out(), "{{value: {}}}", v());
       });
 }
 
@@ -174,8 +174,8 @@ auto fmt::formatter<cluster_link::model::connection_config>::format(
   -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{bootstrap_servers={}, authn_config={}, cert={}, key={:s}, ca={}, "
-      "client_id={}}}",
+      "{{bootstrap_servers: {}, authn_config: {}, cert: {}, key: {:s}, ca: {}, "
+      "client_id: {}}}",
       c.bootstrap_servers,
       c.authn_config,
       c.cert,
@@ -198,9 +198,9 @@ auto fmt::formatter<cluster_link::model::mirror_topic_metadata>::format(
   format_context& ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{state={}, source_topic_id={}, source_topic_name={}, "
-      "destination_topic_id={}, partition_count={}, replication_factor={}, "
-      "topic_configs={}}}",
+      "{{state: {}, source_topic_id: {}, source_topic_name: {}, "
+      "destination_topic_id: {}, partition_count: {}, replication_factor: {}, "
+      "topic_configs: {}}}",
       m.state,
       m.source_topic_id,
       m.source_topic_name,
@@ -272,7 +272,7 @@ auto fmt::formatter<cluster_link::model::metadata>::format(
   -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{name={}, uuid={}, connection={}, state={}}}",
+      "{{name: {}, uuid: {}, connection: {}, state: {}}}",
       m.name,
       m.uuid,
       m.connection,
@@ -283,14 +283,14 @@ auto fmt::formatter<cluster_link::model::add_mirror_topic_cmd>::format(
   const cluster_link::model::add_mirror_topic_cmd& m, format_context& ctx)
   -> decltype(ctx.out()) {
     return fmt::format_to(
-      ctx.out(), "{{topic={}, metadata={}}}", m.topic, m.metadata);
+      ctx.out(), "{{topic: {}, metadata: {}}}", m.topic, m.metadata);
 }
 
 auto fmt::formatter<cluster_link::model::update_mirror_topic_state_cmd>::format(
   const cluster_link::model::update_mirror_topic_state_cmd& m,
   format_context& ctx) -> decltype(ctx.out()) {
     return fmt::format_to(
-      ctx.out(), "{{topic={}, state={}}}", m.topic, m.state);
+      ctx.out(), "{{topic: {}, state: {}}}", m.topic, m.state);
 }
 
 auto fmt::formatter<cluster_link::model::task_status_report>::format(
@@ -298,7 +298,7 @@ auto fmt::formatter<cluster_link::model::task_status_report>::format(
   -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{task_name={}, task_state={}, task_state_reason={}}}",
+      "{{task_name: {}, task_state: {}, task_state_reason: {}}}",
       r.task_name,
       r.task_state,
       r.task_state_reason);
@@ -322,7 +322,7 @@ auto fmt::formatter<cluster_link::model::link_task_status_report>::format(
   format_context& ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{link_name={}, task_status_reports={}}}",
+      "{{link_name: {}, task_status_reports: {}}}",
       r.link_name,
       fmt::join(
         r.task_status_reports.begin(), r.task_status_reports.end(), ","));
@@ -345,7 +345,7 @@ auto fmt::formatter<cluster_link::model::cluster_link_task_status_report>::
     format_context& ctx) const -> decltype(ctx.out()) {
     return fmt::format_to(
       ctx.out(),
-      "{{link_reports={}}}",
+      "{{link_reports: {}}}",
       fmt::join(r.link_reports.begin(), r.link_reports.end(), ","));
 }
 
