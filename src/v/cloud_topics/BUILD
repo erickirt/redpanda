@@ -115,7 +115,6 @@ redpanda_cc_library(
         "//src/v/cloud_topics/level_zero/pipeline:read_pipeline",
         "//src/v/cloud_topics/level_zero/pipeline:write_pipeline",
         "//src/v/cloud_topics/level_zero/reader:fetch_handler",
-        "//src/v/cloud_topics/level_zero/reconciler",
         "//src/v/cloud_topics/level_zero/throttler",
         "//src/v/model",
         "//src/v/storage",
