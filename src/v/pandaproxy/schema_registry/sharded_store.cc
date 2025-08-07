@@ -887,9 +887,7 @@ ss::future<bool> sharded_store::has_version(
 ss::future<std::optional<schema_id>>
 sharded_store::get_schema_id(schema_definition def) const {
     auto map = [&def](const store& s) { return s.get_schema_id(def); };
-    auto reduce = [](
-                    std::optional<schema_id> acc,
-                    std::optional<schema_id> s_id) { return acc ? acc : s_id; };
+    auto reduce = [](auto acc, auto s_id) { return std::max(acc, s_id); };
     co_return co_await _store.map_reduce0(
       map, std::optional<schema_id>{}, reduce);
 }
