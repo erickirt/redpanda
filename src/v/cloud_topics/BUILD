@@ -147,6 +147,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "state_accessors",
+    hdrs = [
+        "state_accessors.h",
+    ],
+    include_prefix = "cloud_topics",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":data_plane_api",
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "cluster_services_interface",
     hdrs = [
         "cluster_services.h",
