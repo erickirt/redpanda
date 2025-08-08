@@ -4615,6 +4615,63 @@ class SchemaRegistryModeMutableTest(SchemaRegistryEndpoints):
         got_ver_to_id = {int(elem["version"]): elem["id"] for elem in resp}
         self.assert_equal(expected_ver_to_id, got_ver_to_id)
 
+    @cluster(num_nodes=3)
+    def test_id_lookup_multiple_matches(self):
+        """
+        Test the behaviour of the schema lookup/registration endpoint when
+        there are multiple existing schemas with different ids but identical
+        schema definition.
+        """
+        sub = "test-subject-1"
+
+        self.logger.debug("Enable IMPORT mode to allow posting specific ids")
+        result_raw = self.sr_client.set_mode(
+            data=json.dumps({"mode": "IMPORT"}))
+        self.assert_equal(result_raw.status_code, 200)
+        self.assert_equal(result_raw.json()["mode"], "IMPORT")
+
+        self.logger.debug("Post the schema first with id 1")
+        result_raw = self.sr_client.post_subjects_subject_versions(
+            sub, data=json.dumps({
+                "id": 1,
+                "schema": schema1_def
+            }))
+        self.assert_equal(result_raw.status_code, 200)
+        self.assert_equal(result_raw.json()["id"], 1)
+
+        self.logger.debug("Post the same schema again now with id 2")
+        result_raw = self.sr_client.post_subjects_subject_versions(
+            sub, data=json.dumps({
+                "id": 2,
+                "schema": schema1_def
+            }))
+        self.assert_equal(result_raw.status_code, 200)
+        self.assert_equal(result_raw.json()["id"], 2)
+
+        self.logger.debug("Enable READWRITE mode to post without id")
+        result_raw = self.sr_client.set_mode(
+            data=json.dumps({"mode": "READWRITE"}))
+        self.assert_equal(result_raw.status_code, 200)
+        self.assert_equal(result_raw.json()["mode"], "READWRITE")
+
+        # POST /subjects/{subject}/versions/{version}
+        self.logger.debug(
+            "Post the schema definition again to post_subjects_subject_versions - should return id 2"
+        )
+        result_raw = self.sr_client.post_subjects_subject_versions(
+            sub, data=json.dumps({"schema": schema1_def}))
+        self.assert_equal(result_raw.status_code, 200)
+        self.assert_equal(result_raw.json()["id"], 2)
+
+        # POST /subjects/{subject}
+        self.logger.debug(
+            "Post the schema definition again to post_subjects_subject - should return id 2"
+        )
+        result_raw = self.sr_client.post_subjects_subject(
+            sub, data=json.dumps({"schema": schema1_def}))
+        self.assert_equal(result_raw.status_code, 200)
+        self.assert_equal(result_raw.json()["id"], 2)
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
