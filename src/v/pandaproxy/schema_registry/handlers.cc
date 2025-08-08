@@ -568,15 +568,15 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
       srlog.debug, "post_subject_versions: ID for schema definition: {}", s_id);
 
     // Determine if the subject already has a version that references this
-    // schema, deleted versions are seen.
-    const auto versions = co_await st.get_subject_versions(
+    // schema, deleted versions are not seen.
+    const auto undeleted_versions = co_await st.get_subject_versions(
       sub, include_deleted::no);
 
     std::optional<schema_version> v_id;
     if (s_id.has_value()) {
         auto v_it = std::ranges::find(
-          versions, *s_id, &subject_version_entry::id);
-        if (v_it != versions.end()) {
+          undeleted_versions, *s_id, &subject_version_entry::id);
+        if (v_it != undeleted_versions.end()) {
             v_id.emplace(v_it->version);
         }
     }
@@ -617,9 +617,11 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
         }
 
         // Check compatibility of the schema
-        if (!versions.empty() && mode != mode::import) {
+        if (!undeleted_versions.empty() && mode != mode::import) {
             auto compat = co_await st.is_compatible(
-              versions.back().version, schema.schema.share(), verbose::yes);
+              undeleted_versions.back().version,
+              schema.schema.share(),
+              verbose::yes);
             if (!compat.is_compat) {
                 throw exception(
                   error_code::schema_incompatible,
