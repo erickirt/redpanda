@@ -20,8 +20,6 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/configuration.h"
-#include "cloud_topics/cluster_services.h"
-#include "cloud_topics/data_plane_impl.h"
 #include "cloud_topics/level_one/metastore/service.h"
 #include "cloud_topics/level_one/metastore/simple_stm.h"
 #include "cloud_topics/level_zero/stm/ctp_stm_factory.h"
