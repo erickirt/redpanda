@@ -1991,6 +1991,12 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       audit_failure_policy::reject,
       {audit_failure_policy::reject, audit_failure_policy::permit})
+  , audit_use_rpc(
+      *this,
+      "audit_use_rpc",
+      "If set, the audit log will produce messages via internal redpanda RPCs",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      true)
   , cloud_storage_enabled(
       *this,
       true,
