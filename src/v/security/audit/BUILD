@@ -25,6 +25,7 @@ redpanda_cc_library(
     hdrs = [
         "audit_log_manager.h",
         "client_probe.h",
+        "fwd.h",
         "logger.h",
         "probe.h",
         "schemas/application_activity.h",
