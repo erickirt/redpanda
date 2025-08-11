@@ -30,7 +30,6 @@ class segment_appender;
 class simple_snapshot_manager;
 class snapshot_manager;
 class storage_resources;
-struct compaction_config;
 struct log_reader_config;
 struct timequery_config;
 

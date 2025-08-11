@@ -11,5 +11,6 @@
 
 namespace compaction {
 class key_offset_map;
+struct compaction_config;
 
 } // namespace compaction

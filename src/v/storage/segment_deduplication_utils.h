@@ -22,7 +22,7 @@ class stm_manager;
 // true if the entire reader was successfully indexed, false if the index was
 // full before reaching the end of the segment.
 ss::future<bool> build_offset_map_for_segment(
-  const compaction_config& cfg,
+  const compaction::compaction_config& cfg,
   const segment& seg,
   compaction::key_offset_map& m);
 
@@ -42,7 +42,7 @@ ss::future<bool> build_offset_map_for_segment(
 // Throws an exception if there was a problem building the map or if the map
 // couldn't build a single segment.
 ss::future<model::offset> build_offset_map(
-  const compaction_config& cfg,
+  const compaction::compaction_config& cfg,
   const segment_set& segs,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   storage::storage_resources&,
@@ -52,7 +52,7 @@ ss::future<model::offset> build_offset_map(
 // Rewrites 'seg' according to the parameters in 'cfg' to 'appender' and
 // 'cmp_idx_writer', deduplicating with latest offsets per key from 'map'.
 ss::future<index_state> deduplicate_segment(
-  const compaction_config& cfg,
+  const compaction::compaction_config& cfg,
   const compaction::key_offset_map& map,
   ss::lw_shared_ptr<storage::segment> seg,
   segment_appender& appender,
@@ -69,7 +69,7 @@ ss::future<index_state> deduplicate_segment(
 //
 // Returns true if the segment has been fully indexed, false otherwise.
 ss::future<bool> index_chunk_of_segment_for_map(
-  const compaction_config& compact_cfg,
+  const compaction::compaction_config& compact_cfg,
   ss::lw_shared_ptr<segment> seg,
   compaction::key_offset_map& map,
   probe& pb,
@@ -79,9 +79,8 @@ ss::future<bool> index_chunk_of_segment_for_map(
 // in the key_offset_map that is not the latest offset for that key. Otherwise,
 // there would be no point to rewriting the segment and its index files.
 ss::future<bool> segment_needs_rewrite_with_offset_map(
-  const compaction_config& cfg,
+  const compaction::compaction_config& cfg,
   ss::lw_shared_ptr<segment> seg,
   const compaction::key_offset_map& map);
-
 
 } // namespace storage

@@ -59,7 +59,7 @@ TEST_F(MapBuildingReducerFixtureTest, TestMapIndexing) {
 
     static constexpr int64_t max_keys = 4;
     compaction::simple_key_offset_map map(max_keys);
-    storage::compaction_config compact_cfg(
+    compaction::compaction_config compact_cfg(
       model::offset::max(), std::nullopt, std::nullopt, as);
     auto pb = storage::probe{};
 

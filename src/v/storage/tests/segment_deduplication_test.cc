@@ -107,7 +107,7 @@ TEST(FindSlidingRangeTest, TestCollectSegments) {
     auto& disk_log = b.get_disk_log_impl();
     for (int start = 0; start < 30; start += 5) {
         for (int end = start; end < 30; end += 5) {
-            compaction_config cfg(
+            compaction::compaction_config cfg(
               model::offset{end}, std::nullopt, std::nullopt, never_abort);
             auto segs = disk_log.find_sliding_range(cfg, model::offset{start});
             if (end - start < 10) {
@@ -129,7 +129,7 @@ TEST(FindSlidingRangeTest, TestCollectExcludesPrevious) {
     build_segments(b, 3);
     auto cleanup = ss::defer([&] { b.stop().get(); });
     auto& disk_log = b.get_disk_log_impl();
-    compaction_config cfg(
+    compaction::compaction_config cfg(
       model::offset{30}, std::nullopt, std::nullopt, never_abort);
     auto segs = disk_log.find_sliding_range(cfg);
     ASSERT_EQ(3, segs.size());
@@ -158,7 +158,7 @@ TEST(FindSlidingRangeTest, TestCollectOneRecordSegments) {
       /*mark_compacted=*/false);
     auto cleanup = ss::defer([&] { b.stop().get(); });
     auto& disk_log = b.get_disk_log_impl();
-    compaction_config cfg(
+    compaction::compaction_config cfg(
       model::offset{30}, std::nullopt, std::nullopt, never_abort);
     auto segs = disk_log.find_sliding_range(cfg);
     ASSERT_EQ(5, segs.size());
@@ -199,7 +199,7 @@ TEST(FindSlidingRangeTest, TestPlaceholderBatchesNoCompactibleRecords) {
     }
     auto& disk_log = b.get_disk_log_impl();
     auto cleanup = ss::defer([&] { b.stop().get(); });
-    compaction_config cfg(
+    compaction::compaction_config cfg(
       model::offset{30}, std::nullopt, std::nullopt, never_abort);
 
     ASSERT_EQ(disk_log.segment_count(), num_placeholder_batches);
@@ -219,7 +219,7 @@ TEST(FindSlidingRangeTest, TestEmptySegmentNoCompactibleRecords) {
     b | add_segment(0);
     auto& disk_log = b.get_disk_log_impl();
     auto cleanup = ss::defer([&] { b.stop().get(); });
-    compaction_config cfg(
+    compaction::compaction_config cfg(
       model::offset{30}, std::nullopt, std::nullopt, never_abort);
 
     ASSERT_EQ(disk_log.segment_count(), 1);
@@ -242,7 +242,8 @@ TEST(FindSlidingRangeTest, TestAllCleanlyCompactedSegments) {
     build_segments(b, num_segs, 10, 0, true, false, model::timestamp{0});
     auto cleanup = ss::defer([&] { b.stop().get(); });
     auto& disk_log = b.get_disk_log_impl();
-    compaction_config cfg(model::offset{30}, 1ms, std::nullopt, never_abort);
+    compaction::compaction_config cfg(
+      model::offset{30}, 1ms, std::nullopt, never_abort);
     auto segs = disk_log.find_sliding_range(cfg, model::offset{0});
     // All cleanly compacted segments are still considered in the range.
     ASSERT_EQ(segs.size(), num_segs);
@@ -255,7 +256,7 @@ TEST(FindSlidingRangeTest, TestCompactionLastSegmentNotCompacted) {
     build_segments(b, num_segs, 10, 0, false);
     auto cleanup = ss::defer([&] { b.stop().get(); });
     auto& disk_log = b.get_disk_log_impl();
-    compaction_config cfg(
+    compaction::compaction_config cfg(
       model::offset{30}, std::nullopt, std::nullopt, never_abort);
     auto segs = disk_log.find_sliding_range(cfg);
     ASSERT_EQ(3, segs.size());
@@ -288,7 +289,8 @@ TEST(FindSlidingRangeTest, TestWindowWithRemovedSegments) {
     disk_log.set_last_compaction_window_start_offset(model::offset(5));
     disk_log.segments().pop_front();
 
-    compaction_config cfg(model::offset{30}, 1ms, std::nullopt, never_abort);
+    compaction::compaction_config cfg(
+      model::offset{30}, 1ms, std::nullopt, never_abort);
     auto segs = disk_log.find_sliding_range(cfg, model::offset{0});
 
     // We should have reset the compaction window start offset, and had the
@@ -312,7 +314,8 @@ TEST(FindSlidingRangeTest, TestWindowWithTruncatedSegments) {
     truncate_prefix_config trunc_cfg(model::offset{10});
     disk_log.truncate_prefix(trunc_cfg).get();
 
-    compaction_config cfg(model::offset{30}, 1ms, std::nullopt, never_abort);
+    compaction::compaction_config cfg(
+      model::offset{30}, 1ms, std::nullopt, never_abort);
     auto segs = disk_log.find_sliding_range(cfg, model::offset{0});
 
     // We should have reset the compaction window start offset, and had the
@@ -339,7 +342,7 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
     auto cleanup = ss::defer([&] { b.stop().get(); });
     auto& disk_log = b.get_disk_log_impl();
     auto& segs = disk_log.segments();
-    compaction_config cfg(
+    compaction::compaction_config cfg(
       model::offset{30}, std::nullopt, std::nullopt, never_abort);
     probe pb;
 
@@ -396,7 +399,7 @@ TEST(BuildOffsetMap, TestBuildMapWithMissingCompactedIndex) {
     auto cleanup = ss::defer([&] { b.stop().get(); });
     auto& disk_log = b.get_disk_log_impl();
     auto& segs = disk_log.segments();
-    compaction_config cfg(
+    compaction::compaction_config cfg(
       model::offset{30}, std::nullopt, std::nullopt, never_abort);
     for (const auto& s : segs) {
         auto idx_path = s->path().to_compacted_index();
@@ -438,7 +441,7 @@ TEST(DeduplicateSegmentsTest, TestBadReader) {
     auto& segs = disk_log.segments();
 
     // Build an offset map for our log.
-    compaction_config cfg(
+    compaction::compaction_config cfg(
       model::offset{0}, std::nullopt, std::nullopt, never_abort);
     compaction::simple_key_offset_map all_segs_map(50);
     auto map_start_offset = build_offset_map(
@@ -500,7 +503,7 @@ TEST(DeduplicateSegmentsTest, SegmentNeedsRewriteNoCompactedIndex) {
 
     auto& segs = disk_log.segments();
     auto& seg = segs[0];
-    compaction_config cfg(
+    compaction::compaction_config cfg(
       model::offset{0}, std::nullopt, std::nullopt, never_abort);
     compaction::simple_key_offset_map map(50);
 

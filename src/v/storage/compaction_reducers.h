@@ -15,6 +15,7 @@
 #include "base/units.h"
 #include "bytes/bytes.h"
 #include "compaction/fwd.h"
+#include "compaction/types.h"
 #include "container/chunked_vector.h"
 #include "hashing/xx.h"
 #include "model/fundamental.h"
@@ -124,38 +125,10 @@ class copy_data_segment_reducer : public compaction_reducer {
 public:
     using filter_t = ss::noncopyable_function<ss::future<bool>(
       const model::record_batch&, const model::record&, bool)>;
-    struct stats {
-        // Total number of batches passed to this reducer.
-        size_t batches_processed{0};
-        // Number of batches that were completely removed.
-        size_t batches_discarded{0};
-        // Number of records removed by this reducer, including batches that
-        // were entirely removed.
-        size_t records_discarded{0};
-        // Number of batches that were ignored because they are not
-        // of a compactible type.
-        size_t non_compactible_batches{0};
 
-        // Returns whether any data was removed by this reducer.
-        bool has_removed_data() const {
-            return batches_discarded > 0 || records_discarded > 0;
-        }
-
-        friend std::ostream& operator<<(std::ostream& os, const stats& s) {
-            fmt::print(
-              os,
-              "{{ batches_processed: {}, batches_discarded: {}, "
-              "records_discarded: {}, non_compactible_batches: {} }}",
-              s.batches_processed,
-              s.batches_discarded,
-              s.records_discarded,
-              s.non_compactible_batches);
-            return os;
-        }
-    };
     struct idx_and_stats {
         index_state new_idx;
-        stats reducer_stats;
+        compaction::stats reducer_stats;
     };
 
     copy_data_segment_reducer(
@@ -229,7 +202,7 @@ private:
     /// shut down.
     ss::abort_source* _as;
 
-    stats _stats;
+    compaction::stats _stats;
 };
 
 class index_rebuilder_reducer : public compaction_reducer {

@@ -69,7 +69,7 @@ ss::future<bool> is_latest_record_for_key(
 } // anonymous namespace
 
 ss::future<bool> build_offset_map_for_segment(
-  const compaction_config& cfg,
+  const compaction::compaction_config& cfg,
   const segment& seg,
   compaction::key_offset_map& m) {
     auto compaction_idx_path = seg.path().to_compacted_index();
@@ -103,7 +103,7 @@ ss::future<bool> build_offset_map_for_segment(
 }
 
 ss::future<model::offset> build_offset_map(
-  const compaction_config& cfg,
+  const compaction::compaction_config& cfg,
   const segment_set& segs,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   storage_resources& resources,
@@ -177,7 +177,7 @@ ss::future<model::offset> build_offset_map(
 }
 
 ss::future<index_state> deduplicate_segment(
-  const compaction_config& cfg,
+  const compaction::compaction_config& cfg,
   const compaction::key_offset_map& map,
   ss::lw_shared_ptr<storage::segment> seg,
   segment_appender& appender,
@@ -297,7 +297,7 @@ ss::future<index_state> deduplicate_segment(
 }
 
 ss::future<bool> index_chunk_of_segment_for_map(
-  const compaction_config& compact_cfg,
+  const compaction::compaction_config& compact_cfg,
   ss::lw_shared_ptr<segment> seg,
   compaction::key_offset_map& map,
   probe& pb,
@@ -335,7 +335,7 @@ ss::future<bool> index_chunk_of_segment_for_map(
 }
 
 ss::future<bool> segment_needs_rewrite_with_offset_map(
-  const compaction_config& cfg,
+  const compaction::compaction_config& cfg,
   ss::lw_shared_ptr<segment> seg,
   const compaction::key_offset_map& map) {
     auto compaction_idx_path = seg->path().to_compacted_index();
