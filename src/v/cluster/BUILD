@@ -768,7 +768,6 @@ redpanda_cc_library(
         "//src/v/utils:prefix_logger",
         "//src/v/utils:retry",
         "//src/v/utils:retry_chain_node",
-        "//src/v/utils:rwlock",
         "//src/v/utils:stable_iterator",
         "//src/v/utils:stream_provider",
         "//src/v/utils:stream_utils",
