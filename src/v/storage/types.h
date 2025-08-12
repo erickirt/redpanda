@@ -211,11 +211,6 @@ struct append_result {
     friend std::ostream& operator<<(std::ostream& o, const append_result&);
 };
 
-using opt_abort_source_t
-  = std::optional<std::reference_wrapper<ss::abort_source>>;
-
-using opt_client_address_t = std::optional<model::client_address_t>;
-
 /// A timequery configuration specifies the range of offsets to search for a
 /// record with a timestamp equal to or greater than the specified time.
 struct timequery_config {
@@ -224,8 +219,8 @@ struct timequery_config {
       model::timestamp t,
       model::offset max_offset,
       std::optional<model::record_batch_type> type_filter,
-      opt_abort_source_t as = std::nullopt,
-      opt_client_address_t client_addr = std::nullopt) noexcept
+      model::opt_abort_source_t as = std::nullopt,
+      model::opt_client_address_t client_addr = std::nullopt) noexcept
       : min_offset(min_offset)
       , time(t)
       , max_offset(max_offset)
@@ -236,8 +231,8 @@ struct timequery_config {
     model::timestamp time;
     model::offset max_offset;
     std::optional<model::record_batch_type> type_filter;
-    opt_abort_source_t abort_source;
-    opt_client_address_t client_address;
+    model::opt_abort_source_t abort_source;
+    model::opt_client_address_t client_address;
 
     friend std::ostream& operator<<(std::ostream& o, const timequery_config&);
 };

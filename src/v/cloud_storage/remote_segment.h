@@ -103,7 +103,7 @@ public:
       kafka::offset start,
       kafka::offset end,
       std::optional<model::timestamp>,
-      storage::opt_abort_source_t as);
+      model::opt_abort_source_t as);
 
     /// Hydrates the segment, index or tx-range depending on segment meta
     /// version, returning a future that the caller can use to wait for the
@@ -117,7 +117,7 @@ public:
     /// to old mode where the full segment is hydrated. For v3 or higher
     /// versions, the actual segment data is hydrated by the data source
     /// implementation, but the index is still required to be present first.
-    ss::future<> hydrate(storage::opt_abort_source_t as = std::nullopt);
+    ss::future<> hydrate(model::opt_abort_source_t as = std::nullopt);
 
     /// Hydrate a part of a segment, identified by the given range. The range
     /// can contain data for multiple contiguous chunks, in which case multiple

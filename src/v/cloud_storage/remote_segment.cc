@@ -255,7 +255,7 @@ remote_segment::offset_data_stream(
   kafka::offset start,
   kafka::offset end,
   std::optional<model::timestamp> first_timestamp,
-  storage::opt_abort_source_t as) {
+  model::opt_abort_source_t as) {
     vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
 
@@ -993,7 +993,7 @@ namespace {
 void log_hydration_abort_cause(
   const retry_chain_logger& logger,
   const ss::lowres_clock::time_point& deadline,
-  storage::opt_abort_source_t as) {
+  model::opt_abort_source_t as) {
     if (ss::lowres_clock::now() > deadline) {
         vlog(logger.warn, "timed out while waiting for hydration");
     } else if (as.has_value() && as->get().abort_requested()) {
@@ -1054,7 +1054,7 @@ ss::future<> remote_segment::do_hydrate(
       .discard_result();
 }
 
-ss::future<> remote_segment::hydrate(storage::opt_abort_source_t as) {
+ss::future<> remote_segment::hydrate(model::opt_abort_source_t as) {
     if (!_hydration_loop_running) {
         vlog(
           _ctxlog.error,

@@ -98,7 +98,7 @@ static ss::future<read_result> read_from_partition(
       std::nullopt,
       config.abort_source.has_value()
         ? config.abort_source.value().get().local()
-        : storage::opt_abort_source_t{},
+        : model::opt_abort_source_t{},
       config.client_address);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;

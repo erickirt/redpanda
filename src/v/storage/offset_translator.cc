@@ -167,7 +167,7 @@ ss::future<> offset_translator::start(must_reset reset) {
 }
 
 ss::future<> offset_translator::sync_with_log(
-  storage::log& log, storage::opt_abort_source_t as) {
+  storage::log& log, model::opt_abort_source_t as) {
     if (_filtered_types.empty()) {
         co_return;
     }

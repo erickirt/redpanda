@@ -909,7 +909,7 @@ private:
     /// Cancellation subscription
     ss::abort_source::subscription _as_sub;
     /// Reference to the abort source of the partition reader
-    storage::opt_abort_source_t _partition_reader_as;
+    model::opt_abort_source_t _partition_reader_as;
     /// Guard for the partition gate
     ss::gate::holder _gate_guard;
     model::offset _next_segment_base_offset{};
