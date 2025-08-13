@@ -55,7 +55,6 @@ redpanda_cc_library(
     name = "types",
     srcs = ["types.cc"],
     hdrs = ["types.h"],
-    include_prefix = "cloud_topics/level_zero/stm",
     visibility = [":__subpackages__"],
     deps = [
         "//src/v/model",
