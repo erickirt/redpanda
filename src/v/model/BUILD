@@ -122,3 +122,23 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "batch_compression",
+    srcs = [
+        "batch_compression.cc",
+    ],
+    hdrs = [
+        "batch_compression.h",
+    ],
+    implementation_deps = [
+        "//src/v/compression",
+    ],
+    include_prefix = "model",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":model",
+        "//src/v/bytes:iobuf",
+        "@seastar",
+    ],
+)
