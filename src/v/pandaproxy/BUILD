@@ -210,6 +210,7 @@ redpanda_cc_library(
         "//src/v/kafka/protocol:offset_commit",
         "//src/v/kafka/protocol:offset_fetch",
         "//src/v/model",
+        "//src/v/model:batch_compression",
     ],
 )
 

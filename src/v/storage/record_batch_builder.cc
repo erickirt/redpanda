@@ -13,7 +13,6 @@
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
-#include "storage/parser_utils.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>

@@ -331,7 +331,7 @@ redpanda_cc_library(
         ":table_id_provider",
         "//src/v/base",
         "//src/v/iceberg/conversion:conversion_outcome",
-        "//src/v/storage:parser_utils",
+        "//src/v/model:batch_compression",
         "//src/v/utils:lazy_abort_source",
         "//src/v/utils:prefix_logger",
     ],

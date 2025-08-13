@@ -97,11 +97,11 @@ redpanda_cc_library(
     implementation_deps = [
         ":logger",
         "//src/v/metrics",
+        "//src/v/model:batch_compression",
         "//src/v/random:time_jitter",
         "//src/v/rpc",
         "//src/v/ssx:future_util",
         "//src/v/ssx:sformat",
-        "//src/v/storage:parser_utils",
         "//src/v/utils:backoff_policy",
         "//src/v/utils:human",
         "@boost//:range",

@@ -21,9 +21,6 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "parser_utils",
-    srcs = [
-        "parser_utils.cc",
-    ],
     hdrs = [
         "parser_utils.h",
     ],
@@ -32,7 +29,6 @@ redpanda_cc_library(
     deps = [
         "//src/v/base",
         "//src/v/bytes:iobuf_parser",
-        "//src/v/compression",
         "//src/v/model",
         "@seastar",
     ],
@@ -373,6 +369,7 @@ redpanda_cc_library(
         "//src/v/json",
         "//src/v/metrics",
         "//src/v/model",
+        "//src/v/model:batch_compression",
         "//src/v/model:batch_utils",
         "//src/v/raft:fundamental",
         "//src/v/random:fast_prng",

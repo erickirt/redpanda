@@ -47,7 +47,6 @@ redpanda_cc_library(
         "//src/v/hashing:crc32",
         "//src/v/hashing:crc32c",
         "//src/v/model",
-        "//src/v/storage:parser_utils",
         "//src/v/storage:record_batch_builder",
         "//src/v/strings:utf8",
         "//src/v/utils:base64",

@@ -172,7 +172,7 @@ redpanda_test_cc_library(
     include_prefix = "storage/tests",
     deps = [
         "//src/v/model",
-        "//src/v/storage:parser_utils",
+        "//src/v/model:batch_compression",
     ],
 )
 

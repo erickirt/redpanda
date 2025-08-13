@@ -102,7 +102,6 @@ redpanda_cc_library(
         "//src/v/security",
         "//src/v/security:request_auth",
         "//src/v/ssx:semaphore",
-        "//src/v/storage:parser_utils",
         "//src/v/strings:string_switch",
         "//src/v/utils:functional",
         "//src/v/utils:retry",

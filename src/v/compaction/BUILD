@@ -83,7 +83,6 @@ redpanda_cc_library(
     deps = [
         ":key_offset_map",
         "//src/v/model",
-        "//src/v/storage:parser_utils",
         "@seastar",
     ],
 )

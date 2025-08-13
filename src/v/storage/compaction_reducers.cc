@@ -12,7 +12,7 @@
 #include "base/vlog.h"
 #include "compaction/key.h"
 #include "compaction/utils.h"
-#include "compression/compression.h"
+#include "model/batch_compression.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
@@ -20,7 +20,6 @@
 #include "storage/compacted_index.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
-#include "storage/parser_utils.h"
 #include "storage/record_batch_utils.h"
 #include "storage/segment_utils.h"
 
@@ -310,7 +309,8 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::filter_and_append(
                 r.offset_delta());
           });
     }
-    auto batch = co_await compress_batch(original, std::move(to_copy.value()));
+    auto batch = co_await model::compress_batch(
+      original, std::move(to_copy.value()));
     const auto start_pos = _appender->file_byte_offset();
     const auto header_size = batch.header().size_bytes;
     _acc += header_size;
@@ -352,7 +352,7 @@ copy_data_segment_reducer::operator()(model::record_batch b) {
     if (!b.compressed()) {
         co_return co_await filter_and_append(comp, std::move(b));
     }
-    auto batch = co_await decompress_batch(std::move(b));
+    auto batch = co_await model::decompress_batch(std::move(b));
 
     co_return co_await filter_and_append(comp, std::move(batch));
 }
@@ -364,7 +364,7 @@ index_rebuilder_reducer::operator()(model::record_batch&& b) {
     if (!b.compressed()) {
         f = do_index(std::move(b));
     } else {
-        f = internal::decompress_batch(std::move(b))
+        f = model::decompress_batch(std::move(b))
               .then([this](model::record_batch&& b) {
                   return do_index(std::move(b));
               });
@@ -481,7 +481,7 @@ map_building_reducer::operator()(model::record_batch batch) {
         // map state (see copy_data_segment_reducer::filter()).
         co_return ss::stop_iteration::no;
     }
-    auto b = co_await decompress_batch(std::move(batch));
+    auto b = co_await model::decompress_batch(std::move(batch));
     co_await b.for_each_record_async(
       [this,
        &fully_indexed_batch,
