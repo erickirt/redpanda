@@ -41,3 +41,23 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "filter",
+    srcs = [
+        "filter.cc",
+    ],
+    hdrs = [
+        "filter.h",
+    ],
+    visibility = [
+        "//src/v/cloud_topics/level_one:__subpackages__",
+    ],
+    deps = [
+        "//src/v/compaction:filter",
+        "//src/v/compaction:key_offset_map",
+        "//src/v/compaction:utils",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
