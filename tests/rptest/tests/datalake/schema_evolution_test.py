@@ -6,37 +6,34 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import json
 import tempfile
+from collections.abc import Callable
+from contextlib import contextmanager
+from enum import Enum
 from time import time
 from typing import NamedTuple
-from collections.abc import Callable
-import pyhive
-from contextlib import contextmanager
-import json
-from enum import Enum
 
+import pyhive.exc
 from confluent_kafka import avro
 from confluent_kafka.avro import AvroProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
-from rptest.clients.rpk import RpkTool, RpkException
+from ducktape.mark import matrix
+
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig
-from rptest.services.redpanda_connect import RedpandaConnectService
-from rptest.tests.datalake.datalake_services import DatalakeServices
-from rptest.tests.datalake.datalake_verifier import DatalakeVerifier
-from rptest.tests.datalake.query_engine_base import QueryEngineType
+from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig, SISettings
 from rptest.tests.datalake.catalog_service_factory import (
     filesystem_catalog_type,
     supported_catalog_types,
 )
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.datalake.datalake_services import DatalakeServices
+from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_exception
-from ducktape.mark import matrix
-
-from ducktape.errors import TimeoutError
 
 
 # for keeping track of the expected total number of rows across rounds
@@ -180,7 +177,7 @@ class GenericSchema:
         self,
         dl: DatalakeServices,
         topic_name: str,
-        ver=ProtobufVersion,
+        ver: ProtobufVersion,
     ):
         return ProtoProducer(
             dl.redpanda, ver, self._rep["name"], self._rep["fields"], topic_name
@@ -547,7 +544,7 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         self,
         dl: DatalakeServices,
         query_engine: QueryEngineType,
-        cols=list[str],
+        cols: list[str],
         sort_by_offset: bool = True,
     ):
         qe = dl.spark() if query_engine == QueryEngineType.SPARK else dl.trino()
@@ -563,7 +560,7 @@ class SchemaEvolutionE2ETests(RedpandaTest):
         self,
         query_engine: QueryEngineType,
         compat_level: str = "NONE",
-        partition_spec: str = None,
+        partition_spec: str | None = None,
         catalog_type: CatalogType = filesystem_catalog_type(),
     ):
         with DatalakeServices(
