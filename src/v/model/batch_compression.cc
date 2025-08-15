@@ -39,22 +39,31 @@ namespace {
 }
 } // namespace
 
-ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
-    return ss::futurize_invoke(decompress_batch_sync, std::move(b));
-}
-
 ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
-    return ss::futurize_invoke(maybe_decompress_batch_sync, b);
-}
-
-model::record_batch decompress_batch_sync(model::record_batch&& b) {
-    if (!b.compressed()) {
-        return std::move(b);
+    if (!b.compressed()) [[unlikely]] {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Asked to decompressed a non-compressed batch:{}",
+          b.header()));
     }
-    return maybe_decompress_batch_sync(b);
+    // TODO: For zstd we have a non-reactor-stall version of uncompress that is
+    // async, but currently the API requires ownership of the iobuf, but at
+    // least one consumer of this API uses a const model::record_batch&
+    //
+    // We should consider a version of async uncompress that takes a const
+    // iobuf& where the caller owns the lifetime of the iobuf.
+    iobuf body_buf = ::compression::compressor::uncompress(
+      b.data(), to_compression_type(b.header().attrs.compression()));
+    // must remove compression first!
+    auto h = b.header();
+    h.attrs.remove_compression();
+    h.reset_size_checksum_metadata(body_buf);
+    auto batch = model::record_batch(
+      h, std::move(body_buf), model::record_batch::tag_ctor_ng{});
+    co_return batch;
 }
 
-model::record_batch maybe_decompress_batch_sync(const model::record_batch& b) {
+model::record_batch decompress_batch_sync(const model::record_batch& b) {
     if (!b.compressed()) [[unlikely]] {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,

@@ -114,18 +114,16 @@ TEST_F(RecordBatchTest, TestCorruptedRecordBytes) {
 class RecordBatchCompressionTest
   : public ::testing::TestWithParam<model::compression> {};
 
-TEST_P(RecordBatchCompressionTest, CompressionTest) {
+TEST_P(RecordBatchCompressionTest, Compression) {
     auto b = model::test::make_random_batch({
       .offset = model::offset(0),
       .allow_compression = false,
       .count = 10,
     });
     if (GetParam() == model::compression::none) {
-        // TODO: Reconsider the difference between throwing and not throwing
-        // based on the kind of reference used.
-        EXPECT_NO_THROW(model::decompress_batch(b.copy()).get());
         EXPECT_ANY_THROW(model::decompress_batch(b).get());
-        EXPECT_ANY_THROW(model::compress_batch(GetParam(), std::move(b)).get());
+        EXPECT_ANY_THROW(
+          model::compress_batch(model::compression::none, std::move(b)).get());
     } else {
         auto c = model::compress_batch(GetParam(), std::move(b)).get();
         EXPECT_TRUE(c.compressed());

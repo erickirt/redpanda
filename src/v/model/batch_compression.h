@@ -17,17 +17,12 @@
 namespace model {
 
 /// \brief batch decompression
-ss::future<model::record_batch> decompress_batch(model::record_batch&&);
-
-/// \brief batch decompression
+///
+/// Throws if the batch is not compressed.
 ss::future<model::record_batch> decompress_batch(const model::record_batch&);
 
 /// \brief synchronous batch decompression
-model::record_batch decompress_batch_sync(model::record_batch&&);
-
-/// \brief synchronous batch decompression
-/// \throw std::runtime_error If provided batch is not compressed
-model::record_batch maybe_decompress_batch_sync(const model::record_batch&);
+model::record_batch decompress_batch_sync(const model::record_batch&);
 
 // Compress the batch according to the specified compression type.
 //
