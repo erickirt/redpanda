@@ -123,7 +123,7 @@ redpanda_cc_btest(
     ],
 )
 
-redpanda_cc_btest(
+redpanda_cc_gtest(
     name = "record_batch_test",
     timeout = "short",
     srcs = [
@@ -133,9 +133,8 @@ redpanda_cc_btest(
     deps = [
         ":random",
         "//src/v/model",
-        "//src/v/test_utils:seastar_boost",
-        "@boost//:test",
-        "@seastar//:testing",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
     ],
 )
 
