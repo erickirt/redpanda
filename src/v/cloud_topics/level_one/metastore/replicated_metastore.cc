@@ -262,10 +262,7 @@ replicated_metastore::add_objects(
         }
         auto reply = reply_fut.get();
         if (reply.ec != rpc::errc::ok) {
-            vlog(
-              cd_log.debug,
-              "Error code received for request {}",
-              int(reply.ec));
+            vlog(cd_log.debug, "Error code received for request {}", reply.ec);
             co_return std::unexpected(rpc_to_meta_errc(reply.ec));
         }
         for (const auto& [tp, o] : reply.corrected_next_offsets) {

@@ -17,6 +17,8 @@
 #include "serde/rw/enum.h"
 #include "serde/rw/envelope.h"
 
+#include <fmt/format.h>
+
 namespace experimental::cloud_topics::l1::rpc {
 
 enum class errc : int16_t {
@@ -183,3 +185,30 @@ struct get_compaction_offsets_request
 };
 
 } //  namespace experimental::cloud_topics::l1::rpc
+
+template<>
+struct fmt::formatter<experimental::cloud_topics::l1::rpc::errc> final
+  : fmt::formatter<std::string_view> {
+    using errc = experimental::cloud_topics::l1::rpc::errc;
+    template<typename FormatContext>
+    auto format(const errc& ec, FormatContext& ctx) const {
+        switch (ec) {
+        case errc::ok:
+            return fmt::format_to(ctx.out(), "rpc::errc::ok");
+        case errc::incorrect_partition:
+            return fmt::format_to(ctx.out(), "rpc::errc::incorrect_partition");
+        case errc::timed_out:
+            return fmt::format_to(ctx.out(), "rpc::errc::timed_out");
+        case errc::not_leader:
+            return fmt::format_to(ctx.out(), "rpc::errc::not_leader");
+        case errc::concurrent_requests:
+            return fmt::format_to(ctx.out(), "rpc::errc::concurrent_requests");
+        case errc::missing_ntp:
+            return fmt::format_to(ctx.out(), "rpc::errc::missing_ntp");
+        case errc::out_of_range:
+            return fmt::format_to(ctx.out(), "rpc::errc::out_of_range");
+        }
+        return fmt::format_to(
+          ctx.out(), "rpc::errc::unknown({})", static_cast<int>(ec));
+    }
+};
