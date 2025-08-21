@@ -89,6 +89,7 @@ redpanda_cc_library(
         "//src/v/kafka/protocol/schemata:create_acls_request",
         "//src/v/kafka/protocol/schemata:delete_acls_request",
         "//src/v/kafka/protocol/schemata:describe_acls_request",
+        "//src/v/kafka/protocol/schemata:describe_acls_response",
         "//src/v/model",
         "//src/v/security",
     ],

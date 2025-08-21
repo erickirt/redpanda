@@ -13,6 +13,7 @@
 #include "kafka/protocol/schemata/create_acls_request.h"
 #include "kafka/protocol/schemata/delete_acls_request.h"
 #include "kafka/protocol/schemata/describe_acls_request.h"
+#include "kafka/protocol/schemata/describe_acls_response.h"
 #include "kafka/protocol/types.h"
 #include "model/validation.h"
 #include "security/acl.h"
@@ -479,6 +480,11 @@ std::optional<security::scram_algorithm_t>
 kafka_to_security_mechanism(kafka::scram_mechanism mechanism);
 
 scram_mechanism key_size_to_mechanism(size_t key_size);
+
+describe_acls_resource acl_entry_to_resource(
+  security::resource_pattern pattern,
+  chunked_vector<security::acl_entry> acl_entries,
+  bool describe_registry_resource);
 
 } // namespace details
 } // namespace kafka
