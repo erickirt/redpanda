@@ -46,13 +46,13 @@ ss::future<iobuf> client::send(
           log.warn,
           "proxy loop detected (self={}, via={})",
           target,
-          ctx.proxied_nodes());
+          ctx.proxied_nodes);
         throw serde::pb::rpc::unavailable_exception("proxy loop detected");
     }
     proxy_request req;
-    req.service = ss::sstring(ctx.service_name());
-    req.method = ss::sstring(ctx.method_name());
-    req.via = ctx.proxied_nodes();
+    req.service = ss::sstring(ctx.service_name);
+    req.method = ss::sstring(ctx.method_name);
+    req.via = ctx.proxied_nodes;
     req.via.push_back(_self);
     req.payload = std::move(payload);
     // TODO: Cluster config for this timeout
@@ -87,8 +87,7 @@ ss::future<iobuf> client::send(
           "exception while proxying admin request to {}: {}",
           target,
           std::current_exception());
-        proxy_response resp;
-        resp.error_code = errc::internal_error;
+        proxy_resp.error_code = errc::internal_error;
         // Leave it as a generic error message
     }
     switch (proxy_resp.error_code) {

@@ -25,7 +25,12 @@ ss::logger log{"admin/proxy/service"};
 
 ss::future<proxy_response>
 service_impl::proxy_rpc(proxy_request req, rpc::streaming_context&) {
-    serde::pb::rpc::context ctx{req.service, req.method, req.via};
+    serde::pb::rpc::context ctx{
+      .service_name = req.service,
+      .method_name = req.method,
+      .content_type = serde::pb::rpc::content_type::proto,
+      .proxied_nodes = req.via,
+    };
     proxy_response response;
     try {
         auto payload = co_await _handler(
