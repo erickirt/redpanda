@@ -133,6 +133,11 @@ struct compaction_state
     // We are not able to erase [0, 79], because [0, 9] are not covered.
     bool erase_contiguous_range_with_tombstones(kafka::offset, kafka::offset);
 
+    // Prefix truncates the cleaned_ranges and cleaned_ranges_with_tombstones
+    // such that all ranges below the new start are removed and any range that
+    // overlaps with the new start is truncated to start at the given offset.
+    void truncate_with_new_start_offset(kafka::offset);
+
 private:
     struct tombstone_range_iters {
         tombstone_range_set_t::const_iterator begin;
