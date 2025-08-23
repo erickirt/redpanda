@@ -44,6 +44,16 @@ mkdir -p /opt/llvm
 # make it available in a version-independent way
 ln -s /usr/bin/llvm-addr2line-$LLVM_VERSION /opt/llvm/llvm-addr2line
 
-# Make llvm-symbolizer available in the PATH, this allows ASAN, UBSAN, etc
+# Install an llvm-symbolizer shim in the PATH, this allows ASAN, UBSAN, etc
 # symbolization to work out of the box.
-ln -s /usr/bin/llvm-symbolizer-$LLVM_VERSION /usr/local/bin/llvm-symbolizer
+cat <<EOF >/usr/local/bin/llvm-symbolizer
+#!/bin/bash
+
+# This shim unsets LD_LIBRARY_PATH to avoid the issue that
+# redpanda libraries are loaded into the symbolizer, causing
+# it to crash.
+echo "exec llvm-symbolizer shim, cmd: '\$*', ASAN_OPTIONS=\$ASAN_OPTIONS, UBSAN_OPTIONS=\$UBSAN_OPTIONS" >&2
+unset LD_LIBRARY_PATH
+exec /usr/bin/llvm-symbolizer-$LLVM_VERSION "\$@"
+EOF
+chmod +x /usr/local/bin/llvm-symbolizer
