@@ -798,15 +798,17 @@ class DataMigrationsApiTest(RedpandaTest, DataMigrationTestMixin):
                             msg = consumer.poll(20)
                             if msg is None or msg.error() is not None:
                                 raise ck.KafkaException(
-                                    f"Failed to read from topic {topic} with group {group}: {msg and msg.error()}"
+                                    f"Failed to read from topic {topic} "
+                                    f"with group {group}: {msg and msg.error()}"
                                 )
                         break
                     except ck.KafkaException as e:
-                        if "Failed to fetch committed offsets for 0 partition" in str(
-                                e.args[0]):
+                        if "Failed to fetch committed offsets for 0 partition" \
+                                in str(e.args[0]):
                             self.logger.info(
-                                f"Hit https://github.com/confluentinc/librdkafka/issues/4963 bug, retrying"
-                            )
+                                "Hit "
+                                "https://github.com/confluentinc/librdkafka/issues/4963 "
+                                "bug, retrying")
                             continue
                         raise
 
