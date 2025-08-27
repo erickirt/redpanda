@@ -242,6 +242,8 @@ ss::future<> level_zero_log_reader_impl::fetch_metadata(
           cd_log.info,
           "Failed to fetch metadata from the underlying partition: {}",
           std::current_exception());
+        _hydrated.clear();
+        _unhydrated.clear();
         _current = state::end_of_stream_state;
         throw;
     }
@@ -400,6 +402,8 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
           cd_log.info,
           "Failed to materialize batches {}",
           std::current_exception());
+        _hydrated.clear();
+        _unhydrated.clear();
         _current = state::end_of_stream_state;
         throw;
     }
