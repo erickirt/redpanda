@@ -30,54 +30,6 @@ namespace kafka {
 
 namespace {
 
-static ss::future<response_ptr>
-handle_leader(request_context& ctx, model::node_id leader) {
-    auto broker = ctx.metadata_cache().get_node_metadata(leader);
-    if (broker) {
-        auto& b = *broker;
-        for (const auto& listener : b.broker.kafka_advertised_listeners()) {
-            if (listener.name == ctx.listener()) {
-                return ctx.respond(find_coordinator_response(
-                  b.broker.id(),
-                  listener.address.host(),
-                  listener.address.port()));
-            }
-        }
-    }
-    return ctx.respond(
-      find_coordinator_response(error_code::coordinator_not_available));
-}
-
-/*
- * map the ntp to it's leader broker connection information. also wait for the
- * leader to be elected if it isn't yet available immediately, like in the case
- * of creating the internal metadata topic on-demand.
- */
-static ss::future<response_ptr> handle_partition(
-  request_context& ctx, std::optional<model::partition_id> partition) {
-    if (!partition) {
-        return ctx.respond(
-          find_coordinator_response(error_code::coordinator_not_available));
-    }
-
-    auto timeout = ss::lowres_clock::now()
-                   + config::shard_local_cfg().wait_for_leader_timeout_ms();
-
-    return ctx.metadata_cache()
-      .get_leader(
-        model::ntp(
-          model::kafka_namespace,
-          model::kafka_consumer_offsets_topic,
-          *partition),
-        timeout)
-      .then(
-        [&ctx](model::node_id leader) { return handle_leader(ctx, leader); })
-      .handle_exception([&ctx](const std::exception_ptr&) {
-          return ctx.respond(
-            find_coordinator_response(error_code::coordinator_not_available));
-      });
-}
-
 constexpr size_t max_concurrency = 10;
 
 // maps a given leader id to its relevant coordinator response struct
@@ -332,7 +284,7 @@ find_coordinator_response error_entire_request(
 }
 
 // multiple key handler
-[[maybe_unused]] ss::future<find_coordinator_response>
+ss::future<find_coordinator_response>
 handle_multiple_keys(find_coordinator_request request, request_context* ctx) {
     auto& keys = request.data.coordinator_keys;
 
@@ -355,97 +307,51 @@ handle_multiple_keys(find_coordinator_request request, request_context* ctx) {
 
 } // namespace
 
+// v4+ is multi key, v3- simply gets packed into a vector to be handled
 template<>
 ss::future<response_ptr> find_coordinator_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     find_coordinator_request request;
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
+    bool is_single_element_request = ctx.header().version <= api_version(3);
 
-    if (request.data.key_type == coordinator_type::transaction) {
-        if (!ctx.are_transactions_enabled()) {
-            return ctx.respond(
-              find_coordinator_response(error_code::unsupported_version));
+    auto& keys = request.data.coordinator_keys;
+
+    // pack v1-3 requests into list form
+    if (is_single_element_request) {
+        if (!keys.empty()) {
+            co_return co_await ctx.respond(
+              find_coordinator_response(kafka::error_code::invalid_request));
         }
-
-        transactional_id tx_id(request.data.key);
-
-        auto authz = ctx.authorized(security::acl_operation::describe, tx_id);
-
-        if (!ctx.audit()) {
-            return ctx.respond(find_coordinator_response(
-              error_code::broker_not_available,
-              "Broker not available - audit system failure"));
-        }
-
-        if (!authz) {
-            return ctx.respond(find_coordinator_response(
-              error_code::transactional_id_authorization_failed));
-        }
-
-        return ss::do_with(
-          std::move(ctx),
-          [request = std::move(request),
-           tx_id = std::move(tx_id)](request_context& ctx) mutable {
-              return ctx.tx_gateway_frontend().find_coordinator(tx_id).then(
-                [&ctx](cluster::find_coordinator_reply r) {
-                    if (r.coordinator) {
-                        return handle_leader(ctx, *r.coordinator);
-                    }
-                    return ctx.respond(find_coordinator_response(
-                      error_code::coordinator_not_available));
-                });
-          });
+        keys.emplace_back(std::move(request.data.key));
+        request.data.key = "";
     }
 
-    if (request.data.key_type != coordinator_type::group) {
-        return ctx.respond(
-          find_coordinator_response(error_code::unsupported_version));
+    auto response = co_await handle_multiple_keys(std::move(request), &ctx);
+
+    // if needed, unpack a multi-key, v4+ style response back into a v1-3 single
+    // key response
+    if (is_single_element_request) {
+        auto& response_vector = response.data.coordinators;
+        vassert(
+          response_vector.size() == 1,
+          "legacy requests should only yield one response, had {}",
+          response_vector.size());
+        auto output_element = std::move(response_vector[0]);
+
+        // reset response vector
+        response_vector.clear();
+
+        // repack
+        response.data.host = std::move(output_element.host);
+        response.data.port = output_element.port;
+        response.data.node_id = output_element.node_id;
+        response.data.error_code = output_element.error_code;
+        response.data.error_message = std::move(output_element.error_message);
     }
 
-    auto authz = ctx.authorized(
-      security::acl_operation::describe, group_id(request.data.key));
-
-    if (!ctx.audit()) {
-        return ctx.respond(find_coordinator_response(
-          error_code::broker_not_available,
-          "Broker not available - audit system failure"));
-    }
-
-    if (!authz) {
-        return ctx.respond(
-          find_coordinator_response(error_code::group_authorization_failed));
-    }
-
-    return ss::do_with(
-      std::move(ctx),
-      [request = std::move(request)](request_context& ctx) mutable {
-          /*
-           * map the group to a target ntp. this may fail because the internal
-           * metadata topic doesn't exist. in this case fall through and create
-           * the topic on-demand.
-           */
-          if (auto partition_id = ctx.coordinator_mapper().partition_for(
-                kafka::group_id(request.data.key));
-              partition_id) {
-              return handle_partition(ctx, partition_id);
-          }
-
-          return ctx.group_initializer().assure_topic_exists().then(
-            [&ctx, request = std::move(request)](bool created) {
-                /*
-                 * if the topic is successfully created then the metadata cache
-                 * will be updated and we can retry the group-ntp mapping.
-                 */
-                if (created) {
-                    auto partition_id = ctx.coordinator_mapper().partition_for(
-                      kafka::group_id(request.data.key));
-                    return handle_partition(ctx, partition_id);
-                }
-                return ctx.respond(find_coordinator_response(
-                  error_code::coordinator_not_available));
-            });
-      });
+    co_return co_await ctx.respond(std::move(response));
 }
 
 } // namespace kafka
