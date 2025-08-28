@@ -13,7 +13,7 @@ from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.schema_registry_test import SchemaRegistryEndpoints
 from rptest.clients.rpk import RpkTool
-from rptest.clients.admin.v2 import Admin as AdminV2, admin_pb
+from rptest.clients.admin.v2 import Admin as AdminV2, admin_pb, debug_pb
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.util import expect_exception, expect_http_error
@@ -147,6 +147,42 @@ class AdminApiAuthTest(RedpandaTest):
                     admin_pb.ListRPCRoutesRequest(
                         node_id=self.redpanda.node_id(node)))
                 assert len(resp.routes) > 1, "Expected at least 2 routes"
+
+    @cluster(num_nodes=3)
+    def test_admin_v2_errors(self):
+        """
+        Check that admin v2 structured error returning works.
+        """
+
+        charles = SaslCredentials("charles", "highEntropyHipster",
+                                  "SCRAM-SHA-512")
+        create_user_and_wait(self.redpanda, self.superuser_admin, charles)
+        self.redpanda.set_cluster_config({
+            'superusers':
+            [charles.username, self.redpanda.SUPERUSER_CREDENTIALS.username]
+        })
+
+        for protocol in ['json', 'proto']:
+            admin_v2 = AdminV2(self.redpanda,
+                               auth=(charles.username, charles.password),
+                               protocol=protocol)
+            resp = admin_v2.debug().call_throw_structured_exception(
+                debug_pb.ThrowStructuredExceptionRequest(
+                    node_id=self.redpanda.node_id(self.redpanda.nodes[0]),
+                    reason="FOOBAR",
+                    metadata={"detail": "something"}))
+            assert resp.error() != None, "Expected an error in this RPC"
+            err = resp.error()
+            assert err.code == ConnectErrorCode.UNKNOWN, f"Expected UNKNOWN error code, got: {err}"
+            assert err.message == "test exception", f"Expected 'test exception' message, got: {err}"
+            assert len(
+                err.details) == 1, f"Expected 1 detail, got: {err.details}"
+            detail = err.details[0].message()
+            assert detail.reason == "FOOBAR", f"Expected reason=FOOBAR, got: {detail}"
+            assert detail.domain == "redpanda.com/core", f"Expected domain=redpanda.com/core, got: {detail}"
+            assert detail.metadata == {
+                "detail": "something"
+            }, f"Expected metadata.detail=something, got: {detail}"
 
     @cluster(num_nodes=3)
     def test_public_get_license(self):
