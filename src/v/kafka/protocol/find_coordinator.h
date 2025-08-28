@@ -26,7 +26,7 @@ struct find_coordinator_request final {
 
     find_coordinator_request() = default;
 
-    find_coordinator_request(
+    explicit find_coordinator_request(
       ss::sstring key, coordinator_type key_type = coordinator_type::group)
       : data({
           .key = std::move(key),
