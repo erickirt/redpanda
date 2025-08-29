@@ -245,7 +245,7 @@ level_zero_gc::try_to_collect() {
             static seastar::logger::rate_limit rate(rate_limit);
             vloglr(
               cd_log,
-              seastar::log_level::warn,
+              seastar::log_level::error,
               rate,
               "Non-lexicographic object listing detected during L0 GC {} < {}",
               object.key,
