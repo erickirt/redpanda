@@ -57,7 +57,7 @@ class RpkRemoteTool:
         return self._execute([self._rpk_binary(), "cluster", "config", "lint"])
 
     def tune(self, tuner):
-        return self._execute([self._rpk_binary(), "redpanda", "tune", tuner])
+        return self._execute([self._rpk_binary(), "redpanda", "tune", tuner, "-v"])
 
     def mode_set(self, mode):
         return self._execute([self._rpk_binary(), "redpanda", "mode", mode])
