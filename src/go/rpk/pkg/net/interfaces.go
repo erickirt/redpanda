@@ -23,6 +23,20 @@ func GetInterfacesByIps(addresses ...string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	for i, address := range addresses {
+		resolvedIps, err := net.LookupIP(address)
+		if err != nil {
+			zap.L().Sugar().Debugf("Can't resolve address '%s', err: %s", address, err)
+		}
+		for _, resolvedIP := range resolvedIps {
+			if resolvedIP.To4() != nil {
+				addresses[i] = resolvedIP.String()
+				break
+			}
+		}
+	}
+
 	nics := make(map[string]bool)
 	for _, iface := range ifaces {
 		if (iface.Flags & net.FlagLoopback) == net.FlagLoopback {
