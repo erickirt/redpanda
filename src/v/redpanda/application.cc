@@ -91,6 +91,7 @@
 #include "config/node_config.h"
 #include "config/property.h"
 #include "config/seed_server.h"
+#include "config/tls_config.h"
 #include "config/types.h"
 #include "crash_tracker/signals.h"
 #include "crypto/ossl_context_service.h"
@@ -2710,9 +2711,29 @@ void application::wire_up_bootstrap_services() {
                 = config::shard_local_cfg().rpc_server_tcp_recv_buf;
               c.tcp_send_buf
                 = config::shard_local_cfg().rpc_server_tcp_send_buf;
+              config::tls_config tls_config{
+                config::node().rpc_server_tls().is_enabled(),
+                config::node().rpc_server_tls().get_key_cert_files(),
+                config::node().rpc_server_tls().get_truststore_file(),
+                config::node().rpc_server_tls().get_crl_file(),
+                config::node().rpc_server_tls().get_require_client_auth(),
+                config::node()
+                  .rpc_server_tls()
+                  .get_tls_v1_2_cipher_suites()
+                  .value_or(ss::sstring{}),
+                config::node()
+                  .rpc_server_tls()
+                  .get_tls_v1_3_cipher_suites()
+                  .value_or(ss::sstring{net::tls_v1_3_cipher_suites_strict}),
+                config::node().rpc_server_tls().get_min_tls_version().value_or(
+                  config::tls_version::v1_3),
+                config::node()
+                  .rpc_server_tls()
+                  .get_enable_renegotiation()
+                  .value_or(false)};
               auto credentials
                 = net::build_reloadable_server_credentials_with_probe(
-                    config::node().rpc_server_tls(),
+                    tls_config,
                     "rpc",
                     "",
                     [this](
