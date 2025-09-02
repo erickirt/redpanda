@@ -471,7 +471,9 @@ static ss::future<> bg_upload_and_replicate(
                     }
                 }
                 return raft::replicate_result{
-                  kafka::offset_cast(res.value().last_offset)};
+                  .last_offset = kafka::offset_cast(res.value().last_offset),
+                  .last_term = res.value().last_term,
+                };
             });
 
     replicate_fut.forward_to(std::move(op->replicate_finished));
