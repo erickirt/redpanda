@@ -153,8 +153,20 @@ public:
 
     bool has_overrides() const { return _overrides != nullptr; }
 
-    bool is_compacted() const {
+    // If compaction is enabled for local storage.
+    bool is_locally_compacted() const {
+        if (cloud_topic_enabled()) {
+            return false;
+        }
         return model::is_compaction_enabled(cleanup_policy());
+    }
+
+    // If compaction is enabled for remote storage.
+    //
+    // NOTE: currently this is only supported for cloud topics
+    bool is_remotely_compacted() const {
+        return cloud_topic_enabled()
+               && model::is_compaction_enabled(cleanup_policy());
     }
 
     bool is_collectable() const {
