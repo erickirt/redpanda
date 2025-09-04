@@ -123,7 +123,8 @@ public:
           model::iceberg_invalid_record_action::dlq_table,
           location_provider(
             scoped_remote->remote.local().provider(), bucket_name),
-          *get_or_create_probe(ntp));
+          *get_or_create_probe(ntp),
+          &features);
     }
 
     // Runs the multiplexer on records generated with cb() based on the test

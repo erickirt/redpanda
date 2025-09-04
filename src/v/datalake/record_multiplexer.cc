@@ -79,7 +79,8 @@ record_multiplexer::record_multiplexer(
   table_creator& table_creator,
   model::iceberg_invalid_record_action invalid_record_action,
   location_provider location_provider,
-  translation_probe& translation_probe)
+  translation_probe& translation_probe,
+  features::feature_table* features)
   : _log(datalake_log, fmt::format("{}", ntp))
   , _ntp(ntp)
   , _topic_revision(topic_revision)
@@ -90,7 +91,8 @@ record_multiplexer::record_multiplexer(
   , _table_creator(table_creator)
   , _invalid_record_action(invalid_record_action)
   , _location_provider(std::move(location_provider))
-  , _translation_probe(translation_probe) {}
+  , _translation_probe(translation_probe)
+  , _features(features) {}
 
 ss::future<> record_multiplexer::multiplex(
   model::record_batch_reader reader,

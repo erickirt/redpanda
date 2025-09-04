@@ -331,6 +331,7 @@ redpanda_cc_gtest(
         "//src/v/datalake:table_creator",
         "//src/v/datalake:translation_task",
         "//src/v/datalake/translation:translation_probe",
+        "//src/v/features",
         "//src/v/iceberg:uri",
         "//src/v/model",
         "//src/v/storage:record_batch_builder",

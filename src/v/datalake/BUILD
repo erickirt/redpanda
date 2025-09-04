@@ -317,6 +317,7 @@ redpanda_cc_library(
         ":table_creator",
         ":table_id_provider",
         "//src/v/base",
+        "//src/v/features",
         "//src/v/iceberg/conversion:conversion_outcome",
         "//src/v/model:batch_compression",
         "//src/v/utils:lazy_abort_source",

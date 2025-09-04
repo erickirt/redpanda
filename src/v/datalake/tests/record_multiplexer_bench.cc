@@ -352,7 +352,8 @@ private:
           model::iceberg_invalid_record_action::dlq_table,
           datalake::location_provider(
             scoped_remote->remote.local().provider(), bucket_name),
-          _translation_probe);
+          _translation_probe,
+          &_features);
     }
 
     ss::future<>
