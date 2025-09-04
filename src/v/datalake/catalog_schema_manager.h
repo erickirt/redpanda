@@ -12,6 +12,7 @@
 #include "iceberg/catalog.h"
 #include "iceberg/datatypes.h"
 #include "iceberg/partition.h"
+#include "iceberg/schema.h"
 #include "iceberg/table_identifier.h"
 
 namespace features {
@@ -127,6 +128,7 @@ private:
     checked<bool, errc> apply_evolution_rules(
       const iceberg::table_identifier&,
       const iceberg::table_metadata&,
+      const iceberg::schema&,
       iceberg::struct_type&);
     checked<ss::gate::holder, errc> maybe_gate();
     iceberg::catalog& catalog_;

@@ -31,11 +31,13 @@ from confluent_kafka.avro import AvroProducer
 from confluent_kafka.schema_registry import SchemaRegistryClient
 from ducktape.mark import matrix
 
+from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.catalog_service import CatalogType
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import PandaproxyConfig, SchemaRegistryConfig, SISettings
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.datalake.catalog_service_factory import (
     filesystem_catalog_type,
     supported_catalog_types,
@@ -855,3 +857,40 @@ class SchemaEvolutionE2ETests(RedpandaTest):
             assert len(select_out) == count * 3, (
                 f"Expected {count * 3} rows, got {len(select_out)}"
             )
+
+            # Finish the upgrade and write data again.
+            self.redpanda._installer.install(
+                self.redpanda.nodes[:1], RedpandaInstaller.HEAD
+            )
+            self.redpanda.restart_nodes(self.redpanda.nodes[0])
+
+            def feature_active():
+                features = self.redpanda._admin.get_features()["features"]
+                for f in features:
+                    if f["name"] == "iceberg_schema_merging":
+                        if f["state"] == "active":
+                            return True
+                return False
+
+            wait_until(
+                feature_active,
+                timeout_sec=30,
+                backoff_sec=1,
+                err_msg="Schema evolution feature did not become active",
+                retry_on_exc=True,
+            )
+
+            for schema in [initial_schema, next_schema, initial_schema]:
+                schema.produce(dl, self.topic_name, count, ctx, mode=produce_mode)
+
+            # This time we check resulting schema assuming merging behavior.
+            if test_case == "add_column":
+                next_schema.check_table_schema(dl, self.table_name, query_engine)
+            elif test_case == "drop_column":
+                initial_schema.check_table_schema(dl, self.table_name, query_engine)
+            elif test_case == "promote_column":
+                next_schema.check_table_schema(dl, self.table_name, query_engine)
+            elif test_case == "reorder_columns":
+                next_schema.check_table_schema(dl, self.table_name, query_engine)
+            else:
+                assert False, f"Unhandled test case {test_case}"

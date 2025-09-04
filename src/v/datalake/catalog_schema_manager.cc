@@ -171,7 +171,10 @@ catalog_schema_manager::ensure_table_schema(
   const iceberg::table_identifier& table_id,
   const iceberg::struct_type& writer_struct_type,
   const iceberg::unresolved_partition_spec& partition_spec) {
-    if (!features_->is_active(features::feature::iceberg_schema_merging)) {
+    // Cache the result so it is consistent for the duration of the function.
+    const bool use_schema_merging = features_->is_active(
+      features::feature::iceberg_schema_merging);
+    if (!use_schema_merging) {
         vlog(datalake_log.debug, "Iceberg schema merging is not yet active");
     }
 
@@ -188,19 +191,89 @@ catalog_schema_manager::ensure_table_schema(
 
     iceberg::transaction txn(std::move(load_res.value()));
 
-    // Check schema compatibility
-    auto type_copy = writer_struct_type.copy();
-    auto get_res = apply_evolution_rules(table_id, txn.table(), type_copy);
-    if (get_res.has_error()) {
-        co_return get_res.error();
+    const auto* current_schema = txn.table().get_schema(
+      txn.table().current_schema_id);
+    if (current_schema == nullptr) {
+        vlog(
+          datalake_log.error,
+          "Cannot find current schema {} in table {}",
+          txn.table().current_schema_id,
+          table_id);
+        co_return errc::failed;
     }
 
-    if (!get_res.value()) {
+    std::optional<iceberg::struct_type> new_schema;
+    if (use_schema_merging) {
+        auto writer_struct_type_with_ids = writer_struct_type.copy();
+        auto fill_res = iceberg::try_fill_field_ids(
+          current_schema->schema_struct, writer_struct_type_with_ids);
+
+        if (fill_res == iceberg::ids_filled::no) {
+            auto merged_schema_struct_type
+              = current_schema->schema_struct.copy();
+            auto merge_res = iceberg::merge_struct_types(
+              writer_struct_type, merged_schema_struct_type);
+            if (merge_res.has_error()) {
+                vlog(
+                  datalake_log.warn,
+                  "Failed to merge record schema with table schema {}: {}",
+                  table_id,
+                  merge_res.error());
+                co_return errc::not_supported;
+            }
+
+            // Make a copy so that we still have the original struct in case we
+            // need to log it on the error path.
+            auto merged_schema_with_evo = merged_schema_struct_type.copy();
+            auto get_res = apply_evolution_rules(
+              table_id, txn.table(), *current_schema, merged_schema_with_evo);
+            if (get_res.has_error()) {
+                co_return get_res.error();
+            } else if (get_res.value()) {
+                vlog(
+                  datalake_log.error,
+                  "Applying evolution rules on merged schema resulted in a "
+                  "no-op. This means there is a bug in one of: filling field "
+                  "ids, merging, or applying evolution rules. desired_type={}, "
+                  "merged_schema={}, merged_schema_with_evo={}",
+                  table_id,
+                  writer_struct_type,
+                  merged_schema_struct_type,
+                  merged_schema_with_evo);
+                co_return errc::failed;
+            } else {
+                new_schema.emplace(std::move(merged_schema_with_evo));
+            }
+        }
+    } else {
+        // Compatibility with Redpanda v25.2 where we would short-circuit if an
+        // equivalent schema existed at some point in time.
+        const auto* equivalent_schema = txn.table().get_equivalent_schema(
+          writer_struct_type);
+        if (equivalent_schema != nullptr) {
+            vlog(
+              datalake_log.debug,
+              "Found exact match schema: ID {}",
+              equivalent_schema->schema_id);
+        } else {
+            // Apply evolution rules from current schema to writer schema.
+            auto type_copy = writer_struct_type.copy();
+            auto get_res = apply_evolution_rules(
+              table_id, txn.table(), *current_schema, type_copy);
+            if (get_res.has_error()) {
+                co_return get_res.error();
+            } else if (!get_res.value()) {
+                new_schema.emplace(std::move(type_copy));
+            }
+        }
+    }
+
+    if (new_schema.has_value()) {
         // The desired schema is backwards compatible with the current table
         // schema. Add the schema to the table.
         auto update_res = co_await txn.set_schema(
           iceberg::schema{
-            .schema_struct = std::move(type_copy),
+            .schema_struct = std::move(new_schema.value()),
             .identifier_field_ids = {},
           });
         if (update_res.has_error()) {
@@ -293,26 +366,8 @@ checked<bool, schema_manager::errc>
 catalog_schema_manager::apply_evolution_rules(
   const iceberg::table_identifier& table_id,
   const iceberg::table_metadata& table_meta,
+  const iceberg::schema& schema,
   iceberg::struct_type& dest_type) {
-    const auto* schema = table_meta.get_equivalent_schema(dest_type);
-    if (schema != nullptr) {
-        vlog(
-          datalake_log.debug,
-          "Found exact match schema: ID {}",
-          schema->schema_id);
-        return true;
-    }
-
-    schema = table_meta.get_schema(table_meta.current_schema_id);
-    if (schema == nullptr) {
-        vlog(
-          datalake_log.error,
-          "Cannot find current schema {} in table {}",
-          table_meta.current_schema_id,
-          table_id);
-        return errc::failed;
-    }
-
     const auto* cur_spec = table_meta.get_partition_spec(
       table_meta.default_spec_id);
     if (cur_spec == nullptr) {
@@ -324,7 +379,7 @@ catalog_schema_manager::apply_evolution_rules(
         return errc::failed;
     }
     auto compat_res = check_schema_compat(
-      dest_type, schema->schema_struct.copy(), *cur_spec);
+      dest_type, schema.schema_struct.copy(), *cur_spec);
     if (compat_res.has_error()) {
         switch (compat_res.error()) {
         case fill_errc::invalid_schema:

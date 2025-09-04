@@ -19,6 +19,7 @@
 #include "datalake/table_creator.h"
 #include "datalake/table_id_provider.h"
 #include "datalake/translation/translation_probe.h"
+#include "features/feature_table.h"
 #include "model/batch_compression.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -260,8 +261,14 @@ ss::future<ss::stop_iteration> record_multiplexer::do_multiplex(
             }
 
             auto table_id = table_id_provider::table_id(_ntp.tp.topic);
+            std::optional<std::reference_wrapper<iceberg::struct_type>>
+              desired_type;
+            if (!_features->is_active(
+                  features::feature::iceberg_schema_merging)) {
+                desired_type = std::make_optional(std::ref(record_type.type));
+            }
             auto load_res = co_await _schema_mgr.get_table_info(
-              table_id, record_type.type);
+              table_id, desired_type);
             if (load_res.has_error()) {
                 auto e = load_res.error();
                 switch (e) {
