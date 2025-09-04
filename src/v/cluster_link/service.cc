@@ -21,6 +21,7 @@
 #include "cluster_link/model/types.h"
 #include "cluster_link/replication/deps_impl.h"
 #include "cluster_link/replication/mux_remote_consumer.h"
+#include "cluster_link/security_migrator.h"
 #include "cluster_link/source_topic_syncer.h"
 #include "kafka/client/direct_consumer/direct_consumer.h"
 #include "kafka/server/group_router.h"
@@ -287,10 +288,11 @@ ss::future<> service::start() {
 
     co_await _manager->register_task_factory<source_topic_syncer_factory>();
     co_await _manager->register_task_factory<group_mirroring_task_factory>();
+    co_await _manager->register_task_factory<security_migrator_factory>();
 
-    // Register notifications before the manager starts.  The manager will have
-    // a constructed the underlying workqueue to start in a paused state and
-    // will pick up the notifications once it has started
+    // Register notifications before the manager starts.  The manager will
+    // have a constructed the underlying workqueue to start in a paused
+    // state and will pick up the notifications once it has started
     register_notifications();
     co_await _manager->start();
 }
