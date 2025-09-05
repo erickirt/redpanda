@@ -118,7 +118,7 @@ public:
       model::id_t id,
       ::model::topic topic,
       int32_t partition_count,
-      int16_t replication_factor,
+      std::optional<int16_t> replication_factor,
       chunked_hash_map<ss::sstring, ss::sstring> topic_configs = {}) {
         topic_configs.insert(
           _required_topic_properties.begin(), _required_topic_properties.end());
@@ -162,6 +162,10 @@ public:
     topic_reconciler* reconciler() const { return _reconciler.get(); }
 
     link_registry* link_registry() const { return _link_registry.get(); }
+
+    config::mock_property<int16_t>& default_topic_replication() {
+        return _default_topic_replication;
+    }
 
 private:
     ss::sharded<cluster::cluster_link::table> _table;
@@ -282,5 +286,40 @@ TEST_F_CORO(topic_reconciler_test, test_topic_failure) {
     const auto topic_cfg = metadata_cache()->find_topic_cfg(topic);
     ASSERT_TRUE_CORO(topic_cfg.has_value());
     EXPECT_EQ(topic_cfg->replication_factor, 1);
+}
+
+TEST_F_CORO(topic_reconciler_test, test_no_rf_set) {
+    ::model::topic_namespace topic{
+      ::model::kafka_namespace, ::model::topic{"test_topic"}};
+    ::model::topic_namespace topic2{
+      ::model::kafka_namespace, ::model::topic{"test_topic2"}};
+
+    default_topic_replication().update(1);
+
+    co_await add_mirror_topic(get_link_id(), topic.tp, 1, std::nullopt);
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      10s, [this, topic = ::model::topic_namespace_view{topic}] {
+          return metadata_cache()->find_topic_cfg(topic).has_value();
+      });
+
+    const auto topic_cfg = metadata_cache()->find_topic_cfg(topic).value();
+    EXPECT_EQ(topic_cfg.tp_ns, topic);
+    EXPECT_EQ(topic_cfg.partition_count, 1);
+    EXPECT_EQ(topic_cfg.replication_factor, 1);
+
+    default_topic_replication().update(3);
+
+    co_await add_mirror_topic(get_link_id(), topic2.tp, 1, std::nullopt);
+
+    RPTEST_REQUIRE_EVENTUALLY_CORO(
+      10s, [this, topic = ::model::topic_namespace_view{topic2}] {
+          return metadata_cache()->find_topic_cfg(topic).has_value();
+      });
+
+    const auto topic_cfg2 = metadata_cache()->find_topic_cfg(topic2).value();
+    EXPECT_EQ(topic_cfg2.tp_ns, topic2);
+    EXPECT_EQ(topic_cfg2.partition_count, 1);
+    EXPECT_EQ(topic_cfg2.replication_factor, 3);
 }
 } // namespace cluster_link::tests

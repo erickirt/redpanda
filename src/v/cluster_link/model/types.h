@@ -228,8 +228,9 @@ struct mirror_topic_metadata
     ::model::topic_id destination_topic_id;
     /// The number of partitions on the source topic
     int32_t partition_count;
-    /// The replication factor
-    int16_t replication_factor;
+    /// The replication factor - if not provided, is using
+    /// `default_topic_replication` cluster config
+    std::optional<int16_t> replication_factor;
     /// The configuration for the topic
     chunked_hash_map<ss::sstring, ss::sstring> topic_configs;
 
@@ -500,7 +501,7 @@ struct update_mirror_topic_properties_cmd
     /// Name of the topic
     ::model::topic topic;
     int32_t partition_count;
-    int16_t replication_factor;
+    std::optional<int16_t> replication_factor;
     chunked_hash_map<ss::sstring, ss::sstring> topic_configs;
 
     friend bool operator==(
