@@ -241,47 +241,46 @@ void read_result::memory_units_t::adopt(memory_units_t&& o) {
  * available resources: if none, there is no memory for the operation;
  * if less than \p max_bytes, the fetch should be capped to that size.
  *
- * \param max_bytes The limit of how much data is going to be fetched
- * \param obligatory_batch_read Set to true for the first ntp in the fetch
- *   fetch request, at least one batch must be fetched for that ntp. Also it
- *   is assumed that a batch size has already been consumed from kafka
- *   memory semaphore for it.
+ * \param max_units The maximum number of units the function will attempt to
+ * allocate.
+ * \param min_units The minimum number of units the function will attempt to
+ * allocate. If it can't allocate at least this many units no units will be
+ * allocated.
+ * \param require_min_units If true then at least \ref min_units will be
+ * allocated regardless of the units available in \ref memory_sem and \ref
+ * memory_fetch_sem.
  */
 static read_result::memory_units_t reserve_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
-  const size_t max_bytes,
-  const size_t max_batch_size,
-  const bool obligatory_batch_read) {
-    read_result::memory_units_t memory_units;
-    const size_t memory_kafka_now = memory_sem.current();
-    const size_t memory_fetch = memory_fetch_sem.current();
-    const size_t batch_size_estimate = max_batch_size;
+  size_t max_units,
+  const size_t min_units,
+  const bool require_min_units) {
+    const size_t available_units = std::min(
+      memory_sem.current(), memory_fetch_sem.current());
+    // Note that it's not currently enforced that max_units >= min_units. Hence
+    // we set max_units to the larger of the two here to ensure that is the
+    // case.
+    max_units = std::max(max_units, min_units);
 
-    if (obligatory_batch_read) {
-        // cap what we want at what we have, but no further down than a single
-        // batch size - with \ref obligatory_batch_read, it must be fetched
-        // regardless
-        const size_t fetch_size = std::max(
-          batch_size_estimate,
-          std::min({max_bytes, memory_kafka_now, memory_fetch}));
-        memory_units.fetch = ss::consume_units(memory_fetch_sem, fetch_size);
-        memory_units.kafka = ss::consume_units(memory_sem, fetch_size);
-    } else {
-        // max_bytes is how much we prepare to read from this ntp, but no less
-        // than one full batch
-        const size_t requested_fetch_size = std::max(
-          max_bytes, batch_size_estimate);
-        // cap what we want at what we have
-        const size_t fetch_size = std::min(
-          {requested_fetch_size, memory_kafka_now, memory_fetch});
-        // only reserve memory if we have space for at least one batch,
-        // otherwise this ntp will be skipped
-        if (fetch_size >= batch_size_estimate) {
-            memory_units.fetch = ss::consume_units(
-              memory_fetch_sem, fetch_size);
-            memory_units.kafka = ss::consume_units(memory_sem, fetch_size);
-        }
+    size_t units_to_alloc = 0;
+    if (require_min_units) {
+        // if \ref require_min_units is true then we must read at least \ref
+        // min_units. So allocate at least that many even if it causes the
+        // semaphores to become negative.
+        units_to_alloc = std::max(
+          min_units, std::min(max_units, available_units));
+    } else if (available_units >= min_units) {
+        // only reserve memory if we have space for at least \ref min_units,
+        // otherwise allocate none.
+        units_to_alloc = std::min(available_units, max_units);
+    }
+
+    read_result::memory_units_t memory_units;
+    if (units_to_alloc > 0) {
+        memory_units.fetch = ss::consume_units(
+          memory_fetch_sem, units_to_alloc);
+        memory_units.kafka = ss::consume_units(memory_sem, units_to_alloc);
     }
 
     return memory_units;
