@@ -16,6 +16,12 @@
 
 namespace admin {
 
+/// \brief Sets the client ID for the cluster link
+///
+/// The client is is the format:
+/// `cluster-link-{cluster-link-name}-{cluster-link-uuid}`
+void set_client_id(cluster_link::model::metadata& md);
+
 /// \brief Converts a create cluster link request into a cluster link metadata
 /// object
 ///

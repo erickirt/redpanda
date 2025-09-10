@@ -154,13 +154,6 @@ constexpr auto scram_mechanism_to_string(scram_mechanism m) {
       "to either SCRAM-SHA-256 or SCRAM-SHA-512");
 }
 
-/// \brief Sets client ID to the format:
-/// "cluster-link-{cluster-link-name}-{cluster-link-uuid}"
-void set_client_id(cluster_link::model::metadata& md) {
-    md.connection.client_id = ssx::sformat(
-      "cluster-link-{}-{}", md.name, md.uuid);
-}
-
 /// \brief Creates the authentication settings from the create cluster link
 /// \brief throws std::invalid_argument if invalid config provided
 cluster_link::model::connection_config::authn_variant
@@ -522,6 +515,11 @@ create_shadow_link_status(const cluster_link::model::metadata& md) {
     return status;
 }
 } // namespace
+
+void set_client_id(cluster_link::model::metadata& md) {
+    md.connection.client_id = ssx::sformat(
+      "cluster-link-{}-{}", md.name, md.uuid);
+}
 
 cluster_link::model::metadata
 convert_create_to_metadata(create_shadow_link_request req) {
