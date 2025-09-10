@@ -1227,6 +1227,12 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         pass
 
     @abstractmethod
+    def raise_on_bad_logs(
+        self, allow_list: LogAllowList = (), test_start_time: float | None = None
+    ):
+        pass
+
+    @abstractmethod
     def kafka_client_security(self) -> KafkaClientSecurity:
         """Return a KafkaClientSecurity object suitable for connecting to the Kafka API
         on this broker."""
@@ -1877,7 +1883,9 @@ class RedpandaServiceBase(RedpandaServiceABC, Service):
     def set_skip_if_no_redpanda_log(self, v: bool):
         self._skip_if_no_redpanda_log = v
 
-    def raise_on_bad_logs(self, allow_list=None):
+    def raise_on_bad_logs(
+        self, allow_list: LogAllowList = (), test_start_time: float | None = None
+    ):
         """
         Raise a BadLogLines exception if any nodes' logs contain errors not
         permitted by `allow_list`
@@ -2652,7 +2660,9 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
     def cluster_healthy(self) -> bool:
         return self.cluster_unhealthy_reason is not None
 
-    def raise_on_bad_logs(self, allow_list=None, test_start_time=None):
+    def raise_on_bad_logs(
+        self, allow_list: LogAllowList = (), test_start_time: float | None = None
+    ) -> None:
         """
         Raise a BadLogLines exception if any nodes' logs contain errors
         not permitted by `allow_list`
