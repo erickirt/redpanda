@@ -302,6 +302,11 @@ result<chunked_vector<model::metadata>> service::list_cluster_links() {
     return _manager->list_cluster_links();
 }
 
+ss::future<result<model::metadata>> service::update_cluster_link(
+  model::name_t name, model::update_cluster_link_configuration_cmd cmd) {
+    return _manager->update_cluster_link(std::move(name), std::move(cmd));
+}
+
 void service::register_notifications() {
     auto pl_notif_id = _plf->local().register_for_updates(
       [this](model::id_t id) { _manager->on_link_change(id); });
