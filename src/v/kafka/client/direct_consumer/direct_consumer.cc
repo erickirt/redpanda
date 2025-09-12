@@ -85,6 +85,7 @@ ss::future<> direct_consumer::update_fetchers(
                       model::topic_partition_view(topic, p_id));
                     // preserve the fetch offset for the next fetcher to use
                     sub.fetch_offset = offset;
+                    sub.current_fetcher = std::nullopt;
                 }
                 continue;
             }
