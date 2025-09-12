@@ -13,6 +13,7 @@ package irq
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -83,6 +84,21 @@ func (masks *cpuMasks) CPUMaskForComputations(
 	} else if mode == Mq {
 		// all available cores
 		computationsMask = cpuMask
+	} else if mode == Dedicated {
+		numOfPUs, err := masks.GetNumberOfPUs(cpuMask)
+		if err != nil {
+			return "", err
+		}
+		rpPUs := numOfPUs - uint(math.Ceil(float64(numOfPUs)/16))
+		separateMasks, err := masks.hwloc.DistributeRestrict(rpPUs, cpuMask)
+		if err != nil {
+			return "", err
+		}
+		// merge the separate masks into one
+		computationsMask, err = masks.hwloc.RunCalcRaw(separateMasks...)
+		if err != nil {
+			return "", err
+		}
 	} else {
 		err = fmt.Errorf("unsupported mode: '%s'", mode)
 	}

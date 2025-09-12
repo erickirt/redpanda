@@ -35,14 +35,20 @@ func getDefaultMode(
 			return "", err
 		}
 
-		// Currently we use only the mq mode because the idea behind sq and sq-split modes is that
-		// a core is *dedicated* to IRQs (i.e., Redpanda core does not run on that core or lcore),
-		// but we don't currently support propagating a cpuset to Redpanda, so it will run on the IRQ
-		// core, causing it to be the primary bottleneck.
-		zap.L().Sugar().Debugf("Using mq mode (hardcoded) for '%s': '%d' cores, '%d' PUs and '%d' rx queues",
-			nic.Name(), numOfCores, numOfPUs, rxQueuesCount)
+		// TODO: check
+		//   - no cpuset specified in config
+		//   - --smp is compatible
+		var mode irq.Mode
+		if numOfPUs >= 16 {
+			mode = irq.Dedicated
+		} else {
+			mode = irq.Mq
+		}
 
-		return irq.Mq, nil
+		zap.L().Sugar().Debugf("Using '%s' mode for '%s': '%d' cores, '%d' PUs and '%d' rx queues",
+			mode, nic.Name(), numOfCores, numOfPUs, rxQueuesCount)
+
+		return mode, nil
 	}
 
 	if nic.IsBondIface() {
