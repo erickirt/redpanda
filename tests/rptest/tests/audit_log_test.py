@@ -40,8 +40,7 @@ from rptest.services.redpanda import (
     LoggingConfig,
     MetricSamples,
     MetricsEndpoint,
-    PandaproxyConfig,
-    RedpandaServiceBase,
+    RedpandaService,
     SchemaRegistryConfig,
     SecurityConfig,
     TLSProvider,
@@ -1985,7 +1984,7 @@ class AuditLogTestInvalidConfigMTLS(AuditLogTestInvalidConfigBase):
         )
         self.admin_user_cert = self.tls.create_cert(
             socket.gethostname(),
-            common_name=RedpandaServiceBase.SUPERUSER_CREDENTIALS[0],
+            common_name=RedpandaService.SUPERUSER_CREDENTIALS[0],
             name="admin_client",
         )
         self._security_config = AuditLogTestSecurityConfig(
@@ -2041,7 +2040,7 @@ class AuditLogTestKafkaTlsApi(AuditLogTestBase):
         )
         self.admin_user_cert = self.tls.create_cert(
             socket.gethostname(),
-            common_name=RedpandaServiceBase.SUPERUSER_CREDENTIALS[0],
+            common_name=RedpandaService.SUPERUSER_CREDENTIALS[0],
             name="admin_client",
         )
 
@@ -2135,7 +2134,7 @@ class AuditLogTestOauth(AuditLogTestBase):
 
     def __init__(self, test_context):
         security = AuditLogTestSecurityConfig(
-            user_creds=RedpandaServiceBase.SUPERUSER_CREDENTIALS
+            user_creds=RedpandaService.SUPERUSER_CREDENTIALS
         )
         security.enable_sasl = True
         security.sasl_mechanisms = ["SCRAM"]

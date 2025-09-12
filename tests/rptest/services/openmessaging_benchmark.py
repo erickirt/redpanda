@@ -17,11 +17,9 @@ from typing import Optional, Any
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.cluster.node_container import NodeContainer
 
 from rptest.services.redpanda import (
     RedpandaService,
-    RedpandaServiceBase,
     RedpandaServiceCloud,
 )
 from rptest.services.utils import BadLogLines

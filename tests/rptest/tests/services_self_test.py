@@ -359,9 +359,9 @@ class BucketScrubSelfTest(RedpandaTest):
 
 class SimpleSelfTest(Test):
     """
-    Verify instantiation of a RedpandaServiceBase subclass through the factory method.
+    Verify instantiation of a RedpandaServiceABC subclass through the factory method.
 
-    Runs a few methods of RedpandaServiceBase.
+    Runs a few methods of RedpandaService.
     """
 
     def __init__(self, test_context):
