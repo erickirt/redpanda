@@ -78,19 +78,19 @@ std::unique_ptr<object_reader> make_reader(iobuf& buf) {
       make_iobuf_input_stream(buf.share(0, buf.size_bytes())));
 }
 
-object_reader::result read_one_at(iobuf& buf, size_t offset) {
-    if (offset == footer::npos) {
+object_reader::result read_one_at(iobuf& buf, footer::seek_result result) {
+    if (result == footer::npos) {
         ss::throw_with_backtrace<std::runtime_error>(
           "Cannot read at npos offset, this is an invalid offset.");
     }
-    if (offset >= buf.size_bytes()) {
+    if (result.file_position >= buf.size_bytes()) {
         ss::throw_with_backtrace<std::out_of_range>(fmt::format(
-          "Offset {} is out of range for buffer size {}",
-          offset,
+          "result {} is out of range for buffer size {}",
+          result,
           buf.size_bytes()));
     }
     auto reader = object_reader::create(
-      make_iobuf_input_stream(buf.share(offset, buf.size_bytes() - offset)));
+      make_iobuf_input_stream(buf.share(result.file_position, result.length)));
     auto _ = ss::defer([&reader] { reader->close().get(); });
     return reader->read_next().get();
 }
@@ -111,6 +111,7 @@ TEST(L1ObjectsIndex, OffsetSearch) {
       model::topic_id_partition{model::topic_id(uuid_t::create()), model::partition_id(0)},
       footer::partition{
         .file_position = 0,
+        .length = 600,
         .indexes = {
           {.file_position = 100, .kafka_offset = 5_o},
           {.file_position = 200, .kafka_offset = 20_o},
@@ -121,18 +122,31 @@ TEST(L1ObjectsIndex, OffsetSearch) {
         .first_offset = 3_o,
         .last_offset = 65_o,
       });
-    std::map<kafka::offset, size_t> offset_to_filepos = {
-      {2_o, 0},    {3_o, 0},    {4_o, 0},    {5_o, 100},           {6_o, 100},
-      {19_o, 100}, {20_o, 200}, {21_o, 200}, {29_o, 200},          {30_o, 300},
-      {31_o, 300}, {49_o, 300}, {50_o, 400}, {51_o, 400},          {59_o, 400},
-      {60_o, 500}, {61_o, 500}, {65_o, 500}, {66_o, footer::npos},
+    std::map<kafka::offset, footer::seek_result> offset_to_filepos = {
+      {2_o, {.file_position = 0, .length = 600}},
+      {3_o, {.file_position = 0, .length = 600}},
+      {4_o, {.file_position = 0, .length = 600}},
+      {5_o, {.file_position = 100, .length = 500}},
+      {6_o, {.file_position = 100, .length = 500}},
+      {19_o, {.file_position = 100, .length = 500}},
+      {20_o, {.file_position = 200, .length = 400}},
+      {21_o, {.file_position = 200, .length = 400}},
+      {29_o, {.file_position = 200, .length = 400}},
+      {30_o, {.file_position = 300, .length = 300}},
+      {31_o, {.file_position = 300, .length = 300}},
+      {49_o, {.file_position = 300, .length = 300}},
+      {50_o, {.file_position = 400, .length = 200}},
+      {51_o, {.file_position = 400, .length = 200}},
+      {59_o, {.file_position = 400, .length = 200}},
+      {60_o, {.file_position = 500, .length = 100}},
+      {61_o, {.file_position = 500, .length = 100}},
+      {65_o, {.file_position = 500, .length = 100}},
+      {66_o, footer::npos},
     };
     for (const auto& [seek, expected] : offset_to_filepos) {
-        EXPECT_EQ(
-          index.file_position_before_kafka_offset(
-            index.partitions.begin()->first, seek),
-          expected)
-          << " for offset " << seek;
+        auto seek_result = index.file_position_before_kafka_offset(
+          index.partitions.begin()->first, seek);
+        EXPECT_EQ(seek_result, expected) << " for offset " << seek;
     }
 }
 
@@ -142,6 +156,7 @@ TEST(L1ObjectsIndex, TimestampSearch) {
       model::topic_id_partition{model::topic_id(uuid_t::create()), model::partition_id(0)},
     footer::partition{
       .file_position = 0,
+      .length = 600,
       .indexes = {
         {.file_position = 100, .kafka_offset = 5_o, .max_timestamp = 1000_t},
         {.file_position = 200, .kafka_offset = 20_o, .max_timestamp = 1500_t},
@@ -153,29 +168,28 @@ TEST(L1ObjectsIndex, TimestampSearch) {
       .last_offset = 65_o,
       .max_timestamp = 3000_t,
     });
-    std::map<model::timestamp, size_t> timequery_to_file_position = {
-      {999_t, 0},
-      {1000_t, 0},
-      {1001_t, 200},
-      {1499_t, 200},
-      {1500_t, 200},
-      {1501_t, 300},
-      {1999_t, 300},
-      {2000_t, 300},
-      {2001_t, 400},
-      {2499_t, 400},
-      {2500_t, 400},
-      {2501_t, 500},
-      {2999_t, 500},
-      {3000_t, 500},
-      {3001_t, footer::npos},
-    };
+    std::map<model::timestamp, footer::seek_result> timequery_to_file_position
+      = {
+        {999_t, {.file_position = 0, .length = 600}},
+        {1000_t, {.file_position = 0, .length = 600}},
+        {1001_t, {.file_position = 200, .length = 400}},
+        {1499_t, {.file_position = 200, .length = 400}},
+        {1500_t, {.file_position = 200, .length = 400}},
+        {1501_t, {.file_position = 300, .length = 300}},
+        {1999_t, {.file_position = 300, .length = 300}},
+        {2000_t, {.file_position = 300, .length = 300}},
+        {2001_t, {.file_position = 400, .length = 200}},
+        {2499_t, {.file_position = 400, .length = 200}},
+        {2500_t, {.file_position = 400, .length = 200}},
+        {2501_t, {.file_position = 500, .length = 100}},
+        {2999_t, {.file_position = 500, .length = 100}},
+        {3000_t, {.file_position = 500, .length = 100}},
+        {3001_t, footer::npos},
+      };
     for (const auto& [seek, expected] : timequery_to_file_position) {
-        EXPECT_EQ(
-          index.file_position_before_max_timestamp(
-            index.partitions.begin()->first, seek),
-          expected)
-          << " for timestamp " << seek;
+        auto seek_result = index.file_position_before_max_timestamp(
+          index.partitions.begin()->first, seek);
+        EXPECT_EQ(seek_result, expected) << " for timestamp " << seek;
     }
 }
 
@@ -234,7 +248,7 @@ TEST(L1Objects, OffsetSearch) {
       };
 
     for (const auto& [seek, expected] : offset_lookup_to_batch_start) {
-        size_t pos = index_one.index.file_position_before_kafka_offset(
+        auto pos = index_one.index.file_position_before_kafka_offset(
           tidp, seek);
         ASSERT_NE(pos, footer::npos) << "No position found for " << seek
                                      << " in partition " << tidp.partition;
