@@ -90,24 +90,35 @@ ss::future<> cluster::request_metadata_update() {
 }
 
 namespace {
-ss::future<api_version> get_metadata_request_version(
-  const shared_broker_t& broker,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto supported_version = co_await broker->get_supported_versions(
-      metadata_api::key, as);
-    // Currently we require at least version 1 of the metadata API. (The api
-    // where NULL topic list represents request to list all topics)
-    if (!supported_version || supported_version->max < api_version(1)) {
+
+template<KafkaApi Api>
+ss::future<api_version> get_required_api_version(
+  shared_broker_t broker,
+  std::optional<std::reference_wrapper<ss::abort_source>> as,
+  api_version min_required) {
+    auto supported_versions = co_await broker->get_supported_versions(
+      Api::key, as);
+    if (!supported_versions || supported_versions->max < min_required) {
         throw broker_error(
           broker->id(),
           error_code::unsupported_version,
           fmt::format(
-            "Broker {} at {}:{} does not support metadata API",
+            "Broker {} at {}:{} does not support {} API with required "
+            "version >= {}",
             broker->id(),
             broker->get_address().host(),
-            broker->get_address().port()));
+            broker->get_address().port(),
+            Api::name,
+            min_required));
     }
-    co_return std::min(supported_version->max, kafka::metadata_api::max_valid);
+    co_return std::min(supported_versions->max, Api::max_valid);
+}
+
+ss::future<api_version> get_metadata_request_version(
+  shared_broker_t broker,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    return get_required_api_version<metadata_api>(
+      std::move(broker), as, api_version(1));
 }
 } // namespace
 ss::future<> cluster::initialize_metadata_with_seed() {
