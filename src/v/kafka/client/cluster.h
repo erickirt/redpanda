@@ -183,7 +183,11 @@ private:
       std::optional<chunked_vector<model::topic>> topics_request_list
       = std::nullopt,
       std::optional<api_version> requested_version = std::nullopt);
+    ss::future<describe_cluster_response>
+    dispatch_describe_cluster_request(shared_broker_t broker);
     ss::future<> initialize_metadata_with_seed();
+    ss::future<> initialize_with_describe_cluster(shared_broker_t);
+    ss::future<> initialize_with_metadata(shared_broker_t);
     void update_timer_callback();
     ss::future<> apply_metadata(metadata_update reply);
 
