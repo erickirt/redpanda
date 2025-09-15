@@ -167,6 +167,10 @@ public:
 
     auto get_broker_ids() const { return _brokers.get_broker_ids(); }
 
+    cluster_authorized_operations get_cluster_authorized_operations() const {
+        return _cluster_authorized_operations;
+    }
+
 private:
     ss::future<> update_metadata(
       std::optional<chunked_vector<model::topic>> topics_request_list
@@ -191,6 +195,8 @@ private:
 
     std::optional<model::node_id> _controller_id;
     std::optional<ss::sstring> _cluster_id;
+    cluster_authorized_operations _cluster_authorized_operations{
+      cluster_authorized_operations_not_set};
 
     ss::timer<> _metadata_update_timer;
     mutex _update_lock{"kc/metadata_update_lock"};

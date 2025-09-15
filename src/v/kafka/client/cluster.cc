@@ -265,6 +265,7 @@ ss::future<metadata_response> cluster::dispatch_metadata_request(
       metadata_request{.data{
         .topics = std::move(topics_to_request),
         .allow_auto_topic_creation = false,
+        .include_cluster_authorized_operations = true,
         .include_topic_authorized_operations = true}},
       metadata_version);
     vassert(
@@ -296,6 +297,7 @@ ss::future<> cluster::apply_metadata(metadata_update reply) {
       reply.topics.has_value() ? reply.topics->size() : 0);
 
     _cluster_id = reply.cluster_id;
+    _cluster_authorized_operations = reply.cluster_authorized_operations;
     if (reply.controller_id == unknown_node_id) {
         _controller_id.reset();
     } else {
