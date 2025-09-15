@@ -99,7 +99,8 @@ ss::future<> cluster::stop() {
     co_await _brokers.stop();
 }
 
-ss::future<> cluster::update_metadata() {
+ss::future<> cluster::update_metadata(
+  std::optional<chunked_vector<model::topic>> topics_request_list) {
     auto request_time = ss::lowres_clock::now();
 
     _as.check();
@@ -107,13 +108,14 @@ ss::future<> cluster::update_metadata() {
     if (_last_update_time >= request_time) {
         co_return;
     }
-    co_await dispatch_metadata_request();
+    co_await dispatch_metadata_request(std::move(topics_request_list));
 }
 
-ss::future<> cluster::request_metadata_update() {
+ss::future<> cluster::request_metadata_update(
+  std::optional<chunked_vector<model::topic>> topics_request_list) {
     vlog(_logger.debug, "Requesting metadata update");
     auto h = _gate.hold();
-    co_await update_metadata();
+    co_await update_metadata(std::move(topics_request_list));
 }
 
 namespace {
@@ -212,7 +214,8 @@ ss::future<> cluster::initialize_metadata_with_seed() {
     }
 }
 
-ss::future<> cluster::dispatch_metadata_request() {
+ss::future<> cluster::dispatch_metadata_request(
+  std::optional<chunked_vector<model::topic>> topics_request_list) {
     auto h = _gate.hold();
     vlog(_logger.debug, "Dispatching metadata request");
     shared_broker_t broker;
@@ -220,6 +223,19 @@ ss::future<> cluster::dispatch_metadata_request() {
     if (_brokers.empty()) {
         // If there are no brokers, connect to one of the seeds
         co_await initialize_metadata_with_seed();
+    }
+
+    std::optional<chunked_vector<metadata_request_topic>> topics_to_request
+      = std::nullopt;
+    if (topics_request_list.has_value()) {
+        topics_to_request.emplace();
+        topics_to_request->reserve(topics_request_list->size());
+        std::ranges::transform(
+          std::move(topics_request_list.value()),
+          std::back_inserter(*topics_to_request),
+          [](model::topic& t) {
+              return metadata_request_topic{.name = std::move(t)};
+          });
     }
 
     try {
@@ -231,7 +247,10 @@ ss::future<> cluster::dispatch_metadata_request() {
           broker, _as);
         // TODO: support topic subscription
         auto reply = co_await broker->dispatch(
-          metadata_request{.data{.include_topic_authorized_operations = true}},
+          metadata_request{.data{
+            .topics = std::move(topics_to_request),
+            .allow_auto_topic_creation = false,
+            .include_topic_authorized_operations = true}},
           request_version);
         vassert(
           std::holds_alternative<kafka::metadata_response>(reply),

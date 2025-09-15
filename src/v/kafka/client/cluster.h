@@ -106,8 +106,14 @@ public:
      * This method propages the exception to the caller, that may change
      * in the future but now it is needed because of the way how PandaProxy and
      * SchemaRegistry works with ephemeral credentials.
+     *
+     * \param topics_request_list optional list of topics to request metadata
+     * on.  If `std::nullopt`, then request update on all topics, or only the
+     * topics in the list.  Any empty list means no topics to request update on
      */
-    ss::future<> request_metadata_update();
+    ss::future<> request_metadata_update(
+      std::optional<chunked_vector<model::topic>> topics_request_list
+      = std::nullopt);
 
     std::optional<model::node_id> get_controller_id() const {
         return _controller_id;
@@ -162,8 +168,12 @@ public:
     auto get_broker_ids() const { return _brokers.get_broker_ids(); }
 
 private:
-    ss::future<> update_metadata();
-    ss::future<> dispatch_metadata_request();
+    ss::future<> update_metadata(
+      std::optional<chunked_vector<model::topic>> topics_request_list
+      = std::nullopt);
+    ss::future<> dispatch_metadata_request(
+      std::optional<chunked_vector<model::topic>> topics_request_list
+      = std::nullopt);
     ss::future<> initialize_metadata_with_seed();
     void update_timer_callback();
     ss::future<> apply_metadata(metadata_update reply);
