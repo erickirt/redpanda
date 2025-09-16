@@ -386,7 +386,17 @@ ss::future<> fetcher::do_fetch() {
           partitions_with_epochs.partitions);
 
         if (fetch_result.has_error()) {
-            if (is_retriable_error(fetch_result.error())) {
+            auto ec = fetch_result.error();
+
+            // no need for backoff, reset fetch session and rerequest
+            if (ec == kafka::error_code::fetch_session_id_not_found) {
+                vlog(logger().trace, "fetch session invalidated");
+                _session_state.reset();
+                co_return;
+            }
+
+            // retriable error, backoff
+            if (is_retriable_error(ec)) {
                 needs_backoff = true;
             } else {
                 // propagate non retriable error to the queue
