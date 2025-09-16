@@ -167,30 +167,36 @@ ss::future<> ctp_stm::do_apply(const model::record_batch& batch) {
     }
     vlog(_log.debug, "Applying record batch: {}", batch.header());
 
-    if (batch.header().type == model::record_batch_type::dl_placeholder) {
+    switch (batch.header().type) {
+    case model::record_batch_type::dl_placeholder:
         apply_placeholder(batch);
-    } else if (
-      batch.header().type == model::record_batch_type::ctp_stm_command) {
+        break;
+
+    case model::record_batch_type::ctp_stm_command:
         // Decode the command and apply it to the state.
         batch.for_each_record([this](model::record&& r) {
             auto key = serde::from_iobuf<uint8_t>(r.release_key());
             auto cmd_key = static_cast<ctp_stm_key>(key);
+
             switch (cmd_key) {
-            case ctp_stm_key::advance_reconciled_offset: {
+            case ctp_stm_key::advance_reconciled_offset:
                 apply_advance_reconciled_offset(std::move(r));
                 break;
-            }
+
             default:
                 throw std::runtime_error(fmt_with_ctx(
                   fmt::format,
                   "Unknown ctp_stm_key({})",
                   static_cast<int>(key)));
             }
+
             return ss::stop_iteration::no;
         });
-    }
+        break;
 
-    co_return;
+    default:
+        break;
+    }
 }
 
 void ctp_stm::apply_advance_reconciled_offset(model::record record) {
