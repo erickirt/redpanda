@@ -750,48 +750,20 @@ ss::future<kafka::error_code> fetcher::maybe_initialise_fetch_offsets(
                 continue;
             }
 
-            // global state may have changed, we're not locked
-            auto t_it = _partitions.find(response_topic.topic);
-            if (t_it == _partitions.end()) {
-                continue;
-            }
-            auto p_it = t_it->second.find(response_partition.partition_id);
-            if (p_it == t_it->second.end()) {
-                continue;
-            }
-
-            const auto assigned_fetcher_epoch = p_it->second.fetcher_epoch;
-
-            auto maybe_request_epochs = find_epoch_set(
-              response_topic.topic, response_partition.partition_id, epochs);
-
-            if (!maybe_request_epochs) {
-                vlog(
-                  logger().warn,
-                  "[broker: {} received a list topics response which was not "
-                  "requested on ntp: {}/{}",
-                  _id,
-                  response_topic.topic,
-                  response_partition.partition_id);
-                continue;
-            }
-
-            const auto request_epochs = maybe_request_epochs.value();
-
-            if (request_epochs.fetcher_epoch != assigned_fetcher_epoch) {
-                vlog(
-                  logger().trace,
-                  "[broker: {}] Skipping partition {}/{} list offset response "
-                  "as fetcher epoch has changed. request_epoch: {}, "
-                  "current_epoch: {}",
-                  _id,
+            if (!is_consistent_fetcher_epoch(
                   response_topic.topic,
                   response_partition.partition_id,
-                  response_partition.offset,
-                  request_epochs.fetcher_epoch,
-                  assigned_fetcher_epoch);
+                  epochs)) {
                 continue;
             }
+
+            auto maybe_fetch_state = find_fetcher_state(
+              response_topic.topic, response_partition.partition_id);
+            vassert(
+              maybe_fetch_state.has_value(),
+              "fetch state should be found if the tp is consistent");
+            auto& fetch_state = maybe_fetch_state->get();
+
             vlog(
               logger().info,
               "[broker: {}] Resetting partition {}/{} fetch offset to: {}",
@@ -799,9 +771,9 @@ ss::future<kafka::error_code> fetcher::maybe_initialise_fetch_offsets(
               response_topic.topic,
               response_partition.partition_id,
               response_partition.offset);
-            p_it->second.fetch_offset = response_partition.offset;
-            p_it->second.high_watermark.reset();
-            p_it->second.incremental_include = true;
+            fetch_state.fetch_offset = response_partition.offset;
+            fetch_state.high_watermark.reset();
+            fetch_state.incremental_include = true;
         }
     }
 
