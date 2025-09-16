@@ -16,10 +16,6 @@
 #include "cloud_topics/level_zero/stm/placeholder.h"
 #include "cloud_topics/types.h"
 #include "raft/consensus.h"
-#include "serde/rw/map.h"
-#include "serde/rw/uuid.h"
-#include "serde/rw/vector.h"
-#include "storage/offset_translator_state.h"
 
 #include <seastar/core/abort_source.hh>
 

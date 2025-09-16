@@ -13,11 +13,8 @@
 #include "cloud_topics/level_zero/stm/ctp_stm_state.h"
 #include "cloud_topics/level_zero/stm/types.h"
 #include "raft/persisted_stm.h"
-#include "raft/replicate.h"
 
 #include <seastar/core/rwlock.hh>
-
-#include <expected>
 
 namespace cloud_topics {
 
