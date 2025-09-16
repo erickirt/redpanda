@@ -649,59 +649,28 @@ fetcher::process_fetch_response(
           "partitions, not both");
 
         if (!included.empty()) {
-            // _partitions maps topic -> parition map
-            // partition map maps partition -> subscription info
-            // get an iterator to the topic map
-            auto topic_iterator = _partitions.find(topic);
-            if (topic_iterator == _partitions.end()) {
-                continue;
-            }
-
             auto errs_it = dirty_partitions.find(topic);
             bool topic_err = errs_it != dirty_partitions.end();
-
-            auto& partition_map = topic_iterator->second;
 
             for (const auto& p : included) {
                 bool partition_err = topic_err
                                      && errs_it->second.contains(
                                        p.partition_id);
-                auto partition_iterator = partition_map.find(p.partition_id);
-                if (
-                  partition_iterator != partition_map.end() && !partition_err) {
-                    // compare the epochs before we make an edit
-                    const auto assigned_fetcher_epoch
-                      = partition_iterator->second.fetcher_epoch;
 
-                    auto maybe_request_epochs = find_epoch_set(
-                      topic, p.partition_id, epochs);
-
-                    if (!maybe_request_epochs) {
-                        // see maybe_update_fetch_offset for explanation
-                        vlog(
-                          logger().info,
-                          "unbidden response on ntp: {}/{}",
-                          topic,
-                          p.partition_id);
-                        continue;
-                    }
-
-                    const auto request_epochs = maybe_request_epochs.value();
-
-                    if (
-                      assigned_fetcher_epoch == request_epochs.fetcher_epoch) {
-                        partition_iterator->second.incremental_include = false;
-                    } else {
-                        vlog(
-                          logger().trace,
-                          "disclusion epoch mismatch on ntp: {}, "
-                          "fetched_epoch, {}, current_epoch: {}",
-                          topic,
-                          p.partition_id,
-                          request_epochs.fetcher_epoch,
-                          assigned_fetcher_epoch);
-                    }
+                // if errored, keep it in the next fetch
+                if (partition_err) {
+                    continue;
                 }
+
+                if (!is_consistent_fetcher_epoch(
+                      topic, p.partition_id, epochs)) {
+                    continue;
+                }
+
+                auto& fetcher_state
+                  = find_fetcher_state(topic, p.partition_id)->get();
+
+                fetcher_state.incremental_include = false;
             }
         }
 
