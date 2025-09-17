@@ -89,8 +89,13 @@ ss::future<bool> partition_replicator::handle_replication_result(
         _backoff_policy.reset();
         co_return true;
     } catch (...) {
-        vlog(
-          _log.error,
+        auto eptr = std::current_exception();
+        auto log_level = ssx::is_shutdown_exception(eptr)
+                           ? ss::log_level::debug
+                           : ss::log_level::error;
+        vlogl(
+          _log,
+          log_level,
           "Exception during replication: {}",
           std::current_exception());
     }
