@@ -23,7 +23,7 @@ from ducktape.utils.util import wait_until
 from requests.adapters import HTTPAdapter
 from urllib3 import Retry
 
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda_types import RedpandaServiceForClients
 
 # Install location, specified by Dockerfile or AMI
 TESTS_DIR = os.path.join("/opt", "kgo-verifier")
@@ -70,7 +70,7 @@ class KgoVerifierService(Service):
             assert not self.nodes
             self.nodes = custom_node
 
-        self._redpanda: RedpandaService = redpanda
+        self._redpanda: RedpandaServiceForClients = redpanda
         self._topic = topic
         self._msg_size = msg_size
         self._pid = None
@@ -83,10 +83,11 @@ class KgoVerifierService(Service):
 
         # if testing redpanda cloud, override with default test super user/pass
         if hasattr(redpanda, "GLOBAL_CLOUD_CLUSTER_CONFIG"):
-            security_config = redpanda.security_config()
-            self._username = security_config.get("sasl_plain_username", None)
-            self._password = security_config.get("sasl_plain_password", None)
-            self._enable_tls = security_config.get("enable_tls", False)
+            security_config = redpanda.kafka_client_security()
+            if security_config.sasl_enabled:
+                self._username = security_config.username
+                self._password = security_config.password
+            self._enable_tls = security_config.tls_enabled
 
         for node in self.nodes:
             if not hasattr(node, "kgo_verifier_ports"):
