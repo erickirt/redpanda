@@ -233,9 +233,9 @@ ss::future<> reconciler::reconciliation_loop() {
     }
 }
 
-std::vector<reconciler::attached_partition>
+chunked_vector<reconciler::attached_partition>
 reconciler::collect_leader_partitions() const {
-    std::vector<attached_partition> leaders;
+    chunked_vector<attached_partition> leaders;
     for (const auto& p : _partitions) {
         if (p.second->partition->is_leader()) {
             leaders.push_back(p.second);
@@ -258,9 +258,8 @@ ss::future<> reconciler::reconcile() {
 
     // Begin by creating the set of objects to be built.
     auto metadata_builder = _metastore->object_builder();
-    absl::flat_hash_map<l1::object_id, std::vector<attached_partition>>
+    chunked_hash_map<l1::object_id, chunked_vector<attached_partition>>
       oid_to_partitions;
-    absl::flat_hash_map<l1::object_id, builder_context> oid_to_builder;
     for (const auto& p : partitions) {
         auto oid = metadata_builder->get_or_create_object_for(p->tidp);
         oid_to_partitions[oid].push_back(p);
@@ -268,7 +267,7 @@ ss::future<> reconciler::reconcile() {
 
     // Process partitions by their object. This should be easier to
     // improve than processing partition-by-partition.
-    std::vector<object_metadata> successful_objects;
+    chunked_vector<object_metadata> successful_objects;
     for (const auto& [oid, partitions] : oid_to_partitions) {
         auto object_fut = co_await ss::coroutine::as_future(
           reconcile_partitions(oid, partitions));
@@ -323,7 +322,8 @@ ss::future<> reconciler::reconcile() {
 
 ss::future<std::expected<reconciler::object_metadata, reconcile_error>>
 reconciler::reconcile_partitions(
-  const l1::object_id& oid, const std::vector<attached_partition>& partitions) {
+  const l1::object_id& oid,
+  const chunked_vector<attached_partition>& partitions) {
     auto ctx_result = co_await make_context();
     if (!ctx_result.has_value()) {
         co_return std::unexpected(ctx_result.error());
@@ -356,7 +356,7 @@ ss::future<std::expected<reconciler::object_metadata, reconcile_error>>
 reconciler::build_and_put_object(
   const l1::object_id& oid,
   builder_context& ctx,
-  const std::vector<attached_partition>& partitions) {
+  const chunked_vector<attached_partition>& partitions) {
     // Build the object.
     auto build_result = co_await build_object(ctx, partitions);
     if (!build_result.has_value()) {
@@ -417,8 +417,9 @@ reconciler::make_context() {
 
 ss::future<std::expected<reconciler::object_metadata, reconcile_error>>
 reconciler::build_object(
-  builder_context& ctx, const std::vector<attached_partition>& partitions) {
+  builder_context& ctx, const chunked_vector<attached_partition>& partitions) {
     chunked_vector<partition_commit_info> metas;
+    metas.reserve(partitions.size());
     for (const auto& partition : partitions) {
         vlog(
           lg.debug,
@@ -430,6 +431,7 @@ reconciler::build_object(
             metas.emplace_back(partition, std::move(meta).value());
         }
     }
+    metas.shrink_to_fit();
 
     auto obj_info = co_await ctx.builder->finish();
     vlog(
@@ -541,7 +543,7 @@ reconciler::add_object_metadata(
 }
 
 ss::future<std::expected<void, reconcile_error>> reconciler::commit_objects(
-  const std::vector<object_metadata>& objects,
+  const chunked_vector<object_metadata>& objects,
   std::unique_ptr<l1::metastore::object_metadata_builder> meta_builder) {
     // It's possible to build the terms map as we build the objects, but
     // I think re-iterating over all the object partitions here is worth

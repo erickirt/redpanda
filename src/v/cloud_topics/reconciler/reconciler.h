@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "absl/container/node_hash_map.h"
 #include "base/seastarx.h"
 #include "cloud_topics/level_one/common/abstract_io.h"
 #include "cloud_topics/level_one/common/object.h"
@@ -20,6 +19,7 @@
 #include "cluster/notification.h"
 #include "cluster/partition.h"
 #include "cluster/partition_manager.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
 
@@ -103,7 +103,7 @@ private:
 
     // NB: Partition attachment is the only part using ntps instead of
     //     topic id partitions.
-    absl::node_hash_map<model::ntp, attached_partition> _partitions;
+    chunked_hash_map<model::ntp, attached_partition> _partitions;
 
     void attach_partition(ss::lw_shared_ptr<cluster::partition>);
     void detach_partition(const model::ntp&);
@@ -169,7 +169,7 @@ private:
      * container. Shuffles the partitions to avoid starvation during
      * reconciliation.
      */
-    std::vector<attached_partition> collect_leader_partitions() const;
+    chunked_vector<attached_partition> collect_leader_partitions() const;
 
     /*
      * One round of reconciliation in which data from one or more partitions
@@ -187,7 +187,7 @@ private:
     ss::future<std::expected<object_metadata, reconcile_error>>
     reconcile_partitions(
       const l1::object_id& oid,
-      const std::vector<attached_partition>& partitions);
+      const chunked_vector<attached_partition>& partitions);
 
     /*
      * Build and upload an object with id `oid` using the provided context.
@@ -199,7 +199,7 @@ private:
     build_and_put_object(
       const l1::object_id& oid,
       builder_context& ctx,
-      const std::vector<attached_partition>& partitions);
+      const chunked_vector<attached_partition>& partitions);
 
     /*
      * Create a new builder_context for constructing an L1 object.
@@ -215,7 +215,8 @@ private:
      * Returns an error if building fails.
      */
     ss::future<std::expected<object_metadata, reconcile_error>> build_object(
-      builder_context& ctx, const std::vector<attached_partition>& partitions);
+      builder_context& ctx,
+      const chunked_vector<attached_partition>& partitions);
 
     /*
      * Add partition data to an L1 object builder. Returns the partition
@@ -247,7 +248,7 @@ private:
      * the committed data, using corrections from the metastore if provided.
      */
     ss::future<std::expected<void, reconcile_error>> commit_objects(
-      const std::vector<object_metadata>& objects,
+      const chunked_vector<object_metadata>& objects,
       std::unique_ptr<l1::metastore::object_metadata_builder> meta_builder);
 
     /*
