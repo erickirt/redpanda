@@ -450,6 +450,16 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
                 "Attempting to create a cluster link without a name");
               return errc::link_name_invalid;
           }
+          if (
+            cmd.value.state.status
+            != ::cluster_link::model::link_status::active) {
+              vlog(
+                cluster::clusterlog.warn,
+                "Attempting to create a cluster link with invalid initial "
+                "state: {}",
+                cmd.value.state.status);
+              return errc::invalid_create;
+          }
           constexpr static size_t max_name_size = 128;
           if (cmd.value.name().size() > max_name_size) {
               vlog(
@@ -542,6 +552,19 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
           if (!meta.has_value()) {
               return errc::does_not_exist;
           }
+          const auto status = meta->get().state.status;
+          if (status != ::cluster_link::model::link_status::active) {
+              // fence any new topic additions if the link is not active
+              vlog(
+                cluster::clusterlog.warn,
+                "Attempting to add mirror topic {} to link {} which is not in "
+                "the active state (current state: {})",
+                cmd.value.topic,
+                meta->get().name,
+                status);
+              return errc::invalid_update;
+          }
+
           auto id = _table->find_id_by_topic(cmd.value.topic);
           if (id.has_value()) {
               if (id.value() != cmd.key) {
@@ -659,6 +682,19 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
             it != mirror_state.mirror_topics.end(),
             "State inconsistency detected, should have been able to find {}",
             cmd.value.topic);
+
+          if (
+            mirror_state.status != ::cluster_link::model::link_status::active) {
+              // fence any topic property updates if the link is not active
+              vlog(
+                cluster::clusterlog.warn,
+                "Attempting to update mirror topic {} on link {} which is not "
+                "in the active state (current state: {})",
+                cmd.value.topic,
+                meta->get().name,
+                mirror_state.status);
+              return errc::invalid_update;
+          }
 
           if (cmd.value.partition_count < it->second.partition_count) {
               vlog(

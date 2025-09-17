@@ -671,6 +671,7 @@ enum class link_status : uint8_t {
     // The link has been paused by the user,
     // pauses all link related tasks including replication and syncing
     // of metadata
+    // Note: pausing state has not been implemented yet.
     paused,
 };
 

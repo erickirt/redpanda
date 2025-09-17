@@ -85,6 +85,16 @@ constexpr auto mirror_topic_state_to_shadow_topic_state(
     }
 }
 
+constexpr auto convert_link_status(cluster_link::model::link_status s) {
+    using proto::admin::shadow_link_state;
+    switch (s) {
+    case cluster_link::model::link_status::active:
+        return shadow_link_state::active;
+    case cluster_link::model::link_status::paused:
+        return shadow_link_state::paused;
+    }
+}
+
 chunked_vector<cluster_link::model::resource_name_filter_pattern>
 to_filter_patterns(const chunked_vector<name_filter>& proto_filters) {
     chunked_vector<cluster_link::model::resource_name_filter_pattern> filters;
@@ -832,10 +842,8 @@ create_shadow_topic_statuses(const cluster_link::model::link_state& state) {
 shadow_link_status
 create_shadow_link_status(const cluster_link::model::metadata& md) {
     shadow_link_status status;
-
-    status.set_state(proto::admin::shadow_link_state::active);
+    status.set_state(convert_link_status(md.state.status));
     status.set_shadow_topic_statuses(create_shadow_topic_statuses(md.state));
-
     return status;
 }
 
@@ -918,10 +926,11 @@ void set_client_id(cluster_link::model::metadata& md) {
 
 cluster_link::model::metadata
 convert_create_to_metadata(create_shadow_link_request req) {
-    cluster_link::model::metadata metadata;
-
     try {
-        return shadow_link_to_metadata(std::move(req.get_shadow_link()));
+        auto metadata = shadow_link_to_metadata(
+          std::move(req.get_shadow_link()));
+        metadata.state.status = cluster_link::model::link_status::active;
+        return metadata;
     } catch (const std::invalid_argument& e) {
         throw serde::pb::rpc::invalid_argument_exception(
           ssx::sformat("Invalid cluster link configuration: {}", e.what()));
