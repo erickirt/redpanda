@@ -15,6 +15,7 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/compaction_key.h"
 #include "storage/compaction_reducers.h"
 #include "storage/exceptions.h"
 #include "storage/index_state.h"
@@ -55,7 +56,7 @@ ss::future<bool> is_latest_record_for_enhanced_key(
   const model::record& r) {
     const auto o = b.base_offset() + model::offset_delta(r.offset_delta());
     auto key_view = compaction::compaction_key{iobuf_to_bytes(r.key())};
-    auto key = compaction::enhance_key(
+    auto key = enhance_key(
       b.header().type, b.header().attrs.is_control(), key_view);
 
     auto latest_offset_indexed = co_await map.get(key);
