@@ -192,6 +192,25 @@ chunked_vector<id_t> frontend::get_all_link_ids() const {
     return _table->get_all_link_ids();
 }
 
+bool frontend::is_topic_mutable_for_kafka_api(const model::topic& topic) const {
+    auto status = _table->find_mirror_topic_status(topic);
+    if (!status) {
+        // topic does not belong to any cluster link
+        return true;
+    }
+    switch (*status) {
+    case ::cluster_link::model::mirror_topic_status::active:
+    case ::cluster_link::model::mirror_topic_status::failed:
+    case ::cluster_link::model::mirror_topic_status::paused:
+    case ::cluster_link::model::mirror_topic_status::failing_over:
+    case ::cluster_link::model::mirror_topic_status::promoting:
+        return false;
+    case ::cluster_link::model::mirror_topic_status::failed_over:
+    case ::cluster_link::model::mirror_topic_status::promoted:
+        return true;
+    }
+}
+
 std::optional<chunked_hash_map<
   ::model::topic,
   ::cluster_link::model::mirror_topic_metadata>>

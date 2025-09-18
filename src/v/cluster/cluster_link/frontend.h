@@ -91,6 +91,8 @@ public:
       ::cluster_link::model::mirror_topic_metadata>>
     get_mirror_topics_for_link(::cluster_link::model::id_t id) const;
 
+    bool is_topic_mutable_for_kafka_api(const model::topic&) const;
+
 private:
     ss::future<errc>
       do_mutation(cluster_link_cmd, model::timeout_clock::time_point);
