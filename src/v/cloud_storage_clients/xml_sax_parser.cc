@@ -385,8 +385,22 @@ seastar::future<client::list_bucket_result> parse_from_stream(
                    [&stream] { return stream.eof(); },
                    [&stream, &p] {
                        return stream.read().then(
-                         [&p](ss::temporary_buffer<char>&& chunk) {
-                             p.parse_chunk(std::move(chunk));
+                         [&p](ss::temporary_buffer<char> chunk) {
+                             /*
+                              * Seastar may return chunks of 128KB which is very
+                              * close to our max allocation limit. But when this
+                              * is handed off to to libxml the data may be
+                              * incorporated into a buffer that needs resizing
+                              * and exceed the max allocation limit. So break
+                              * this up into smaller chunks for processing.
+                              */
+                             constexpr auto max_part_size = 16_KiB;
+                             while (!chunk.empty()) {
+                                 auto part_size = std::min(
+                                   max_part_size, chunk.size());
+                                 p.parse_chunk(chunk.share(0, part_size));
+                                 chunk.trim_front(part_size);
+                             }
                          });
                    })
             .then([&stream] { return stream.close(); })
