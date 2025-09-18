@@ -14,7 +14,7 @@
 #include "cloud_storage_clients/client.h"
 #include "thirdparty/libxml2/parser.h"
 
-#include <stack>
+#include <seastar/core/iostream.hh>
 
 namespace cloud_storage_clients {
 
@@ -153,5 +153,12 @@ private:
     std::unique_ptr<xmlSAXHandler> _handler;
     xmlParserCtxtPtr _ctx{nullptr};
 };
+
+/*
+ * Process an input stream with SAX XML parser implementation.
+ */
+template<typename Impl>
+seastar::future<client::list_bucket_result> parse_from_stream(
+  seastar::input_stream<char>, std::optional<client::item_filter>);
 
 } // namespace cloud_storage_clients

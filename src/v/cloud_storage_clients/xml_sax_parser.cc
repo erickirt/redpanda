@@ -372,4 +372,37 @@ void xml_sax_parser::characters(
       {reinterpret_cast<const char*>(data), static_cast<size_t>(size)});
 }
 
+template<typename Impl>
+seastar::future<client::list_bucket_result> parse_from_stream(
+  seastar::input_stream<char> stream, std::optional<client::item_filter> pred) {
+    return ss::do_with(
+      std::move(stream),
+      xml_sax_parser{},
+      [pred = std::move(pred)](
+        ss::input_stream<char>& stream, xml_sax_parser& p) mutable {
+          p.start_parse(std::make_unique<Impl>(std::move(pred)));
+          return ss::do_until(
+                   [&stream] { return stream.eof(); },
+                   [&stream, &p] {
+                       return stream.read().then(
+                         [&p](ss::temporary_buffer<char>&& chunk) {
+                             p.parse_chunk(std::move(chunk));
+                         });
+                   })
+            .then([&stream] { return stream.close(); })
+            .then([&p] {
+                p.end_parse();
+                return p.result();
+            });
+      });
+}
+
+template seastar::future<client::list_bucket_result>
+parse_from_stream<aws_parse_impl>(
+  seastar::input_stream<char> stream, std::optional<client::item_filter> pred);
+
+template seastar::future<client::list_bucket_result>
+parse_from_stream<abs_parse_impl>(
+  seastar::input_stream<char> stream, std::optional<client::item_filter> pred);
+
 } // namespace cloud_storage_clients
