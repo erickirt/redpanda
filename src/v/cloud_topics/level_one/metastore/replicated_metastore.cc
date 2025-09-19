@@ -425,6 +425,27 @@ replicated_metastore::get_first_ge(
     co_return resp;
 }
 
+ss::future<std::expected<kafka::offset, metastore::errc>>
+replicated_metastore::get_first_offset_for_bytes(
+  const model::topic_id_partition& tp, uint64_t size) {
+    rpc::get_first_offset_for_bytes_request req;
+    req.tp = tp;
+    req.size = size;
+
+    auto reply_fut = co_await ss::coroutine::as_future(
+      fe_.get_first_offset_for_bytes(req));
+    if (reply_fut.failed()) {
+        auto ex = reply_fut.get_exception();
+        vlog(cd_log.warn, "Error while sending request: {}", ex);
+        co_return std::unexpected(metastore::errc::transport_error);
+    }
+    auto reply = reply_fut.get();
+    if (reply.ec != rpc::errc::ok) {
+        co_return std::unexpected(rpc_to_meta_errc(reply.ec));
+    }
+    co_return reply.offset;
+}
+
 ss::future<std::expected<model::term_id, metastore::errc>>
 replicated_metastore::get_term_for_offset(
   const model::topic_id_partition& tidp, kafka::offset offset) {

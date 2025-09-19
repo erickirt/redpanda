@@ -195,6 +195,16 @@ public:
     virtual ss::future<std::expected<object_response, errc>>
     get_first_ge(const model::topic_id_partition&, model::timestamp) = 0;
 
+    // Finds the kafka offset such that if data was truncated before this offset
+    // there the total amount of data left would be ~size (within the
+    // granularity of a single object's size). This is intended to be used for
+    // bytes based retention of the metastore.
+    //
+    // If no such offset exists, returns `out_of_range`.
+    virtual ss::future<std::expected<kafka::offset, errc>>
+    get_first_offset_for_bytes(const model::topic_id_partition&, uint64_t size)
+      = 0;
+
     // Returns the end (i.e. one past the last) offset at which data was added
     // for the given partition term.
     virtual ss::future<std::expected<kafka::offset, errc>>

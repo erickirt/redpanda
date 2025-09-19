@@ -294,6 +294,35 @@ simple_metastore::get_first_ge(
 }
 
 ss::future<std::expected<kafka::offset, metastore::errc>>
+simple_metastore::get_first_offset_for_bytes(
+  const model::topic_id_partition& tpr, uint64_t size) {
+    co_return get_first_offset_for_bytes(state_, tpr, size);
+}
+
+std::expected<kafka::offset, metastore::errc>
+simple_metastore::get_first_offset_for_bytes(
+  const state& state, const model::topic_id_partition& tpr, uint64_t size) {
+    auto prt_ref = state.partition_state(tpr);
+    if (!prt_ref.has_value()) {
+        vlog(cd_log.debug, "Partition {} not tracked", tpr);
+        return std::unexpected(metastore::errc::missing_ntp);
+    }
+    auto& prt = prt_ref->get();
+    kafka::offset offset = prt.next_offset;
+    if (size == 0) {
+        return offset;
+    }
+    for (const auto& obj : std::views::reverse(prt.extents)) {
+        offset = obj.base_offset;
+        size -= std::min(size, obj.len);
+        if (size == 0) {
+            return offset;
+        }
+    }
+    return std::unexpected(metastore::errc::out_of_range);
+}
+
+ss::future<std::expected<kafka::offset, metastore::errc>>
 simple_metastore::get_end_offset_for_term(
   const model::topic_id_partition& tp, model::term_id requested_term) {
     co_return get_end_offset_for_term(state_, tp, requested_term);
