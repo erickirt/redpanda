@@ -89,8 +89,7 @@ std::optional<cluster::leader_term> get_leader_term(
     /**
      * If current broker do not yet have any information about leadership we
      * fallback to leader guesstimating. We return first replica from the
-     * replica set and term 0. (This is the same logic that has been a part of
-     * cluster::topic_dispatcher before)
+     * replica without the leader epoch.
      */
     if (!leader_term) {
         leader_term.emplace(replicas[0]);
