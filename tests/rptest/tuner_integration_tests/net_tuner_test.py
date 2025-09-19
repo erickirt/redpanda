@@ -107,3 +107,10 @@ class NetTunerTest(RedpandaTest):
             assert per_queue_rps_flow_count == 0, (
                 f"rps_flow_cnt for queue {i} is not set correctly, got {per_queue_rps_flow_count}"
             )
+
+        # confirm that we also check cleanly
+        check_output = rpk.check().split()
+
+        for line in check_output:
+            if line.startswith("NIC ens5"):
+                assert line.endswith("true"), f"NIC check failed: {line}"
