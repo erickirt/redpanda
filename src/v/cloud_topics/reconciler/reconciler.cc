@@ -453,11 +453,6 @@ reconciler::build_object(
     chunked_vector<partition_commit_info> metas;
     metas.reserve(partitions.size());
     for (const auto& partition : partitions) {
-        vlog(
-          lg.debug,
-          "Processing partition {} with LRO {}",
-          partition->tidp,
-          partition->lro);
         auto meta = co_await add_partition_to_object(ctx, partition);
         if (meta.has_value()) {
             metas.emplace_back(partition, std::move(meta).value());
