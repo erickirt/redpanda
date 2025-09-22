@@ -600,6 +600,11 @@ class NodeWiseRecoveryTest(RedpandaTest):
                         f"Pending manifest update: {status['ms_since_last_manifest_upload']=} {status['metadata_update_pending']=}"
                     )
                     return False
+
+                # cloud_log_las_offset is nullable, return not ready if it is not present
+                if "cloud_log_last_offset" not in status:
+                    return False
+
                 if int(status["cloud_log_last_offset"]) < fraction_uploaded * int(
                     status["local_log_last_offset"]
                 ):
