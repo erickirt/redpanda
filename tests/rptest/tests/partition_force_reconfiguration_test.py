@@ -838,7 +838,7 @@ class NodeWiseRecoveryTest(RedpandaTest):
         admin = self.redpanda._admin
         rpk = RpkTool(self.redpanda)
         replicas = []
-        for p in rpk.describe_topic(topic.name):
+        for p in rpk.describe_topic(topic.name, tolerant=True):
             replicas = [int(r) for r in p.replicas]
 
         self.logger.info(f"Test topic {topic.name} replicas: {replicas}")
