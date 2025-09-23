@@ -350,16 +350,16 @@ public:
     virtual ss::future<std::expected<compaction_info_response, errc>>
     get_compaction_info(const compaction_sample_spec&) = 0;
 
+    using compaction_info_map = chunked_hash_map<
+      model::topic_id_partition,
+      std::expected<compaction_info_response, errc>>;
+
     // Vectorized RPC for obtaining compaction state for a number of partitions.
-    // Ensures `compaction_info_response`s for partitions are returned in the
-    // same order as requested in `to_sample`.
-    virtual ss::future<
-      chunked_vector<std::expected<compaction_info_response, errc>>>
-    get_compaction_infos(const chunked_vector<compaction_sample_spec>& to_sample) {
-        chunked_vector<std::expected<compaction_info_response, errc>> ret;
-        ret.reserve(to_sample.size());
+    virtual ss::future<compaction_info_map> get_compaction_infos(
+      const chunked_vector<compaction_sample_spec>& to_sample) {
+        compaction_info_map ret;
         for (const auto& log : to_sample) {
-            ret.push_back(co_await get_compaction_info(log));
+            ret.emplace(log.tidp, co_await get_compaction_info(log));
         }
         co_return ret;
     }
