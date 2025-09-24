@@ -221,7 +221,11 @@ ss::future<> reconciler::reconcile() {
       oid_to_partitions;
     for (const auto& p : partitions) {
         auto oid = metadata_builder->get_or_create_object_for(p->tidp);
-        oid_to_partitions[oid].push_back(p);
+        if (!oid.has_value()) {
+            vlog(lg.warn, "Could not get object: {}", oid.error());
+            co_return;
+        }
+        oid_to_partitions[oid.value()].push_back(p);
     }
 
     // Process partitions by their object. This should be easier to

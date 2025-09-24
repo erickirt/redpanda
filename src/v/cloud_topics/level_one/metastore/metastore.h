@@ -107,9 +107,8 @@ public:
         // appropriate for the given partition. Potentially shares the object
         // with another partition, if the object is allowed by the metastore to
         // be shared by the other partition.
-        virtual object_id
-        get_or_create_object_for(const model::topic_id_partition&)
-          = 0;
+        virtual std::expected<object_id, error>
+        get_or_create_object_for(const model::topic_id_partition&) = 0;
 
         // Removes a pending object from the builder. The object must be in the
         // pending state. Further calls to get_or_create_object_for() will not

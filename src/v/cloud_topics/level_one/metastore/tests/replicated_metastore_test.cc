@@ -51,7 +51,7 @@ public:
         auto ret = meta.object_builder();
         for (int i = 0; i < partitions_count; ++i) {
             auto tp = make_tp(i);
-            auto oid = ret->get_or_create_object_for(tp);
+            auto oid = ret->get_or_create_object_for(tp).value();
             auto add_res = ret->add(
               oid,
               metastore::object_metadata::ntp_metadata{
@@ -86,12 +86,36 @@ public:
     }
 };
 
+TEST_F(ReplicatedMetastoreTest, TestMissingMetastore) {
+    auto& app = get_ct_app(model::node_id{0});
+    replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
+    auto obj_builder = meta.object_builder();
+    auto& tp_fe = get_node_application(model::node_id{0})
+                    ->controller->get_topics_frontend()
+                    .local();
+    tp_fe.dispatch_delete_topics({model::l1_metastore_nt}, 10s).get();
+    for (const auto& node_id : instance_ids()) {
+        auto& tp_state = get_node_application(node_id)
+                           ->controller->get_topics_state()
+                           .local();
+        RPTEST_REQUIRE_EVENTUALLY(10s, [&tp_state] {
+            return !tp_state.contains(model::l1_metastore_nt);
+        });
+    }
+
+    // We won't be able to find the partition of the metastore topic because it
+    // doesn't exist.
+    auto tp = make_tp(0);
+    auto oid = obj_builder->get_or_create_object_for(tp);
+    ASSERT_FALSE(oid.has_value());
+}
+
 TEST_F(ReplicatedMetastoreTest, TestAddNotFinished) {
     auto& app = get_ct_app(model::node_id{0});
     replicated_metastore meta(app.get_sharded_l1_metastore_fe()->local());
     auto tp = make_tp(0);
     auto obj_builder = meta.object_builder();
-    auto oid = obj_builder->get_or_create_object_for(tp);
+    auto oid = obj_builder->get_or_create_object_for(tp).value();
     auto add_res = obj_builder->add(
       oid,
       metastore::object_metadata::ntp_metadata{
@@ -115,12 +139,12 @@ TEST_F(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
     auto ob = m.object_builder();
 
     // pending object can be removed, but not twice
-    auto oid = ob->get_or_create_object_for(tp);
+    auto oid = ob->get_or_create_object_for(tp).value();
     ASSERT_TRUE(ob->remove_pending_object(oid).has_value());
     ASSERT_FALSE(ob->remove_pending_object(oid).has_value());
 
     // after removal, object id shouldn't be reused in this builder
-    auto oid2 = ob->get_or_create_object_for(tp);
+    auto oid2 = ob->get_or_create_object_for(tp).value();
     ASSERT_NE(oid, oid2);
     oid = oid2;
 
@@ -134,12 +158,12 @@ TEST_F(ReplicatedMetastoreTest, TestBuilderRemovedObjects) {
       ob->add(oid, metastore::object_metadata::ntp_metadata{.tidp = tp})
         .has_value());
 
-    oid2 = ob->get_or_create_object_for(tp);
+    oid2 = ob->get_or_create_object_for(tp).value();
     ASSERT_NE(oid, oid2);
     oid = oid2;
 
     // finished object cannot be removed
-    oid = ob->get_or_create_object_for(tp);
+    oid = ob->get_or_create_object_for(tp).value();
     ASSERT_TRUE(ob->finish(oid, 0, 0).has_value());
     ASSERT_FALSE(ob->remove_pending_object(oid).has_value());
     ASSERT_FALSE(ob->finish(oid, 0, 0).has_value());
@@ -344,7 +368,7 @@ TEST_F(ReplicatedMetastoreTest, TestNotLeader) {
             break;
         }
         auto obj_builder = meta.object_builder();
-        auto oid = obj_builder->get_or_create_object_for(tp);
+        auto oid = obj_builder->get_or_create_object_for(tp).value();
         kafka::offset next_last{next_to_send() + 99};
         auto add_res = obj_builder->add(
           oid,
@@ -441,7 +465,7 @@ TEST_F(ReplicatedMetastoreTest, TestGetTermForOffset) {
     auto tp = make_tp(0);
 
     auto obj_builder = meta.object_builder();
-    auto oid1 = obj_builder->get_or_create_object_for(tp);
+    auto oid1 = obj_builder->get_or_create_object_for(tp).value();
     auto add_res1 = obj_builder->add(
       oid1,
       metastore::object_metadata::ntp_metadata{
@@ -500,7 +524,7 @@ TEST_F(ReplicatedMetastoreTest, TestGetEndOffsetForTerm) {
 
     // Set up initial objects with multiple terms
     auto obj_builder = meta.object_builder();
-    auto oid1 = obj_builder->get_or_create_object_for(tp);
+    auto oid1 = obj_builder->get_or_create_object_for(tp).value();
     auto add_res1 = obj_builder->add(
       oid1,
       metastore::object_metadata::ntp_metadata{

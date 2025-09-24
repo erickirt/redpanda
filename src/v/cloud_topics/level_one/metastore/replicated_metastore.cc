@@ -92,7 +92,7 @@ public:
       = delete;
     replicated_object_builder& operator=(replicated_object_builder&&) = delete;
 
-    object_id
+    std::expected<object_id, error>
     get_or_create_object_for(const model::topic_id_partition&) override;
     std::expected<void, error> remove_pending_object(object_id) override;
     std::expected<void, error>
@@ -120,9 +120,15 @@ private:
     chunked_hash_map<model::partition_id, partitioned_objects> partitions_;
 };
 
-object_id replicated_object_builder::get_or_create_object_for(
+std::expected<object_id, replicated_object_builder::error>
+replicated_object_builder::get_or_create_object_for(
   const model::topic_id_partition& tidp) {
     auto metastore_pid = fe_.metastore_partition(tidp);
+    if (!metastore_pid) {
+        return std::unexpected(
+          error{"could not determine metastore partition for "
+                "get_or_create_object_for()"});
+    }
     auto& partition_objects = partitions_[*metastore_pid];
 
     if (partition_objects.pending_objects_.empty()) {
