@@ -109,6 +109,11 @@ TEST_F(ReplicatedMetastoreTest, TestMissingMetastore) {
     auto oid = obj_builder->get_or_create_object_for(tp);
     ASSERT_FALSE(oid.has_value());
 
+    // Adding an object should fail immediately too because the metastore topic
+    // doesn't exist and we don't know how to partition objects.
+    auto add_res = obj_builder->add(create_object_id(), {});
+    ASSERT_FALSE(add_res.has_value());
+
     // Creating an object builder should attempt to create the metastore topic
     // since it doesn't exist.
     auto builder_res = meta.object_builder().get();

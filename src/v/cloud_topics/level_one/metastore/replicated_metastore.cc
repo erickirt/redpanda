@@ -162,6 +162,10 @@ std::expected<void, replicated_object_builder::error>
 replicated_object_builder::add(
   object_id oid, metastore::object_metadata::ntp_metadata ntp_meta) {
     auto metastore_pid = fe_.metastore_partition(ntp_meta.tidp);
+    if (!metastore_pid) {
+        return std::unexpected(
+          error{"could not determine metastore partition for add()"});
+    }
     auto& partition_objects = partitions_[*metastore_pid];
     auto it = partition_objects.pending_objects_.find(oid);
     if (it == partition_objects.pending_objects_.end()) {
