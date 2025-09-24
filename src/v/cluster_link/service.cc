@@ -279,7 +279,8 @@ ss::future<> service::start() {
       std::make_unique<health_monitor_based_partition_metadata_provider>(
         _hm_frontend),
       30s, // Temporary until we have a proper configuration for this
-      config::shard_local_cfg().default_topic_replication.bind());
+      config::shard_local_cfg().default_topic_replication.bind(),
+      _scheduling_group);
 
     co_await _manager->register_task_factory<source_topic_syncer_factory>();
     co_await _manager->register_task_factory<group_mirroring_task_factory>();

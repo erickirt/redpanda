@@ -85,8 +85,7 @@ link::link(
   , _config(std::move(config))
   , _cluster_connection(std::move(cluster_connection))
   , _replication_mgr(
-      // todo: fix me
-      ss::default_scheduling_group(),
+      _manager->scheduling_group(),
       std::move(data_source_factory),
       std::move(data_sink_factory))
   , _task_reconciler_interval(task_reconciler_interval) {}
