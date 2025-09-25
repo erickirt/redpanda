@@ -37,6 +37,7 @@ redpanda_test_cc_library(
         "test_macros.h",
         "tmp_dir.h",
     ],
+    local_defines = ["IS_BTEST"],
     visibility = ["//visibility:public"],
     deps = [
         ":boost_result_redirect",
