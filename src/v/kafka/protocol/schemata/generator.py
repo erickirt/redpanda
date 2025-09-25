@@ -63,7 +63,12 @@ path_type_map = {
     "OffsetFetchRequestData": {
         "Topics": {
             "PartitionIndexes": ("model::partition_id", "int32"),
-        }
+        },
+        "Groups": {
+            "Topics": {
+                "PartitionIndexes": ("model::partition_id", "int32"),
+            }
+        },
     },
     "OffsetFetchResponseData": {
         "Topics": {
@@ -71,8 +76,17 @@ path_type_map = {
                 "PartitionIndex": ("model::partition_id", "int32"),
                 "CommittedOffset": ("model::offset", "int64"),
                 "CommittedLeaderEpoch": ("kafka::leader_epoch", "int32"),
-            },
-        }
+            }
+        },
+        "Groups": {
+            "Topics": {
+                "Partitions": {
+                    "PartitionIndex": ("model::partition_id", "int32"),
+                    "CommittedOffset": ("model::offset", "int64"),
+                    "CommittedLeaderEpoch": ("kafka::leader_epoch", "int32"),
+                }
+            }
+        },
     },
     "OffsetCommitRequestData": {
         "Topics": {
@@ -597,9 +611,14 @@ def make_context_field(path):
 # a listing of expected struct types
 STRUCT_TYPES = [
     "ApiVersion",
+    "OffsetFetchRequestGroup",
     "OffsetFetchRequestTopic",
+    "OffsetFetchRequestTopics",
+    "OffsetFetchResponseGroup",
     "OffsetFetchResponseTopic",
+    "OffsetFetchResponseTopics",
     "OffsetFetchResponsePartition",
+    "OffsetFetchResponsePartitions",
     "OffsetCommitRequestTopic",
     "OffsetCommitRequestPartition",
     "OffsetCommitResponseTopic",
