@@ -21,7 +21,7 @@
 #include "cluster_link/logger.h"
 #include "cluster_link/manager.h"
 #include "cluster_link/model/types.h"
-#include "cluster_link/replication/deps_impl.h"
+#include "cluster_link/replication/deps.h"
 #include "cluster_link/replication/mux_remote_consumer.h"
 #include "cluster_link/security_migrator.h"
 #include "cluster_link/shadow_linking_rpc_service.h"
@@ -29,7 +29,7 @@
 #include "kafka/client/direct_consumer/direct_consumer.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/snc_quota_manager.h"
-#include "ssx/future-util.h"
+#include "kafka/server/write_at_offset_stm.h"
 
 #include <seastar/coroutine/switch_to.hh>
 
@@ -115,8 +115,6 @@ using kafka::data::rpc::partition_leader_cache;
 using kafka::data::rpc::partition_manager;
 using kafka::data::rpc::topic_creator;
 using kafka::data::rpc::topic_metadata_cache;
-using data_src_factory = replication::remote_data_source_factory;
-using data_sink_factory = replication::local_partition_data_sink_factory;
 
 class link_registry_adapter : public link_registry {
 public:
@@ -212,6 +210,268 @@ private:
     service* _svc;
 };
 
+class remote_partition_source : public replication::data_source {
+public:
+    explicit remote_partition_source(
+      ::model::topic_partition tp, replication::mux_remote_consumer& consumer)
+      : _tp(std::move(tp))
+      , _consumer(consumer) {}
+
+    ss::future<> start(kafka::offset offset) final {
+        vlog(cllog.trace, "[{}] Starting remote partition source", _tp);
+        auto result = _consumer.add(_tp, offset);
+        if (!result.has_value()) [[unlikely]] {
+            // this is usually indicative of a bug in the manager where
+            // a previous source is not deregistered, bubble it up.
+            auto err = result.error();
+            vlog(
+              cllog.error,
+              "[{}] Failed to add remote partition source: {}",
+              _tp,
+              err);
+            return ss::make_exception_future<>(err);
+        }
+        return ss::now();
+    }
+
+    ss::future<> stop() noexcept final {
+        vlog(cllog.trace, "[{}] Stopping remote partition source", _tp);
+        auto f = _gate.close();
+        co_await _consumer.remove(_tp);
+        co_await std::move(f);
+    }
+
+    ss::future<> reset(kafka::offset offset) final {
+        _gate.check();
+        auto result = _consumer.reset(_tp, offset);
+        if (!result.has_value()) [[unlikely]] {
+            auto err = result.error();
+            vlog(
+              cllog.error,
+              "[{}] Failed to reset remote partition source: {}",
+              _tp,
+              err);
+            return ss::make_exception_future<>(err);
+        }
+        return ss::now();
+    }
+
+    ss::future<replication::data_source::data>
+    fetch_next(ss::abort_source& as) final {
+        auto holder = _gate.hold();
+        auto result = co_await _consumer.fetch(_tp, as);
+        if (!result.has_value()) [[unlikely]] {
+            auto err = result.error();
+            vlog(
+              cllog.error,
+              "[{}] Failed to fetch from remote partition source: {}",
+              _tp,
+              result.error());
+            throw std::runtime_error(
+              fmt::format(
+                "[{}] Failed to fetch from remote partition source: {}",
+                _tp,
+                err));
+        }
+        auto [batches, units] = std::move(*result);
+        co_return data_source::data{
+          .batches = std::move(batches), .units = std::move(units)};
+    }
+
+    std::optional<data_source::source_partition_offsets_report> get_offsets() {
+        auto offsets = _consumer.get_source_offsets(_tp);
+        if (!offsets.has_value()) {
+            return std::nullopt;
+        }
+        return data_source::source_partition_offsets_report{
+          .source_start_offset = offsets->log_start_offset,
+          .source_hwm = offsets->high_watermark,
+          .source_lso = offsets->last_stable_offset,
+          .update_time = offsets->last_offset_update_timestamp,
+        };
+    }
+
+private:
+    ::model::topic_partition _tp;
+    replication::mux_remote_consumer& _consumer;
+    ss::gate _gate;
+};
+
+class remote_data_source_factory : public replication::data_source_factory {
+public:
+    explicit remote_data_source_factory(
+      std::unique_ptr<replication::mux_remote_consumer> consumer)
+      : _consumer(std::move(consumer)) {}
+
+    ss::future<> start() final { return _consumer->start(); }
+
+    ss::future<> stop() noexcept final { return _consumer->stop(); }
+
+    std::unique_ptr<replication::data_source>
+    make_source(const ::model::ntp& ntp) final {
+        return make_default_data_source(ntp.tp, *_consumer);
+    }
+
+private:
+    std::unique_ptr<replication::mux_remote_consumer> _consumer;
+};
+
+/*
+ * Sink for writing partition data to the partition leader on the local shard.
+ */
+class local_partition_sink : public replication::data_sink {
+public:
+    static constexpr auto sync_timeout = 10s;
+    explicit local_partition_sink(
+      ss::lw_shared_ptr<cluster::partition> partition)
+      : _partition(std::move(partition))
+      , _stm(_partition->raft()
+               ->stm_manager()
+               ->get<kafka::write_at_offset_stm>()) {
+        vassert(
+          _stm,
+          "write_at_offset_stm not attached to partition {}",
+          _partition->ntp());
+    }
+    ss::future<> start() final {
+        auto holder = _gate.hold();
+        auto sync_offset = co_await _stm->get_expected_last_offset(
+          sync_timeout);
+        if (sync_offset.has_error()) {
+            throw std::runtime_error(
+              fmt::format(
+                "Failed to sync write_at_offset_stm for partition {}: {}",
+                _partition->ntp(),
+                sync_offset.error().message()));
+        }
+        vlog(
+          cllog.trace,
+          "[{}] Starting local partition sink at offset {}",
+          _partition->ntp(),
+          sync_offset.value());
+        _last_replicated_offset = sync_offset.value();
+    }
+
+    ss::future<> stop() noexcept final {
+        vlog(
+          cllog.trace, "[{}] Stopping local partition sink", _partition->ntp());
+        co_await _gate.close();
+    }
+
+    kafka::offset last_replicated_offset() const final {
+        vassert(_last_replicated_offset, "Sink has not been started");
+        return _last_replicated_offset.value();
+    }
+
+    raft::replicate_stages replicate(
+      chunked_vector<::model::record_batch> batches,
+      ::model::timeout_clock::duration timeout,
+      ss::abort_source& as) final {
+        _gate.check();
+        vassert(_last_replicated_offset, "Sink has not been started");
+        vassert(
+          !batches.empty(),
+          "Cannot replicate empty batch vector {}",
+          _partition->ntp());
+        chunked_vector<kafka::offset> expected_offsets;
+        expected_offsets.reserve(batches.size());
+        for (const auto& batch : batches) {
+            expected_offsets.push_back(
+              ::model::offset_cast(batch.base_offset()));
+        }
+        auto new_last_replicated_begin = ::model::offset_cast(
+          batches.front().base_offset());
+        auto new_last_replicated_end = ::model::offset_cast(
+          batches.back().last_offset());
+        vassert(
+          new_last_replicated_begin > _last_replicated_offset
+            && new_last_replicated_end > _last_replicated_offset,
+          "[{}] Replicating offsets must be monotonically increasing last "
+          "replicated: {}, attempting to replicate: [{}, {}]",
+          _partition->ntp(),
+          _last_replicated_offset,
+          new_last_replicated_begin,
+          new_last_replicated_end);
+        vlog(
+          cllog.trace,
+          "[{}] Replicating batches in range [{} - {}], last_replicated: {}, "
+          "new_last_replicated: {}",
+          _partition->ntp(),
+          batches.front().header(),
+          batches.back().header(),
+          _last_replicated_offset,
+          new_last_replicated_end);
+        auto stages = _stm->replicate(
+          std::move(batches),
+          std::move(expected_offsets),
+          _last_replicated_offset,
+          timeout,
+          as);
+        _last_replicated_offset = new_last_replicated_end;
+        return stages;
+    }
+
+    void notify_replicator_failure(::model::term_id term) final {
+        if (_gate.is_closed()) {
+            return;
+        }
+        // If the replicator failed to start _and_ the partition is still the
+        // leader in the same term we are effectively stuck without a
+        // replicator. Here we step down to ensure a new leader comes up and a
+        // replicator start is triggered again on the new leader.
+        if (_partition->term() == term) {
+            ssx::spawn_with_gate(_gate, [this, term] {
+                return _partition->raft()->step_down(
+                  fmt::format("Unable to start replicator in term: {}", term));
+            });
+        }
+    }
+
+    kafka::offset high_watermark() const final {
+        _gate.check();
+        return ::model::offset_cast(_partition->high_watermark());
+    }
+
+private:
+    ss::gate _gate;
+    ss::lw_shared_ptr<cluster::partition> _partition;
+    ss::shared_ptr<kafka::write_at_offset_stm> _stm;
+    // set in start();
+    std::optional<kafka::offset> _last_replicated_offset;
+};
+
+class local_partition_data_sink_factory
+  : public replication::data_sink_factory {
+public:
+    explicit local_partition_data_sink_factory(
+      ss::sharded<cluster::partition_manager>& pm)
+      : _partition_manager(pm) {}
+
+    std::unique_ptr<replication::data_sink>
+    make_sink(const ::model::ntp& ntp) final {
+        auto partition = _partition_manager.local().get(ntp);
+        if (!partition) {
+            throw std::runtime_error(
+              fmt::format("Partition not found: {} on this shard", ntp));
+        }
+        return make_default_data_sink(std::move(partition));
+    }
+
+private:
+    ss::sharded<cluster::partition_manager>& _partition_manager;
+};
+
+std::unique_ptr<replication::data_source> make_default_data_source(
+  const ::model::topic_partition& tp,
+  replication::mux_remote_consumer& consumer) {
+    return std::make_unique<remote_partition_source>(tp, consumer);
+}
+
+std::unique_ptr<replication::data_sink>
+make_default_data_sink(ss::lw_shared_ptr<cluster::partition> partition) {
+    return std::make_unique<local_partition_sink>(std::move(partition));
+}
+
 class default_link_factory : public link_factory {
 public:
     explicit default_link_factory(
@@ -236,12 +496,13 @@ public:
           link_reconciler_period,
           std::move(config),
           std::move(cluster_connection),
-          std::make_unique<data_src_factory>(make_remote_consumer(
+          std::make_unique<remote_data_source_factory>(make_remote_consumer(
             std::move(client_id),
             *cluster_connection,
             _snc_quota_mgr->local(),
             config.connection)),
-          std::make_unique<data_sink_factory>(*_partition_manager));
+          std::make_unique<local_partition_data_sink_factory>(
+            *_partition_manager));
     }
 
 private:
