@@ -4,7 +4,7 @@ redpanda_test_cc_library(
     name = "fixture",
     hdrs = [
         "async.h",
-        "fixture.h",
+        "boost_fixture.h",
         "test_macros.h",
         "tmp_dir.h",
     ],
@@ -50,7 +50,7 @@ redpanda_test_cc_library(
     ],
     hdrs = [
         "async.h",
-        "fixture.h",
+        "boost_fixture.h",
         "test_macros.h",
         "tmp_dir.h",
     ],

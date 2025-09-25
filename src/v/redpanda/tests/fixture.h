@@ -38,7 +38,7 @@
 #include "utils/unresolved_address.h"
 
 #if defined(IS_BTEST)
-#include "test_utils/fixture.h" // IWYU pragma: export
+#include "test_utils/boost_fixture.h" // IWYU pragma: export
 #endif
 
 #include <seastar/core/future.hh>

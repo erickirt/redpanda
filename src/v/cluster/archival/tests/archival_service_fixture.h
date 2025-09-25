@@ -29,7 +29,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "test_utils/async.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>

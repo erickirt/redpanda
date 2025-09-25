@@ -16,7 +16,7 @@
 #include "cloud_storage/tests/util.h"
 #include "cloud_storage/types.h"
 #include "model/record_batch_types.h"
-#include "test_utils/fixture.h"
+#include "test_utils/boost_fixture.h"
 
 #include <seastar/core/lowres_clock.hh>
 
