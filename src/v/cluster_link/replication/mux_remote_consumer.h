@@ -83,6 +83,12 @@ public:
      */
     ss::future<std::expected<partition_data_queue::fetch_data, errc>>
     fetch(const ::model::topic_partition&, ss::abort_source&);
+    /**
+     * Update the configuration of the consumer.
+     *
+     * The changes in the configuration will be applied for subsequent fetches.
+     */
+    void update_configuration(const configuration& cfg);
 
     /**
      * @brief Get the source offsets object
