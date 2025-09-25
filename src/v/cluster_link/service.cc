@@ -209,6 +209,36 @@ private:
     frontend* _plf;
     service* _svc;
 };
+namespace {
+replication::mux_remote_consumer::configuration
+make_remote_consumer_configuration(const model::connection_config& conn_cfg) {
+    const size_t max_buffered_bytes = 2 * conn_cfg.get_fetch_max_bytes();
+    kafka::client::direct_consumer::configuration dc_configuration;
+    const auto max_wait_time = std::chrono::milliseconds(
+      conn_cfg.get_fetch_wait_max_ms());
+
+    dc_configuration.min_bytes = conn_cfg.get_fetch_min_bytes();
+    dc_configuration.max_fetch_size = conn_cfg.get_fetch_max_bytes();
+    dc_configuration.isolation_level = ::model::isolation_level::read_committed;
+    dc_configuration.max_buffered_bytes = max_buffered_bytes;
+    // We are not interested in limiting the number of buffered fetches as
+    // we already set bytes limit
+    dc_configuration.max_buffered_elements = std::numeric_limits<size_t>::max();
+    dc_configuration.with_sessions = kafka::client::fetch_sessions_enabled::yes;
+
+    dc_configuration.max_wait_time = max_wait_time;
+    dc_configuration.partition_max_bytes
+      = conn_cfg.get_fetch_partition_max_bytes();
+
+    return replication::mux_remote_consumer::configuration{
+      .client_id = conn_cfg.client_id,
+      .direct_consumer_configuration = dc_configuration,
+      .partition_max_buffered = max_buffered_bytes,
+      .fetch_max_wait = max_wait_time,
+    };
+}
+
+} // namespace
 
 class remote_partition_source : public replication::data_source {
 public:
@@ -496,54 +526,16 @@ public:
           link_reconciler_period,
           std::move(config),
           std::move(cluster_connection),
-          std::make_unique<remote_data_source_factory>(make_remote_consumer(
-            std::move(client_id),
-            *cluster_connection,
-            _snc_quota_mgr->local(),
-            config.connection)),
+          std::make_unique<remote_data_source_factory>(
+            std::make_unique<replication::mux_remote_consumer>(
+              *cluster_connection,
+              _snc_quota_mgr->local(),
+              make_remote_consumer_configuration(config.connection))),
           std::make_unique<local_partition_data_sink_factory>(
             *_partition_manager));
     }
 
 private:
-    std::unique_ptr<replication::mux_remote_consumer> make_remote_consumer(
-      ss::sstring client_id,
-      kafka::client::cluster& cluster,
-      kafka::snc_quota_manager& snc_quota_mgr,
-      const model::connection_config& conn_cfg) {
-        const auto max_buffered_bytes = 2 * conn_cfg.get_fetch_max_bytes();
-        kafka::client::direct_consumer::configuration cfg;
-        const auto max_wait_time = std::chrono::milliseconds(
-          conn_cfg.get_fetch_wait_max_ms());
-
-        cfg.min_bytes = conn_cfg.get_fetch_min_bytes();
-        cfg.max_fetch_size = conn_cfg.get_fetch_max_bytes();
-        cfg.isolation_level = ::model::isolation_level::read_committed;
-        cfg.max_buffered_bytes = max_buffered_bytes;
-        // We are not interested in limiting the number of buffered fetches as
-        // we already set bytes limit
-        cfg.max_buffered_elements = std::numeric_limits<size_t>::max();
-        cfg.with_sessions = kafka::client::fetch_sessions_enabled::yes;
-
-        cfg.max_wait_time = max_wait_time;
-        cfg.partition_max_bytes = conn_cfg.get_fetch_partition_max_bytes();
-
-        auto direct_consumer = std::make_unique<kafka::client::direct_consumer>(
-          cluster, cfg);
-        // Cache up to double the max fetch size in the consumer
-        // to allow more than one fetch to be buffered per partition.
-        vlog(
-          cllog.debug,
-          "Creating MUX consumer with {} direct consumer configuration",
-          cfg);
-        return std::make_unique<replication::mux_remote_consumer>(
-          std::move(client_id),
-          std::move(direct_consumer),
-          snc_quota_mgr,
-          max_buffered_bytes,
-          max_wait_time);
-    }
-
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<kafka::snc_quota_manager>* _snc_quota_mgr;
 };

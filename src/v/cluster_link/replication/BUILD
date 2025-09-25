@@ -112,6 +112,7 @@ redpanda_cc_library(
     deps = [
         ":partition_data_queue",
         ":types",
+        "//src/v/base",
         "//src/v/cluster_link:logger",
         "//src/v/config",
         "//src/v/container:chunked_hash_map",

@@ -28,13 +28,19 @@ public:
         basic_consumer_fixture::SetUp();
         auto consumer = make_consumer();
         auto* rp = instance(model::node_id{0});
+        direct_consumer::configuration dc_cfg{
+          .with_sessions = fetch_sessions_enabled{
+            GetParam() == kafka::client::tests::session_config::with_sessions}};
+
         _mux_consumer
           = std::make_unique<cluster_link::replication::mux_remote_consumer>(
-            client_id,
-            make_consumer(),
+            *cluster,
             rp->app.snc_quota_mgr.local(),
-            partition_max_buffered,
-            fetch_max_wait);
+            cluster_link::replication::mux_remote_consumer::configuration{
+              .client_id = client_id,
+              .direct_consumer_configuration = dc_cfg,
+              .partition_max_buffered = partition_max_buffered,
+              .fetch_max_wait = fetch_max_wait});
         _mux_consumer->start().get();
         // create source and target topics;
         create_topic(model::topic_namespace_view{_source}).get();
