@@ -22,7 +22,6 @@
 #include "cloud_topics/reconciler/reconciliation_source.h"
 #include "cluster/partition.h"
 #include "model/fundamental.h"
-#include "random/generators.h"
 #include "ssx/future-util.h"
 #include "utils/retry_chain_node.h"
 
@@ -82,9 +81,9 @@ void reconciler::detach(const model::ntp& ntp) {
         vlog(lg.debug, "Detaching partition {}", ntp);
         /*
          * This upcall doesn't synchronize with the rest of the reconciler,
-         * which means that once a reference to an attached partition is held,
-         * it shouldn't be assumed that the attached partition remains in the
-         * _partitions collection.
+         * which means that once a reference to a source is held,
+         * it shouldn't be assumed that the source remains in the
+         * _sources collection.
          */
         _sources.erase(it);
     }
@@ -199,7 +198,7 @@ ss::future<> reconciler::reconcile() {
     }
     auto& metadata_builder = metadata_builder_res.value();
     chunked_hash_map<l1::object_id, chunked_vector<ss::shared_ptr<source>>>
-      oid_to_partitions;
+      oid_to_sources;
     for (const auto& src : sources) {
         auto oid = metadata_builder->get_or_create_object_for(
           src->topic_id_partition());
@@ -207,19 +206,19 @@ ss::future<> reconciler::reconcile() {
             vlog(lg.warn, "Could not get object: {}", oid.error());
             co_return;
         }
-        oid_to_partitions[oid.value()].push_back(src);
+        oid_to_sources[oid.value()].push_back(src);
     }
 
-    // Process partitions by their object. This should be easier to
-    // improve than processing partition-by-partition.
+    // Process sources by their object. This should be easier to
+    // improve than processing source-by-source.
     chunked_vector<built_object_metadata> successful_objects;
     chunked_vector<l1::object_id> failed_objects;
-    for (const auto& [oid, partitions] : oid_to_partitions) {
+    for (const auto& [oid, sources] : oid_to_sources) {
         if (_as.abort_requested()) {
             co_return;
         }
         auto object_fut = co_await ss::coroutine::as_future(
-          reconcile_sources(oid, partitions));
+          reconcile_sources(oid, sources));
         if (object_fut.failed()) {
             auto ex = object_fut.get_exception();
             const auto is_shutdown = ssx::is_shutdown_exception(ex);
@@ -227,7 +226,7 @@ ss::future<> reconciler::reconcile() {
               lg,
               is_shutdown ? ss::log_level::debug : ss::log_level::error,
               "Exception reconciling {} partitions into object {}: {}",
-              partitions.size(),
+              sources.size(),
               oid,
               ex);
             if (is_shutdown) {
@@ -240,7 +239,7 @@ ss::future<> reconciler::reconcile() {
         auto result = object_fut.get();
         if (!result.has_value()) {
             failed_objects.push_back(oid);
-            // Error was already logged in reconcile_partitions.
+            // Error was already logged in reconcile_sources.
             continue; // Skip this object and move to the next
         }
 
@@ -344,7 +343,7 @@ reconciler::build_and_put_object(
     }
 
     auto obj_meta = std::move(build_result.value());
-    if (obj_meta.partitions.empty()) {
+    if (obj_meta.commits.empty()) {
         vlog(lg.debug, "Skipping put for object {}: no data", oid);
         co_return std::unexpected(reconcile_error::build_or_put_failure);
     }
@@ -398,13 +397,13 @@ reconciler::make_context() {
 ss::future<std::expected<reconciler::built_object_metadata, reconcile_error>>
 reconciler::build_object(
   builder_context& ctx, const chunked_vector<ss::shared_ptr<source>>& sources) {
-    chunked_vector<partition_commit_info> metas;
+    chunked_vector<commit_info> metas;
     metas.reserve(sources.size());
     for (const auto& src : sources) {
         if (_as.abort_requested()) {
             co_return std::unexpected(reconcile_error::build_or_put_failure);
         }
-        auto meta = co_await add_partition_to_object(ctx, src);
+        auto meta = co_await add_source_to_object(ctx, src);
         if (meta.has_value()) {
             metas.emplace_back(src, std::move(meta).value());
         }
@@ -420,7 +419,7 @@ reconciler::build_object(
       sources.size() - metas.size());
     co_return built_object_metadata{
       .object_info = std::move(obj_info),
-      .partitions = std::move(metas),
+      .commits = std::move(metas),
     };
 }
 
@@ -439,19 +438,18 @@ reconciler::put_object(const l1::object_id& oid, builder_context& ctx) {
     co_return std::expected<void, reconcile_error>{};
 }
 
-ss::future<std::optional<partition_metadata>>
-reconciler::add_partition_to_object(
-  builder_context& ctx, ss::shared_ptr<source> partition) {
+ss::future<std::optional<consumer_metadata>> reconciler::add_source_to_object(
+  builder_context& ctx, ss::shared_ptr<source> src) {
     vlog(
       lg.debug,
       "Processing partition {} with LRO {}",
-      partition->ntp(),
-      partition->last_reconciled_offset());
+      src->ntp(),
+      src->last_reconciled_offset());
 
     // Since the LRO is the last thing inclusive of what we uploaded to L1, we
     // want to start reading from the next offset.
-    auto start_offset = kafka::next_offset(partition->last_reconciled_offset());
-    auto reader = co_await partition->make_reader(cloud_topic_log_reader_config(
+    auto start_offset = kafka::next_offset(src->last_reconciled_offset());
+    auto reader = co_await src->make_reader(cloud_topic_log_reader_config(
       /*start_offset=*/start_offset,
       /*max_offset=*/kafka::offset::max(),
       /*min_bytes=*/1,
@@ -460,7 +458,7 @@ reconciler::add_partition_to_object(
       /*time=*/std::nullopt,
       /*as=*/_as));
     reconciliation_consumer consumer(
-      ctx.builder.get(), partition->topic_id_partition());
+      ctx.builder.get(), src->topic_id_partition());
     auto metadata = co_await std::move(reader).consume(
       std::move(consumer), model::no_timeout);
 
@@ -468,14 +466,14 @@ reconciler::add_partition_to_object(
         vlog(
           lg.debug,
           "No batches found for partition {}",
-          partition->topic_id_partition());
+          src->topic_id_partition());
         co_return std::nullopt;
     }
 
     vlog(
       lg.debug,
       "Adding partition {} to L1 object with offsets {}~{}",
-      partition->topic_id_partition(),
+      src->topic_id_partition(),
       metadata->base_offset,
       metadata->last_offset);
 
@@ -491,15 +489,15 @@ std::expected<void, reconcile_error> reconciler::add_object_metadata(
     // partition of the cloud topic and the partition of the L1 object.
     // There may be multiple partitions in the L1 object for a cloud
     // topic partition.
-    for (const auto& partition : obj_meta.partitions) {
+    for (const auto& commit : obj_meta.commits) {
         auto [first, last] = obj_meta.object_info.index.partitions.equal_range(
-          partition.source->topic_id_partition());
+          commit.source->topic_id_partition());
         for (auto it = first; it != last; ++it) {
             const auto& obj_partition = it->second;
             auto add_result = meta_builder->add(
               oid,
               l1::metastore::object_metadata::ntp_metadata{
-                .tidp = partition.source->topic_id_partition(),
+                .tidp = commit.source->topic_id_partition(),
                 .base_offset = obj_partition.first_offset,
                 .last_offset = obj_partition.last_offset,
                 .max_timestamp = obj_partition.max_timestamp,
@@ -509,7 +507,7 @@ std::expected<void, reconcile_error> reconciler::add_object_metadata(
                 vlog(
                   lg.error,
                   "Failed to finish metadata for partition {} of object {}: {}",
-                  partition.source->topic_id_partition(),
+                  commit.source->topic_id_partition(),
                   oid,
                   add_result.error());
                 // TODO: The object has been uploaded. The reconciler could
@@ -570,14 +568,14 @@ ss::future<std::expected<void, reconcile_error>> reconciler::commit_objects(
   const chunked_vector<built_object_metadata>& objects,
   std::unique_ptr<l1::metastore::object_metadata_builder> meta_builder) {
     // It's possible to build the terms map as we build the objects, but
-    // I think re-iterating over all the object partitions here is worth
+    // I think re-iterating over all the commits here is worth
     // it in exchange for less context passing among functions.
     l1::metastore::term_offset_map_t terms;
     for (const auto& obj_meta : objects) {
-        for (const auto& partition : obj_meta.partitions) {
-            auto tidp = partition.source->topic_id_partition();
+        for (const auto& commit : obj_meta.commits) {
+            auto tidp = commit.source->topic_id_partition();
             chunked_vector<l1::metastore::term_offset> term_offsets;
-            for (const auto& [term, first_offset] : partition.metadata.terms) {
+            for (const auto& [term, first_offset] : commit.metadata.terms) {
                 term_offsets.emplace_back(term, first_offset);
             }
             terms[tidp] = std::move(term_offsets);
@@ -602,9 +600,9 @@ ss::future<std::expected<void, reconcile_error>> reconciler::commit_objects(
       = add_objects_result.value().corrected_next_offsets;
     std::expected<void, reconcile_error> reconcile_result;
     for (const auto& obj_meta : objects) {
-        for (const auto& partition : obj_meta.partitions) {
-            auto tidp = partition.source->topic_id_partition();
-            kafka::offset lro = partition.metadata.last_offset;
+        for (const auto& commit : obj_meta.commits) {
+            auto tidp = commit.source->topic_id_partition();
+            kafka::offset lro = commit.metadata.last_offset;
             auto it = corrected_next_offsets.find(tidp);
             if (it != corrected_next_offsets.end()) {
                 // We want the previous offset, because that is what was last
@@ -612,7 +610,7 @@ ss::future<std::expected<void, reconcile_error>> reconciler::commit_objects(
                 // offset *after* the LRO to start reading from.
                 lro = kafka::prev_offset(it->second);
             }
-            auto result = co_await partition.source->set_last_reconciled_offset(
+            auto result = co_await commit.source->set_last_reconciled_offset(
               lro, _as);
             if (!result.has_value()) {
                 vlog(

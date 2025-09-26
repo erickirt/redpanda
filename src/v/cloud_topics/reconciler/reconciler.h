@@ -118,11 +118,11 @@ private:
     };
 
     /*
-     * Metadata about a partition in an L1 object, used for committing.
+     * Metadata about a source in an L1 object, used for committing.
      */
-    struct partition_commit_info {
+    struct commit_info {
         ss::shared_ptr<source> source;
-        partition_metadata metadata;
+        consumer_metadata metadata;
     };
 
     /*
@@ -132,7 +132,7 @@ private:
      */
     struct built_object_metadata {
         l1::object_builder::object_info object_info;
-        chunked_vector<partition_commit_info> partitions;
+        chunked_vector<commit_info> commits;
     };
 
     // Top-level background worker that drives reconciliation.
@@ -141,14 +141,14 @@ private:
 
     /*
      * Reconcile a set of sources into an object with id `oid`.
-     * The metastore must have previously assigned `oid` to each partition
-     * in `partitions`. Returns metadata on success, or an error if building,
+     * The metastore must have previously assigned `oid` to each source
+     * in `sources`. Returns metadata on success, or an error if building,
      * uploading, or metadata operations fail.
      */
     ss::future<std::expected<built_object_metadata, reconcile_error>>
     reconcile_sources(
       const l1::object_id& oid,
-      const chunked_vector<ss::shared_ptr<source>>& partitions);
+      const chunked_vector<ss::shared_ptr<source>>& soruces);
 
     /*
      * Build and upload an object with id `oid` using the provided context.
@@ -184,8 +184,8 @@ private:
      * Add source data to an L1 object builder. Returns the source
      * metadata if any batches were consumed, nullopt otherwise.
      */
-    ss::future<std::optional<partition_metadata>>
-    add_partition_to_object(builder_context& ctx, ss::shared_ptr<source> src);
+    ss::future<std::optional<consumer_metadata>>
+    add_source_to_object(builder_context& ctx, ss::shared_ptr<source> src);
 
     /*
      * Upload an object to cloud storage with the specified id.
