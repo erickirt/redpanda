@@ -25,6 +25,7 @@
 
 #include <seastar/coroutine/as_future.hh>
 
+#include <exception>
 #include <stdexcept>
 
 namespace cloud_topics {
@@ -61,6 +62,7 @@ ctp_stm_api::replicated_apply(
     auto res = co_await _stm->_raft->replicate(term, std::move(batch), opts);
 
     if (res.has_error()) {
+        vlog(_rtclog.debug, "Failed to replicate batch: {}", res.error());
         if (res.error() == raft::errc::not_leader) {
             co_return std::unexpected(ctp_stm_api_errc::not_leader);
         }
@@ -71,6 +73,10 @@ ctp_stm_api::replicated_apply(
         co_await _stm->wait(
           res.value().last_offset, deadline, _rtc.root_abort_source());
     } catch (...) {
+        vlog(
+          _rtclog.warn,
+          "Failed to wait for replicated command to to be applied: {}",
+          std::current_exception());
         co_return std::unexpected(ctp_stm_api_errc::timeout);
     }
 
