@@ -1362,26 +1362,30 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     }
     provided_ids.clear();
 
-    for (auto it = id_to_name.begin(); it != id_to_name.end(); ++it) {
-        const auto& [id, name] = *it;
-        if (!ctx.authorized(security::acl_operation::remove, name)) {
-            if (ctx.authorized(security::acl_operation::describe, name)) {
-                resp.data.responses.push_back(
-                  {.name = name,
-                   .topic_id = id,
-                   .error_code = error_code::topic_authorization_failed,
-                   .error_message = "Authorized to describe but not allowed to "
-                                    "delete this topic ID."});
-            } else {
-                resp.data.responses.push_back(
-                  {.topic_id = id,
-                   .error_code = error_code::topic_authorization_failed,
-                   .error_message
-                   = "Not authorized to describe or delete this topic ID."});
-            }
-            id_to_name.erase(it);
+    const auto unauthorized_topic = [&ctx, &resp](const auto& elem) {
+        const auto& [id, name] = elem;
+        if (ctx.authorized(security::acl_operation::remove, name)) {
+            return false;
         }
-    }
+
+        if (ctx.authorized(security::acl_operation::describe, name)) {
+            resp.data.responses.push_back(
+              {.name = name,
+               .topic_id = id,
+               .error_code = error_code::topic_authorization_failed,
+               .error_message = "Authorized to describe but not allowed to "
+                                "delete this topic ID."});
+            return true;
+        }
+
+        resp.data.responses.push_back(
+          {.topic_id = id,
+           .error_code = error_code::topic_authorization_failed,
+           .error_message
+           = "Not authorized to describe or delete this topic ID."});
+        return true;
+    };
+    erase_if(id_to_name, unauthorized_topic);
 
     for (const auto& name : provided_names) {
         auto tp_ns{as_tp_ns_view(name)};

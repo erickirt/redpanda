@@ -343,6 +343,7 @@ redpanda_cc_btest(
         "delete_topics_test.cc",
     ],
     deps = [
+        "//src/v/cluster",
         "//src/v/container:chunked_vector",
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:create_topics",
