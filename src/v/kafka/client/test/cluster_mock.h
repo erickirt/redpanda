@@ -125,7 +125,8 @@ public:
       size_t partition_count,
       size_t replication_factor,
       kafka::topic_authorized_operations authorized_operations
-      = kafka::topic_authorized_operations_not_set);
+      = kafka::topic_authorized_operations_not_set,
+      std::optional<model::topic_id> topic_id = std::nullopt);
     void remove_topic(model::topic_view topic_name);
 
     void set_topic_partition_count(
