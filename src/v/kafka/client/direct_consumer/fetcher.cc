@@ -433,6 +433,7 @@ ss::future<> fetcher::do_fetch() {
         needs_backoff = true;
     }
     if (needs_backoff) {
+        _session_state.reset();
         co_await _parent->_cluster->request_metadata_update();
         co_await ss::sleep_abortable(error_backoff, _as);
     }
