@@ -11,6 +11,7 @@
 #include "kafka/client/test/cluster_mock.h"
 
 #include "kafka/server/handlers/configs/config_response_utils.h"
+#include "kafka/server/handlers/details/security.h"
 
 namespace kafka::client {
 
@@ -188,6 +189,12 @@ void cluster_mock::register_default_handlers() {
       [this](model::node_id id, request_t req, api_version version) {
           return handle_api_versions_request(id, std::move(req), version);
       });
+
+    register_handler(
+      describe_acls_api::key,
+      [this](model::node_id id, request_t req, api_version version) {
+          return handle_describe_acls_request(id, std::move(req), version);
+      });
 }
 
 void cluster_mock::register_handler(api_key key, mock_handler handler) {
@@ -326,6 +333,35 @@ ss::future<response_t> cluster_mock::handle_api_versions_request(
         co_return make_api_versions_response(default_supported_versions);
     }
     co_return make_api_versions_response(it->second);
+}
+
+ss::future<response_t> cluster_mock::handle_describe_acls_request(
+  model::node_id, request_t req, api_version) {
+    auto describe_req = std::get<describe_acls_request>(std::move(req));
+    auto filter = details::to_acl_binding_filter(describe_req.data);
+    auto bindings = _acl_store.acls(filter);
+
+    chunked_hash_map<
+      security::resource_pattern,
+      chunked_vector<security::acl_entry>>
+      entries;
+
+    kafka::describe_acls_response response;
+    auto& response_data = response.data;
+
+    for (const auto& binding : bindings) {
+        entries[binding.pattern()].emplace_back(binding.entry());
+    }
+
+    for (auto& entry : entries) {
+        response_data.resources.push_back(
+          details::acl_entry_to_resource(
+            entry.first,
+            std::move(entry.second),
+            describe_req.data.describe_registry_acls));
+    }
+
+    co_return response;
 }
 
 template<typename ReqT, typename Ret>
@@ -537,5 +573,7 @@ cluster_mock::cluster_mock()
     default_supported_versions[describe_configs_api::key] = {
       .min = kafka::describe_configs_api::min_valid,
       .max = kafka::describe_configs_api::max_valid};
+    default_supported_versions[describe_acls_api::key] = {
+      .min = api_version{0}, .max = api_version{2}};
 }
 } // namespace kafka::client

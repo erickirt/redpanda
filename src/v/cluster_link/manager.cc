@@ -78,6 +78,7 @@ manager::manager(
   std::unique_ptr<kafka::data::rpc::partition_manager> partition_manager,
   std::unique_ptr<kafka::data::rpc::topic_metadata_cache> topic_metadata_cache,
   std::unique_ptr<kafka::data::rpc::topic_creator> topic_creator,
+  std::unique_ptr<security_service> security_service,
   std::unique_ptr<link_registry> registry,
   std::unique_ptr<link_factory> link_factory,
   std::unique_ptr<cluster_factory> cluster_factory,
@@ -91,6 +92,7 @@ manager::manager(
   , _partition_manager(std::move(partition_manager))
   , _topic_metadata_cache(std::move(topic_metadata_cache))
   , _topic_creator(std::move(topic_creator))
+  , _security_service(std::move(security_service))
   , _registry(std::move(registry))
   , _link_factory(std::move(link_factory))
   , _cluster_factory(std::move(cluster_factory))
@@ -448,6 +450,10 @@ partition_leader_cache& manager::partition_leader_cache() noexcept {
 
 const partition_leader_cache& manager::partition_leader_cache() const noexcept {
     return *_partition_leader_cache;
+}
+
+security_service& manager::get_security_service() noexcept {
+    return *_security_service;
 }
 
 partition_manager& manager::partition_manager() noexcept {

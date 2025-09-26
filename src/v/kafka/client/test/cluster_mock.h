@@ -15,6 +15,7 @@
 #include "kafka/client/broker.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/logger.h"
+#include "security/acl_store.h"
 namespace kafka::client {
 class cluster_mock;
 using supported_versions = absl::flat_hash_map<api_key, api_version_range>;
@@ -111,6 +112,9 @@ public:
     ss::future<response_t> handle_describe_configs_request(
       model::node_id node_id, request_t req, api_version version);
 
+    ss::future<response_t> handle_describe_acls_request(
+      model::node_id node_id, request_t req, api_version version);
+
     void set_supported_versions(
       model::node_id id, api_key key, api_version_range range) {
         _broker_api_versions[id].insert_or_assign(key, range);
@@ -146,6 +150,8 @@ public:
     void set_cluster_authorized_operations(cluster_authorized_operations ops) {
         _cluster_authorized_operations = ops;
     }
+
+    security::acl_store& acl_store() { return _acl_store; }
 
 public:
     supported_versions default_supported_versions;
@@ -188,6 +194,8 @@ private:
     chunked_hash_map<model::topic, topic_metadata> _topics;
 
     config::configuration _mock_config;
+
+    security::acl_store _acl_store;
 
     // If unset, will use the node_id of the first broker in _brokers
     std::optional<model::node_id> _controller_id;

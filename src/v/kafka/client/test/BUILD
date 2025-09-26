@@ -40,6 +40,7 @@ redpanda_test_cc_library(
         "cluster_mock.h",
     ],
     implementation_deps = [
+        "//src/v/kafka/server:security",
         "//src/v/kafka/server:topic_config_utils",
         "//src/v/random:generators",
     ],
@@ -49,6 +50,7 @@ redpanda_test_cc_library(
         "//src/v/container:chunked_hash_map",
         "//src/v/kafka/client:brokers",
         "//src/v/kafka/client:logger",
+        "//src/v/security",
     ],
 )
 
@@ -322,6 +324,7 @@ redpanda_cc_btest(
         "//src/v/kafka/protocol",
         "//src/v/kafka/protocol:metadata",
         "//src/v/kafka/server",
+        "//src/v/kafka/server:security",
         "//src/v/model",
         "//src/v/redpanda/tests:fixture",
         "//src/v/security",
