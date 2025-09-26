@@ -63,7 +63,19 @@ struct random_state_accessor {};
 constexpr int get_int_0 = 1950485216;
 constexpr int get_int_1 = 472535779;
 
+using namespace random_generators::internal;
+
+// return true if the global seeding mode is other than "fixed"
+bool not_fixed() {
+    return random_generators::internal::default_seeding_policy()
+           == seeding_mode::random_seed;
+}
+
 void check_two_random_numbers() {
+    if (not_fixed()) {
+        // only applies in fixed mode
+        return;
+    }
     RPTEST_EXPECT_EQ(get_int<int>(), get_int_0);
     RPTEST_EXPECT_EQ(get_int<int>(), get_int_1);
 }
@@ -78,6 +90,9 @@ MAKE_TEST_CASE(test_expected_values2) {
 }
 
 MAKE_TEST_CASE(test_local_reseeding) {
+    if (not_fixed()) {
+        return;
+    }
     rng local_rng;
     RPTEST_EXPECT_EQ(local_rng.get_int<int>(), get_int_0);
     RPTEST_EXPECT_EQ(local_rng.get_int<int>(), get_int_1);
@@ -85,4 +100,20 @@ MAKE_TEST_CASE(test_local_reseeding) {
     local_rng = rng{};
     RPTEST_EXPECT_EQ(local_rng.get_int<int>(), get_int_0);
     RPTEST_EXPECT_EQ(local_rng.get_int<int>(), get_int_1);
+}
+
+MAKE_TEST_CASE(test_random_seeding) {
+    if (!not_fixed()) {
+        return;
+    }
+
+    // the opposite of the previous test above, the global generator
+    // should be randomly seeded: 1 in 2^32 chance of flaking!
+    rng local_rng;
+    RPTEST_REQUIRE_NE(local_rng.get_int<int>(), get_int_0);
+    RPTEST_REQUIRE_NE(local_rng.get_int<int>(), get_int_1);
+
+    local_rng = rng{};
+    RPTEST_REQUIRE_NE(local_rng.get_int<int>(), get_int_0);
+    RPTEST_REQUIRE_NE(local_rng.get_int<int>(), get_int_1);
 }

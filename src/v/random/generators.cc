@@ -19,6 +19,8 @@
 
 namespace random_generators {
 
+using internal::seeding_mode;
+
 using internal::chars;
 
 using seed_type = rng::seed_type;
@@ -29,25 +31,28 @@ constexpr seed_type fixed_seed = 1234567891u;
 // if these aren't the same we need to think a bit more about the seeded API
 static_assert(std::is_same_v<rng::seed_type, std::random_device::result_type>);
 
-enum class seeding_mode {
-    random_seed = 1,
-    fixed_seed = 2,
-};
-
 std::atomic<int64_t> seed_generation = 0;
 
 // get the default seeding mode from the environment
 const seeding_mode global_seeding_mode = [] {
-    if (auto mode_cstr = std::getenv("REDPANDA_RNG_SEEDING_MODE")) {
-        std::string_view mode{mode_cstr};
-        if (mode == "random") {
-            return seeding_mode::random_seed;
-        } else if (mode == "fixed") {
-            return seeding_mode::fixed_seed;
-        }
-        vassert(false, "Invalid REDPANDA_RNG_SEEDING_MODE: {}", mode);
+    // REDPANDA_RNG_SEEDING_MODE overrides REDPANDA_RNG_SEEDING_MODE_DEFAULT
+    // which overrides the default
+    auto mode_cstr = std::getenv("REDPANDA_RNG_SEEDING_MODE");
+    if (!mode_cstr) {
+        mode_cstr = std::getenv("REDPANDA_RNG_SEEDING_MODE_DEFAULT");
     }
-    return seeding_mode::fixed_seed;
+    if (!mode_cstr) {
+        // default mode when nothing is specified
+        return seeding_mode::random_seed;
+    }
+
+    std::string_view mode = mode_cstr;
+    if (mode == "random") {
+        return seeding_mode::random_seed;
+    } else if (mode == "fixed") {
+        return seeding_mode::fixed_seed;
+    }
+    vassert(false, "Invalid REDPANDA_RNG_SEEDING_MODE: {}", mode);
 }();
 
 seed_type random_seed() {
@@ -60,6 +65,10 @@ seed_type random_seed() {
 thread_local rng global_instance;
 thread_local int64_t last_seed_gen = -1;
 } // namespace
+
+namespace internal {
+seeding_mode default_seeding_policy() { return global_seeding_mode; }
+} // namespace internal
 
 std::random_device::result_type get_initial_seed() {
     return global_seeding_mode == seeding_mode::fixed_seed ? fixed_seed

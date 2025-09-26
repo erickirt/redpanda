@@ -144,6 +144,16 @@ rng& global();
 
 namespace internal {
 
+enum class seeding_mode {
+    random_seed = 1,
+    fixed_seed = 2,
+};
+
+// Get the global seeding mode
+seeding_mode default_seeding_policy();
+
+// Increment the seed generation which causes the subsequent call to global()
+// to reseed the global generator based on the default seed policy.
 void increment_seed_generation();
 
 static constexpr std::string_view chars
