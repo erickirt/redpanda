@@ -181,6 +181,14 @@ public:
 
     std::unique_ptr<link_registry>& registry() noexcept { return _registry; }
 
+    cl_result<
+      chunked_hash_map<::model::ntp, replication::partition_offsets_report>>
+    get_partition_offsets_report_for_link(const model::name_t& name) const;
+
+    cl_result<
+      chunked_hash_map<::model::ntp, replication::partition_offsets_report>>
+    get_partition_offsets_report_for_link(model::id_t link_id) const;
+
 private:
     /// Called periodically to reconcile registered tasks on created links
     ss::future<> link_task_reconciler();

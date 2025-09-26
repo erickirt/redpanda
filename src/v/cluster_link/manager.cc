@@ -581,6 +581,29 @@ const partition_manager& manager::partition_manager() const noexcept {
 
 topic_creator& manager::topic_creator() noexcept { return *_topic_creator; }
 
+cl_result<chunked_hash_map<::model::ntp, replication::partition_offsets_report>>
+manager::get_partition_offsets_report_for_link(
+  const model::name_t& name) const {
+    auto link_id = _registry->find_link_id_by_name(name);
+    if (!link_id) {
+        return err_info(
+          errc::link_id_not_found,
+          ssx::sformat("Unable to find link by name '{}'", name));
+    }
+    return get_partition_offsets_report_for_link(*link_id);
+}
+
+cl_result<chunked_hash_map<::model::ntp, replication::partition_offsets_report>>
+manager::get_partition_offsets_report_for_link(model::id_t link_id) const {
+    auto link_it = _links.find(link_id);
+    if (link_it == _links.end()) {
+        return err_info(
+          errc::link_id_not_found,
+          ssx::sformat("Link with id '{}' not found", link_id));
+    }
+    return link_it->second->get_partition_offsets_report();
+}
+
 ss::future<> manager::link_task_reconciler() {
     vlog(cllog.trace, "Reconciling tasks for all cluster links");
 
