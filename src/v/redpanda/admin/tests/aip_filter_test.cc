@@ -9,10 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
-#include "absl/time/clock.h"
 #include "redpanda/admin/aip_filter.h"
+#include "redpanda/admin/tests/aip_test_message_helpers.h"
 #include "serde/protobuf/rpc.h"
-#include "src/v/redpanda/admin/tests/aip_filter_test_messages.proto.h"
+#include "src/v/redpanda/admin/tests/aip_test_message.proto.h"
 
 #include <fmt/ranges.h>
 #include <gmock/gmock.h>
@@ -24,40 +24,11 @@ namespace admin {
 
 namespace rpc = serde::pb::rpc;
 
-namespace {
-aip_filter_test::test_message create_test_message(
-  int32_t int_val = 42,
-  const std::string& str_val = "test",
-  bool bool_val = true,
-  const std::string& nested_name = "nested",
-  int32_t nested_val = 100) {
-    aip_filter_test::test_message msg;
-    msg.set_int_field(int_val);
-    msg.set_string_field(ss::sstring(str_val));
-    msg.set_bool_field(bool_val);
-    msg.set_uint_field(1000);
-    msg.set_double_field(3.14);
-
-    msg.get_nested().set_name(ss::sstring(nested_name));
-    msg.get_nested().set_value(nested_val);
-
-    msg.set_status(aip_filter_test::test_message_status::status_active);
-    msg.set_timestamp_field(absl::Now() - absl::Minutes(5));
-    msg.set_duration_field(absl::Seconds(30));
-
-    msg.set_int32_field(123);
-    msg.set_float_field(2.5f);
-
-    return msg;
-}
-} // namespace
-
 class AIPFilterTest : public ::testing::Test {
 protected:
     auto parse(std::string_view filter_expression) {
-        auto config
-          = admin::make_aip_filter_config<aip_filter_test::test_message>(
-            filter_expression);
+        auto config = admin::make_aip_filter_config<aip_test::test_message>(
+          filter_expression);
         return aip_filter_parser::create_aip_filter(std::move(config));
     }
 };
@@ -214,17 +185,17 @@ TEST_F(AIPFilterTest, EnumFieldOperations) {
     auto msg = create_test_message();
 
     // Test enum equality
-    msg.set_status(aip_filter_test::test_message_status::status_active);
+    msg.set_status(aip_test::test_message_status::status_active);
     EXPECT_TRUE(parse("status = STATUS_ACTIVE")(msg));
     EXPECT_FALSE(parse("status = STATUS_INACTIVE")(msg));
     EXPECT_TRUE(parse("status != STATUS_INACTIVE")(msg));
 
     // Test unspecified value
-    msg.set_status(aip_filter_test::test_message_status::status_unspecified);
+    msg.set_status(aip_test::test_message_status::status_unspecified);
     EXPECT_TRUE(parse("status = STATUS_UNSPECIFIED")(msg));
 
     // Test case sensitivity
-    msg.set_status(aip_filter_test::test_message_status::status_active);
+    msg.set_status(aip_test::test_message_status::status_active);
     EXPECT_FALSE(parse("status = status_active")(msg));
 
     // Only equality operators should work for enums
@@ -483,7 +454,7 @@ TEST_F(AIPFilterTest, IntegerBoundaryValues) {
 }
 
 TEST_F(AIPFilterTest, CardinalityKeywords) {
-    auto msg = aip_filter_test::test_message{};
+    auto msg = aip_test::test_message{};
 
     // Sanity check optional field presence
     EXPECT_FALSE(msg.has_optional_int_field());
