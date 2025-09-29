@@ -55,3 +55,24 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "reconciler_metrics_test",
+    timeout = "short",
+    srcs = [
+        "reconciler_metrics_test.cc",
+    ],
+    deps = [
+        ":test_utils",
+        "//src/v/cloud_topics/level_one/common:fake_io",
+        "//src/v/cloud_topics/level_one/common:object",
+        "//src/v/cloud_topics/level_one/metastore:simple",
+        "//src/v/cloud_topics/reconciler",
+        "//src/v/model",
+        "//src/v/model/tests:random",
+        "//src/v/test_utils:gtest",
+        "//src/v/test_utils:metrics",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
