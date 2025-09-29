@@ -179,6 +179,28 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "aip_ordering",
+    srcs = [
+        "aip_ordering.cc",
+    ],
+    hdrs = [
+        "aip_ordering.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aip_common_config",
+        "//src/v/base",
+        "//src/v/serde/protobuf:base",
+        "//src/v/serde/protobuf:field_mask",
+        "//src/v/serde/protobuf:rpc",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/time",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "admin",
     srcs = [
         "debug.cc",
