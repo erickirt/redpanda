@@ -1092,16 +1092,41 @@ public:
      *   - std::function<bool(val_t)>: predicate for whether some val_t is
      *     restricted
      *
-     * NOTE: Value restrictions must never conflict with a config's default
-     * value. This condition is enforced by an assertion in the constructor.
-     *
      */
     template<typename... Args>
     enterprise(
       config_store& conf, restrict_variant_t restricted, Args&&... args)
       : P(conf, std::forward<Args>(args)...)
-      , _restriction(std::move(restricted)) {
-        assert_no_default_conflict();
+      , _restriction(std::move(restricted))
+      , _sanctioned_value{this->default_value()} {
+        assert_no_sanctioned_conflict();
+    }
+
+    /**
+     * Construct an enterprise property.
+     *
+     * Largely a pass-through to the wrapped property's constructor, with the
+     * addition of a variant parameter describing restricted values, which may
+     * take the type
+     *   - val_t: that value is restricted
+     *   - vector<val_t>: each element is restricted
+     *   - std::function<bool(val_t)>: predicate for whether some val_t is
+     *     restricted
+     *  and a sanctioned value to be used, instead of the default value, when
+     * the property is set to an enterprise value, but there is no valid active
+     * license.
+     *
+     */
+    template<typename... Args>
+    enterprise(
+      config_store& conf,
+      restrict_variant_t restricted,
+      T sanctioned_value,
+      Args&&... args)
+      : P(conf, std::forward<Args>(args)...)
+      , _restriction(std::move(restricted))
+      , _sanctioned_value{sanctioned_value} {
+        assert_no_sanctioned_conflict();
     }
 
     // Needed because the following override shadows the rest of the overloads
@@ -1127,6 +1152,11 @@ public:
      * @brief Checks current value of property to see if it is restricted
      */
     bool is_restricted() const { return do_check_restricted(this->value()); }
+
+    /**
+     * @brief Returns the sanctioned value of this property
+     */
+    const T& sanctioned_value() const { return _sanctioned_value; }
 
 private:
     bool do_check_restricted(const T& setting) const final {
@@ -1155,14 +1185,15 @@ private:
         }
     }
 
-    void assert_no_default_conflict() const {
+    void assert_no_sanctioned_conflict() const {
         vassert(
-          !do_check_restricted(this->default_value()),
-          "Enterprise properties must not restrict the default value of the "
-          "underlying property!");
+          !do_check_restricted(_sanctioned_value),
+          "Enterprise properties must not restrict the sanctioned value of the "
+          "property!");
     }
 
     restrict_variant_t _restriction;
+    T _sanctioned_value;
 };
 
 }; // namespace config
