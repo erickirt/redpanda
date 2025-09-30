@@ -12,6 +12,7 @@
 #pragma once
 
 #include "base/format_to.h"
+#include "base/units.h"
 #include "compaction/types.h"
 #include "container/chunked_vector.h"
 #include "model/fundamental.h"
@@ -417,6 +418,10 @@ struct local_log_reader_config {
     std::optional<ss::semaphore::clock::time_point> read_lock_deadline{};
 
     fmt::iterator format_to(fmt::iterator it) const;
+
+    // The amount of data accumulated when reading from a segment before
+    // returning results to the reader.
+    static constexpr size_t segment_reader_max_buffer_size{32_KiB};
 };
 
 // Empty, invalid reader config which is sometimes useful as a placeholder
