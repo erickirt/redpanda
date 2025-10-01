@@ -1102,6 +1102,71 @@ auto partition_auth_describe(
       projection);
 };
 
+void convert_to_latest(offset_fetch_request& req, api_version current_version) {
+    if (current_version >= api_version{8}) {
+        return;
+    }
+    auto& group = req.data.groups.emplace_back();
+    group.group_id = std::move(req.data.group_id);
+    if (req.data.topics.has_value()) {
+        group.topics = chunked_vector<offset_fetch_request_topics>{};
+        group.topics->reserve(req.data.topics->size());
+        for (auto& topic : *req.data.topics) {
+            group.topics->push_back(
+              offset_fetch_request_topics{
+                .name = std::move(topic.name),
+                .partition_indexes{
+                  topic.partition_indexes.begin(),
+                  topic.partition_indexes.end()},
+                .unknown_tags = std::move(topic.unknown_tags)});
+        }
+        req.data.topics.reset();
+    }
+}
+
+void convert_to(offset_fetch_response& res, api_version target_version) {
+    if (target_version >= api_version{8}) {
+        return;
+    }
+    if (res.data.groups.size() != 1) {
+        res.data.groups.clear();
+        res.data.topics.clear();
+        res.data.error_code = error_code::invalid_request;
+        vlog(
+          klog.warn,
+          "offset_fetch v{} only supports a single group, got: {}",
+          target_version,
+          fmt::join(
+            res.data.groups
+              | std::views::transform(&offset_fetch_response_group::group_id),
+            ", "));
+        return;
+    }
+    auto& group = res.data.groups[0];
+    res.data.error_code = group.error_code;
+    res.data.topics.reserve(group.topics.size());
+    for (auto& topic : group.topics) {
+        chunked_vector<offset_fetch_response_partition> partitions;
+        partitions.reserve(topic.partitions.size());
+        for (auto& partition : topic.partitions) {
+            partitions.push_back(
+              offset_fetch_response_partition{
+                .partition_index = partition.partition_index,
+                .committed_offset = partition.committed_offset,
+                .committed_leader_epoch = partition.committed_leader_epoch,
+                .metadata = std::move(partition.metadata),
+                .error_code = partition.error_code,
+                .unknown_tags = std::move(partition.unknown_tags)});
+        }
+        res.data.topics.push_back(
+          offset_fetch_response_topic{
+            .name = std::move(topic.name),
+            .partitions = std::move(partitions),
+            .unknown_tags = std::move(topic.unknown_tags)});
+    }
+    res.data.groups.clear();
+}
+
 } // namespace
 
 template<>
@@ -1110,18 +1175,19 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
     offset_fetch_request request;
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
+    convert_to_latest(request, ctx.header().version);
 
     constexpr auto has_topics = [](const auto& g) {
         return g.topics.has_value();
     };
 
     constexpr auto pre_filter_authorized_topics = [](auto& ctx, auto& group) {
-        offset_fetch_response_data response;
+        offset_fetch_response_group response{.group_id = group.group_id};
 
         auto unauthorized_rng = partition_auth_describe(
           ctx,
           group.topics.value(),
-          &offset_fetch_request_topic::name,
+          &offset_fetch_request_topics::name,
           authz_quiet::no);
 
         if (!ctx.audit()) {
@@ -1129,7 +1195,7 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
             return response;
         }
 
-        chunked_vector<offset_fetch_request_topic> unauthorized{
+        chunked_vector<offset_fetch_request_topics> unauthorized{
           std::from_range, unauthorized_rng | std::views::as_rvalue};
 
         // remove unauthorized topics from request
@@ -1160,7 +1226,7 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
         auto unauthorized_rng = partition_auth_describe(
           ctx,
           group.topics,
-          &offset_fetch_response_topic::name,
+          &offset_fetch_response_topics::name,
           authz_quiet::yes);
 
         if (!ctx.audit()) {
@@ -1173,37 +1239,60 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
         return;
     };
 
-    std::optional<offset_fetch_response_data> unauthorized;
+    chunked_hash_map<group_id, offset_fetch_response_group> unauthorized;
 
-    if (!ctx.authorized(
-          security::acl_operation::describe, request.data.group_id)) {
-        auto error = !ctx.audit() ? error_code::broker_not_available
-                                  : error_code::group_authorization_failed;
-        co_return co_await ctx.respond(offset_fetch_response(error));
+    /*
+     * pre-filter authorized groups in request
+     */
+    auto unauthorized_rng = partition_auth_describe(
+      ctx,
+      request.data.groups,
+      &offset_fetch_request_group::group_id,
+      authz_quiet::no);
+
+    for (auto& group : unauthorized_rng) {
+        auto& response = unauthorized[group.group_id];
+        response.group_id = std::move(group.group_id);
+        response.error_code = !ctx.audit()
+                                ? error_code::broker_not_available
+                                : error_code::group_authorization_failed;
     }
+    request.data.groups.erase_to_end(unauthorized_rng.begin());
 
     /*
      * pre-filter authorized topics in request
      */
-    if (has_topics(request.data)) {
-        unauthorized.emplace(pre_filter_authorized_topics(ctx, request.data));
+    for (auto& group : request.data.groups | std::views::filter(has_topics)) {
+        unauthorized.emplace(
+          group.group_id, pre_filter_authorized_topics(ctx, group));
     }
 
     auto resp = co_await ctx.groups().offset_fetch(std::move(request));
 
-    if (unauthorized.has_value()) {
-        /*
-         * merge pre-filtered unauthorized topics into response
-         */
-        std::ranges::move(
-          unauthorized->topics, std::back_inserter(resp.data.topics));
-    } else {
-        /*
-         * post-filter unauthorized topics in response
-         */
-        post_filter_authorized_topics(ctx, resp.data);
+    for (auto& group : resp.data.groups) {
+        auto it = unauthorized.find(group.group_id);
+        if (it != unauthorized.end()) {
+            /*
+             * merge pre-filtered unauthorized topics into response
+             */
+            std::ranges::move(
+              it->second.topics, std::back_inserter(group.topics));
+            unauthorized.erase(it);
+        } else {
+            /*
+             * post-filter unauthorized topics in response
+             */
+            post_filter_authorized_topics(ctx, group);
+        }
     }
 
+    /*
+     * merge pre-filtered unauthorized groups into response
+     */
+    std::ranges::move(
+      unauthorized | std::views::values, std::back_inserter(resp.data.groups));
+
+    convert_to(resp, ctx.header().version);
     co_return co_await ctx.respond(std::move(resp));
 }
 

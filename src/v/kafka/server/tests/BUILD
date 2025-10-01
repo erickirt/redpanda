@@ -371,6 +371,7 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/kafka/protocol:offset_fetch",
+        "//src/v/kafka/server",
         "//src/v/redpanda/tests:fixture",
         "//src/v/test_utils:seastar_boost",
         "@boost//:test",

@@ -76,6 +76,15 @@ struct offset_fetch_response final {
         return result;
     }
 
+    static offset_fetch_response_group
+    make_group(offset_fetch_request_group request) {
+        using topics = decltype(offset_fetch_response_group::topics);
+        return offset_fetch_response_group{
+          .group_id = std::move(request.group_id),
+          .topics = get_topics<topics>(std::move(request.topics)),
+          .error_code = error_code::none};
+    }
+
     offset_fetch_response() = default;
 
     explicit offset_fetch_response(error_code error) {
