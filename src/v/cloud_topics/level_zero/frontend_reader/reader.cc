@@ -218,7 +218,7 @@ ss::future<> level_zero_log_reader_impl::fetch_metadata(
                 _unhydrated.push_back(std::move(local_batch));
                 continue;
             }
-            if (header.type != model::record_batch_type::dl_placeholder) {
+            if (header.type != model::record_batch_type::ctp_placeholder) {
                 continue;
             }
             cloud_topics::extent_meta e{

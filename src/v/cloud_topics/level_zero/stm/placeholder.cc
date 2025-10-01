@@ -18,14 +18,14 @@ model::record_batch encode_placeholder_batch(
     vassert(
       header.record_count > 0, "Empty record batch not allowed {}", header);
 
-    cloud_topics::dl_placeholder placeholder{
+    cloud_topics::ctp_placeholder placeholder{
       .id = extent.id,
       .offset = extent.first_byte_offset,
       .size_bytes = extent.byte_range_size,
     };
 
     storage::record_batch_builder builder(
-      model::record_batch_type::dl_placeholder, header.base_offset);
+      model::record_batch_type::ctp_placeholder, header.base_offset);
 
     builder.set_producer_identity(header.producer_id, header.producer_epoch);
     if (header.attrs.is_control()) {
@@ -55,12 +55,12 @@ model::record_batch encode_placeholder_batch(
     return ph;
 }
 
-dl_placeholder parse_placeholder_batch(model::record_batch batch) {
+ctp_placeholder parse_placeholder_batch(model::record_batch batch) {
     iobuf payload = std::move(batch).release_data();
     iobuf_parser parser(std::move(payload));
     auto record = model::parse_one_record_from_buffer(parser);
     iobuf value = std::move(record).release_value();
-    auto placeholder = serde::from_iobuf<cloud_topics::dl_placeholder>(
+    auto placeholder = serde::from_iobuf<cloud_topics::ctp_placeholder>(
       std::move(value));
     return placeholder;
 }

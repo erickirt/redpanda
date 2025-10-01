@@ -39,9 +39,9 @@
  */
 namespace cloud_topics {
 
-struct dl_placeholder
+struct ctp_placeholder
   : serde::
-      envelope<dl_placeholder, serde::version<0>, serde::compat_version<0>> {
+      envelope<ctp_placeholder, serde::version<0>, serde::compat_version<0>> {
     /*
      * The object containing the payload of the batch represented by this
      * placeholder.
@@ -60,6 +60,6 @@ struct dl_placeholder
 model::record_batch
   encode_placeholder_batch(model::record_batch_header, extent_meta);
 
-dl_placeholder parse_placeholder_batch(model::record_batch);
+ctp_placeholder parse_placeholder_batch(model::record_batch);
 
 } // namespace cloud_topics
