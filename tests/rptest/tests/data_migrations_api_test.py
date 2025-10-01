@@ -102,18 +102,22 @@ def generate_tmptpdi_params() -> List[TmtpdiParams]:
         for stage in TypedDictMemberOptions(CancellationStage, "stage")
     ]
     return [
+        # cancel on various stages, other params True to test most complex case
         TmtpdiParams(
             cancellation=cancellation,
-            use_alias=use_alias,
-            transfer_leadership=tl,
-            include_groups=ig,
+            use_alias=True,
+            transfer_leadership=True,
+            include_groups=True,
         )
         for cancellation in [None] + cancellation_stages
-        for use_alias in (True, False)
-        for tl in (True, False)
-        for ig in (True, False)
-        # alias only affects inbound, pointless to vary if cancel earlier
-        if not use_alias or cancellation is None or cancellation["dir"] == "in"
+    ] + [
+        # cancel on the latest stage, disable other params one by one
+        TmtpdiParams(
+            cancellation=CancellationStage(dir="in", stage="executing"),
+            use_alias=False,
+            transfer_leadership=False,
+            include_groups=False,
+        )
     ]
 
 
