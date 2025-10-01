@@ -203,6 +203,8 @@ FIXTURE_TEST(offset_commit_and_fetch_request, consumer_offsets_fixture) {
 
     // v2 supports an error_code
     static constexpr api_version version_with_error{2};
+    // v8 supports multiple groups
+    static constexpr api_version version_with_groups{8};
 
     const std::map<
       kafka::group_id,
@@ -334,17 +336,35 @@ FIXTURE_TEST(offset_commit_and_fetch_request, consumer_offsets_fixture) {
          api_version <= kafka::offset_fetch_handler::max_supported;
          ++api_version) {
         for (bool all_topics : {true, false}) {
-            for (const auto& g : committed_offsets | std::views::keys) {
+            if (api_version < version_with_groups) {
+                for (const auto& g : committed_offsets | std::views::keys) {
+                    offset_fetch_request req;
+                    fill_request(req.data, g, all_topics);
+                    auto resp
+                      = auth_client.dispatch(std::move(req), api_version).get();
+                    if (api_version >= version_with_error) {
+                        BOOST_REQUIRE_EQUAL(
+                          resp.data.errored(),
+                          !all_topics || g == group_no_auth);
+                    }
+                    BOOST_REQUIRE_EQUAL(resp.data.groups.size(), 0);
+                    check_response_topics(
+                      api_version, resp.data, g, all_topics);
+                }
+            } else {
                 offset_fetch_request req;
-                fill_request(req.data, g, all_topics);
+                for (const auto& g : committed_offsets | std::views::keys) {
+                    fill_request(req.data.groups.emplace_back(), g, all_topics);
+                }
                 auto resp
                   = auth_client.dispatch(std::move(req), api_version).get();
-                if (api_version >= version_with_error) {
-                    BOOST_REQUIRE_EQUAL(
-                      resp.data.errored(), !all_topics || g == group_no_auth);
+                BOOST_REQUIRE(resp.data.errored());
+                BOOST_REQUIRE_EQUAL(
+                  resp.data.groups.size(), committed_offsets.size());
+                for (const auto& g : resp.data.groups) {
+                    check_response_topics(
+                      api_version, g, g.group_id, all_topics);
                 }
-                BOOST_REQUIRE_EQUAL(resp.data.groups.size(), 0);
-                check_response_topics(api_version, resp.data, g, all_topics);
             }
         }
     }
