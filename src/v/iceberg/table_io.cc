@@ -9,9 +9,10 @@
  */
 #include "iceberg/table_io.h"
 
-#include "bytes/iobuf_parser.h"
+#include "bytes/streambuf.h"
 #include "iceberg/table_metadata_json.h"
 #include "json/chunked_buffer.h"
+#include "json/istreamwrapper.h"
 
 namespace iceberg {
 
@@ -19,8 +20,11 @@ ss::future<checked<table_metadata, metadata_io::errc>>
 table_io::download_table_meta(const table_metadata_path& path) {
     return download_object<table_metadata>(
       path(), "iceberg::table_metadata", [](iobuf b) {
+          iobuf_istreambuf ibuf(b);
+          std::istream stream(&ibuf);
+          json::IStreamWrapper s(stream);
           json::Document parsed;
-          parsed.Parse(b.linearize_to_string());
+          parsed.ParseStream(s);
           return parse_table_meta(parsed);
       });
 }
