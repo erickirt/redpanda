@@ -36,6 +36,9 @@ struct_type schemaless_struct_type() {
 
     system_fields.fields.emplace_back(
       nested_field::create(9, "key", field_required::no, binary_type{}));
+    system_fields.fields.emplace_back(
+      nested_field::create(
+        10, "timestamp_type", field_required::no, int_type{}));
     struct_type res;
     res.fields.emplace_back(
       nested_field::create(
