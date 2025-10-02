@@ -21,11 +21,6 @@
 namespace kafka {
 
 struct partition_metadata {
-    partition_metadata(model::offset so, model::offset hw, model::offset lso)
-      : start_offset(so)
-      , high_watermark(hw)
-      , last_stable_offset(lso) {}
-
     model::offset start_offset;
     model::offset high_watermark;
     model::offset last_stable_offset;
@@ -33,14 +28,9 @@ struct partition_metadata {
 
 class fetch_metadata_cache {
 public:
-    explicit fetch_metadata_cache() {
-        _eviction_timer.set_callback([this] {
-            if (!_stopped) {
-                evict();
-                _eviction_timer.arm(eviction_timeout);
-            }
-        });
-        _eviction_timer.arm(eviction_timeout);
+    explicit fetch_metadata_cache()
+      : _eviction_timer([this] { evict(); }) {
+        _eviction_timer.arm_periodic(eviction_timeout);
     }
 
     fetch_metadata_cache(const fetch_metadata_cache&) = delete;
@@ -48,12 +38,7 @@ public:
 
     fetch_metadata_cache& operator=(const fetch_metadata_cache&) = delete;
     fetch_metadata_cache& operator=(fetch_metadata_cache&&) = delete;
-    ~fetch_metadata_cache() {
-        _stopped = true;
-        if (_eviction_timer.armed()) {
-            _eviction_timer.cancel();
-        }
-    }
+    ~fetch_metadata_cache() = default;
 
     void insert_or_assign(
       model::ktp_with_hash ktp,
@@ -86,18 +71,13 @@ private:
     };
 
     void evict() {
-        auto now = ss::lowres_clock::now();
-        for (auto it = _cache.begin(); it != _cache.end();) {
-            if (it->second.timestamp + eviction_timeout < now) {
-                _cache.erase(it++);
-                continue;
-            }
-            ++it;
-        }
+        const auto now = ss::lowres_clock::now();
+        std::erase_if(_cache, [&now](const auto& e) {
+            return (e.second.timestamp + eviction_timeout) < now;
+        });
     }
 
     constexpr static std::chrono::seconds eviction_timeout{60};
-    bool _stopped = false;
     chunked_hash_map<model::ktp_with_hash, entry> _cache;
     ss::timer<> _eviction_timer;
 };
