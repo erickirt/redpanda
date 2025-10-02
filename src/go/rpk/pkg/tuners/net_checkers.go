@@ -110,6 +110,15 @@ func (f *netCheckersFactory) NewNicRxQueueCountChecker(
 				return true, nil
 			}
 
+			supportsIrqLowering, err := nic.SupportsRxQueueLowering()
+			if err != nil {
+				return false, err
+			}
+			if !supportsIrqLowering {
+				zap.L().Sugar().Debugf("Skipping RxQueue Tuner as using an unknown driver")
+				return true, nil
+			}
+
 			currentChannels, targetChannels, err := network.GetCurrentAndTargetChannels(nic, mode, cpuMask, f.cpuMasks, f.t, f.ethtool)
 			if err != nil {
 				return false, err

@@ -116,6 +116,15 @@ func (f *netTunersFactory) NewRxQueueCountTuner(interfaces []string, mode irq.Mo
 				return NewTuneResult(false)
 			}
 
+			supportsIrqLowering, err := nic.SupportsRxQueueLowering()
+			if err != nil {
+				return NewTuneError(err)
+			}
+			if !supportsIrqLowering {
+				zap.L().Sugar().Debugf("Skipping RxQueue Tuner as using an unknown driver")
+				return NewTuneResult(false)
+			}
+
 			zap.L().Sugar().Debugf("Tuning '%s' queue counts", nic.Name())
 			_, targetChannels, err := network.GetCurrentAndTargetChannels(nic, mode, cpuMask, f.cpuMasks, f.t, f.ethtool)
 			if err != nil {
