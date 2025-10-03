@@ -101,9 +101,7 @@ convert_primitive(serde::json::parser& p, const primitive_type& ft) {
                     max_bytes,
                     buf.size_bytes()));
             }
-
-            iobuf_const_parser iop(buf);
-            return iop.read_string(iop.bytes_left());
+            return buf.linearize_to_string();
         };
 
         // 32 bytes should be enough for most date/time formats.
