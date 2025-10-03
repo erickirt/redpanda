@@ -48,8 +48,24 @@ class NodesDecommissioningTest(PreallocNodesTest):
     def __init__(self, test_context):
         self._topic = None
 
+        si_settings = SISettings(
+            test_context=test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+
+        extra_rp_conf = dict(
+            enable_cluster_metadata_upload_loop=False,
+        )
+
         super(NodesDecommissioningTest, self).__init__(
-            test_context=test_context, num_brokers=5, node_prealloc_count=1
+            test_context=test_context,
+            num_brokers=5,
+            node_prealloc_count=1,
+            si_settings=si_settings,
+            extra_rp_conf=extra_rp_conf,
         )
 
     def setup(self):
@@ -61,7 +77,9 @@ class NodesDecommissioningTest(PreallocNodesTest):
         # retry on timeout and service unavailable
         return Admin(self.redpanda, retry_codes=[503, 504])
 
-    def _create_topics(self, replication_factors: list[int] = [1, 3]):
+    def _create_topics(
+        self, replication_factors: list[int] = [1, 3], cloud_topic: bool = False
+    ):
         """
         :return: total number of partitions in all topics
         """
@@ -72,12 +90,30 @@ class NodesDecommissioningTest(PreallocNodesTest):
             spec = TopicSpec(
                 partition_count=partitions,
                 replication_factor=random.choice(replication_factors),
+                cloud_topics_enabled=cloud_topic,
             )
             topics.append(spec)
             total_partitions += partitions
 
         for spec in topics:
-            self.client().create_topic(spec)
+            config = {
+                "cleanup.policy": "delete",
+                "redpanda.remote.read": "false",
+                "redpanda.remote.write": "false",
+            }
+            if spec.cloud_topics_enabled:
+                config.update(
+                    {
+                        "redpanda.cloud_topic.enabled": "true",
+                    }
+                )
+            rpk = RpkTool(self.redpanda)
+            rpk.create_topic(
+                topic=spec.name,
+                partitions=spec.partition_count,
+                replicas=spec.replication_factor,
+                config=config,
+            )
 
         self._topic = random.choice(topics).name
 
@@ -334,6 +370,20 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
         self.redpanda.start(
             auto_assign_node_id=new_bootstrap, omit_seeds_on_idx_one=not new_bootstrap
+        )
+
+        # Enable cloud topics
+        self.redpanda.enable_development_feature_support()
+        self.redpanda.set_cluster_config(
+            values={
+                "cloud_topics_enabled": True,
+                "cloud_topics_disable_reconciliation_loop": True,
+            }
+        )
+        self.redpanda.restart_nodes(
+            nodes=self.redpanda.nodes,
+            auto_assign_node_id=new_bootstrap,
+            omit_seeds_on_idx_one=not new_bootstrap,
         )
 
     @cluster(
