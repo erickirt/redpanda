@@ -471,7 +471,9 @@ void source_topic_syncer::enqueue_update_mirror_topic_commands(
                       "Topic {} property {} changed: {} -> {}",
                       topic,
                       key,
-                      cached_config_it->second,
+                      cached_config_it == mirror_topic_cache.topic_configs.end()
+                        ? "<not-set>"
+                        : cached_config_it->second,
                       val);
                     enqueue_command = true;
                 }
