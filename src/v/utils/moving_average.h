@@ -78,9 +78,18 @@ public:
           .value = initial_value, .num_samples = 1, .ix = _end};
     }
 
-    // Update moving average
-    // \note time should never go back
-    void update(T v, timestamp_t ts) noexcept {
+    /**
+     * @brief Updates moving average. Note that timestamps shouldn't ever move
+     * backwards
+     *
+     * @param v The new sample to be added to the average
+     * @param ts The timestamp for when the sample occurred.
+     * @param num_samples If `v` contains more than one sample indicate how many
+     * here. Note that this must be greater than 0.
+     */
+    void update(T v, timestamp_t ts, size_t num_samples = 1) noexcept {
+        vassert(
+          num_samples > 0, "at least one sample needs to be in the update");
         // NOTE: we have to add num_buckets to the value to avoid
         // overflow.
         auto end = normalize(ts) + normalized_timestamp_t(_num_buckets);
@@ -93,11 +102,11 @@ public:
         auto& bucket = _buckets[index(end)];
         if (bucket.ix == _end) {
             bucket.value += v;
-            bucket.num_samples += 1;
+            bucket.num_samples += num_samples;
         } else {
             bucket.ix = _end;
             bucket.value = v;
-            bucket.num_samples = 1;
+            bucket.num_samples = num_samples;
         }
     }
 
