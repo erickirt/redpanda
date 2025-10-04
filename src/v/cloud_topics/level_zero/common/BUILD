@@ -31,3 +31,19 @@ redpanda_cc_library(
         "@fmt",
     ],
 )
+
+redpanda_cc_library(
+    name = "level_zero_probe",
+    srcs = [
+        "level_zero_probe.cc",
+    ],
+    hdrs = [
+        "level_zero_probe.h",
+    ],
+    deps = [
+        "//src/v/metrics",
+        "//src/v/utils:log_hist",
+        "@fmt",
+        "@seastar",
+    ],
+)
