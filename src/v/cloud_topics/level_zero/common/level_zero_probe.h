@@ -17,6 +17,7 @@
 #include <seastar/util/defer.hh>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 
 namespace cloud_topics::l0 {
@@ -107,6 +108,50 @@ private:
     uint64_t _throttle_events_count{0};
     uint64_t _bytes_throttled_gauge{0};
     uint64_t _requests_throttled_gauge{0};
+    metrics::internal_metric_groups _metrics;
+};
+
+class write_request_scheduler_probe {
+public:
+    explicit write_request_scheduler_probe(bool disable);
+
+    void register_data_threshold(size_t bytes) {
+        _data_threshold_requests += 1;
+        _data_threshold_bytes += bytes;
+    }
+
+    void register_time_fallback(size_t bytes) {
+        _time_fallback_requests += 1;
+        _time_fallback_bytes += bytes;
+    }
+
+    void register_send_xshard(size_t bytes) {
+        _tx_requests_xshard += 1;
+        _tx_bytes_xshard += bytes;
+    }
+
+    void register_receive_xshard(size_t bytes) {
+        _rx_requests_xshard += 1;
+        _rx_bytes_xshard += bytes;
+    }
+
+private:
+    void setup_internal_metrics(bool disable);
+
+    /// Number of write requests and total bytes scheduled by data threshold
+    /// policy.
+    uint64_t _data_threshold_requests{0};
+    uint64_t _data_threshold_bytes{0};
+    /// Number of write requests and total bytes scheduled by time based
+    /// fallback policy.
+    uint64_t _time_fallback_requests{0};
+    uint64_t _time_fallback_bytes{0};
+    /// Number of requests and total bytes proxied to another shard
+    uint64_t _tx_requests_xshard{0};
+    uint64_t _tx_bytes_xshard{0};
+    /// Number of requests and total bytes received from another shard
+    uint64_t _rx_requests_xshard{0};
+    uint64_t _rx_bytes_xshard{0};
     metrics::internal_metric_groups _metrics;
 };
 

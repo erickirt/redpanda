@@ -174,4 +174,72 @@ void throttler_probe::setup_internal_metrics(bool disable) {
          labels)});
 }
 
+write_request_scheduler_probe::write_request_scheduler_probe(bool disable) {
+    setup_internal_metrics(disable);
+}
+
+void write_request_scheduler_probe::setup_internal_metrics(bool disable) {
+    if (disable) {
+        return;
+    }
+    namespace sm = ss::metrics;
+    std::vector<sm::label_instance> labels;
+
+    // Set up private metrics
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("cloud_topics_write_request_scheduler"),
+      {sm::make_counter(
+         "data_threshold_requests",
+         [this] { return _data_threshold_requests; },
+         sm::description(
+           "Number of write requests scheduled by data threshold policy."),
+         labels),
+
+       sm::make_counter(
+         "data_threshold_bytes",
+         [this] { return _data_threshold_bytes; },
+         sm::description(
+           "Total number of bytes scheduled by data threshold policy."),
+         labels),
+
+       sm::make_counter(
+         "time_fallback_requests",
+         [this] { return _time_fallback_requests; },
+         sm::description(
+           "Number of write requests scheduled by time based fallback policy."),
+         labels),
+
+       sm::make_counter(
+         "time_fallback_bytes",
+         [this] { return _time_fallback_bytes; },
+         sm::description(
+           "Total number of bytes scheduled by time based fallback policy."),
+         labels),
+
+       sm::make_counter(
+         "tx_requests_xshard",
+         [this] { return _tx_requests_xshard; },
+         sm::description("Number of write requests proxied to another shard."),
+         labels),
+
+       sm::make_counter(
+         "tx_bytes_xshard",
+         [this] { return _tx_bytes_xshard; },
+         sm::description("Total number of bytes proxied to another shard."),
+         labels),
+
+       sm::make_counter(
+         "rx_requests_xshard",
+         [this] { return _rx_requests_xshard; },
+         sm::description(
+           "Number of write requests received from another shard."),
+         labels),
+
+       sm::make_counter(
+         "rx_bytes_xshard",
+         [this] { return _rx_bytes_xshard; },
+         sm::description("Total number of bytes received from another shard."),
+         labels)});
+}
+
 } // namespace cloud_topics::l0
