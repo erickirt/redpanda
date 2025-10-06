@@ -62,6 +62,15 @@ void reconciler_probe::setup_metrics() {
           [this] { return _empty_objects_skipped; },
           sm::description(
             "Total objects skipped because no data was available")),
+        sm::make_counter(
+          "metastore_retries",
+          [this] { return _metastore_retries; },
+          sm::description("Total metastore operation retries")),
+        sm::make_counter(
+          "offset_corrections",
+          [this] { return _offset_corrections; },
+          sm::description(
+            "Total times the metastore returned a corrected offset")),
 
         // Histograms.
         sm::make_histogram(

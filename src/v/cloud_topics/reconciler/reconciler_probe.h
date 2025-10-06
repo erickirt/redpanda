@@ -44,6 +44,8 @@ public:
     void increment_object_build_failed() { ++_object_build_failed; }
     void increment_object_upload_failed() { ++_object_upload_failed; }
     void increment_empty_objects_skipped() { ++_empty_objects_skipped; }
+    void increment_metastore_retries() { ++_metastore_retries; }
+    void increment_offset_corrections() { ++_offset_corrections; }
 
     void record_object_size_bytes(uint64_t size) {
         _object_size_bytes.record(size);
@@ -85,6 +87,8 @@ private:
     uint64_t _object_build_failed{0};
     uint64_t _object_upload_failed{0};
     uint64_t _empty_objects_skipped{0};
+    uint64_t _metastore_retries{0};
+    uint64_t _offset_corrections{0};
 
     // Histograms.
     hist_t _object_upload_duration;

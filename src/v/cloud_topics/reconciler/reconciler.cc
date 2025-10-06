@@ -587,6 +587,7 @@ reconciler::add_objects_with_retry(
               add_result.error()));
         }
 
+        _probe.increment_metastore_retries();
         co_await ss::sleep_abortable(permit.delay, rtc.root_abort_source());
     }
 
@@ -632,6 +633,7 @@ ss::future<std::expected<void, reconcile_error>> reconciler::commit_objects(
             kafka::offset lro = commit.metadata.last_offset;
             auto it = corrected_next_offsets.find(tidp);
             if (it != corrected_next_offsets.end()) {
+                _probe.increment_offset_corrections();
                 // We want the previous offset, because that is what was last
                 // reconciled. During next reconciliation we should get the
                 // offset *after* the LRO to start reading from.
