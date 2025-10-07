@@ -148,7 +148,7 @@ func GetHwInterfaceIRQsDistribution(
 		return nil, err
 	}
 
-	supportsIrqLowering, err := nic.SupportsRxQueueLowering()
+	supportsIrqLowering, err := nic.SupportsRxTxQueueLowering()
 	if err != nil {
 		return nil, err
 	}

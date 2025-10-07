@@ -73,7 +73,7 @@ type Nic interface {
 	GetNTupleStatus() (NTupleStatus, error)
 	// Do we support lowering RX queues
 	// Mostly returns false when driver is unknown
-	SupportsRxQueueLowering() (bool, error)
+	SupportsRxTxQueueLowering() (bool, error)
 	Name() string
 }
 
@@ -171,7 +171,7 @@ func getQueueIndexFunc(driverName string, numIRQs int) func(IrqInfo) int {
 	return intelIrqToQueueIdx
 }
 
-func (n *nic) SupportsRxQueueLowering() (bool, error) {
+func (n *nic) SupportsRxTxQueueLowering() (bool, error) {
 	driverName, err := n.ethtool.DriverName(n.name)
 	if err != nil {
 		return false, err
