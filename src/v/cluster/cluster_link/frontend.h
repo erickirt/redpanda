@@ -53,7 +53,9 @@ public:
     ss::future<errc> upsert_cluster_link(
       ::cluster_link::model::metadata, model::timeout_clock::time_point);
     ss::future<errc> remove_cluster_link(
-      ::cluster_link::model::name_t, model::timeout_clock::time_point);
+      ::cluster_link::model::name_t,
+      bool force,
+      model::timeout_clock::time_point);
     ss::future<errc> add_mirror_topic(
       ::cluster_link::model::id_t,
       ::cluster_link::model::add_mirror_topic_cmd,

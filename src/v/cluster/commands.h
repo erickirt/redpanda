@@ -461,8 +461,8 @@ using cluster_link_upsert_cmd = controller_command<
   serde_opts::serde_only>;
 
 using cluster_link_remove_cmd = controller_command<
-  ::cluster_link::model::name_t,
   int8_t, // unused,
+  ::cluster_link::model::delete_shadow_link_cmd,
   cluster_link_remove_cmd_type,
   model::record_batch_type::cluster_link,
   serde_opts::serde_only>;

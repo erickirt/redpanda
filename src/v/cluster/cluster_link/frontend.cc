@@ -104,11 +104,15 @@ ss::future<errc> frontend::upsert_cluster_link(
 
 ss::future<errc> frontend::remove_cluster_link(
   ::cluster_link::model::name_t name,
+  bool force,
   model::timeout_clock::time_point timeout) {
     if (!cluster_linking_enabled()) {
         co_return errc::feature_disabled;
     }
-    cluster_link_cmd c{cluster::cluster_link_remove_cmd(std::move(name), 0)};
+    cluster_link_cmd c{cluster::cluster_link_remove_cmd(
+      0,
+      ::cluster_link::model::delete_shadow_link_cmd{
+        .link_name = std::move(name), .force = force})};
     co_return co_await do_mutation(std::move(c), timeout);
 }
 
@@ -358,7 +362,7 @@ ss::future<errc> frontend::dispatch_mutation_to_remote(
                   return client
                     .remove_cluster_link(
                       cluster::remove_cluster_link_request{
-                        .name = std::move(cmd.key), .timeout = timeout},
+                        .cmd = std::move(cmd.value), .timeout = timeout},
                       rpc::client_opts(timeout))
                     .then(
                       &rpc::get_ctx_data<cluster::remove_cluster_link_response>)
@@ -613,7 +617,7 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
             cmd.value.configuration.topic_metadata_mirroring_cfg);
       },
       [this](const cluster::cluster_link_remove_cmd& cmd) {
-          auto meta = _table->find_link_by_name(cmd.key);
+          auto meta = _table->find_link_by_name(cmd.value.link_name);
           if (!meta.has_value()) {
               return errc::does_not_exist;
           }
@@ -636,7 +640,9 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
             = md.state.mirror_topics | std::views::values
               | std::views::transform(
                 &::cluster_link::model::mirror_topic_metadata::status);
-          if (std::ranges::all_of(mirror_topic_states, is_removable)) {
+          if (
+            cmd.value.force
+            || std::ranges::all_of(mirror_topic_states, is_removable)) {
               return errc::success;
           }
           vlog(

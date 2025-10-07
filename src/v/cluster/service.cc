@@ -868,10 +868,11 @@ ss::future<upsert_cluster_link_response> service::upsert_cluster_link(
 
 ss::future<remove_cluster_link_response> service::remove_cluster_link(
   remove_cluster_link_request req, rpc::streaming_context&) {
-    auto name = std::move(req.name);
+    auto name = std::move(req.cmd.link_name);
+    auto force = req.cmd.force;
     auto deadline = model::timeout_clock::now() + req.timeout;
     auto result = co_await _cluster_link_frontend.local().remove_cluster_link(
-      std::move(name), deadline);
+      std::move(name), force, deadline);
     co_return remove_cluster_link_response{.ec = result};
 }
 

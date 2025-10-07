@@ -81,12 +81,15 @@ public:
         co_return ec;
     }
 
-    ss::future<cluster::cluster_link::errc> delete_cluster_link(name_t m) {
-        cluster::cluster_link_remove_cmd cmd{std::move(m), 0};
+    ss::future<cluster::cluster_link::errc>
+    delete_cluster_link(name_t m, bool force) {
+        cluster::cluster_link_remove_cmd cmd{
+          0, {.link_name = std::move(m), .force = force}};
         auto ec = _validator->validate_mutation(cmd);
         if (ec == cluster::cluster_link::errc::success) {
             auto err = co_await _table.local().apply_update(
-              testing::create_remove_command(cmd.key));
+              testing::create_remove_command(
+                cmd.value.link_name, cmd.value.force));
             vassert(!err, "Failed to remove link: {}", err.message());
         }
         co_return ec;
@@ -226,7 +229,7 @@ TEST_F_CORO(frontend_validation_test, name_empty) {
 
 TEST_F_CORO(frontend_validation_test, remote_non_existent) {
     EXPECT_EQ(
-      co_await delete_cluster_link(name_t("nonexistent")),
+      co_await delete_cluster_link(name_t("nonexistent"), false),
       cluster::cluster_link::errc::does_not_exist);
 }
 
@@ -235,10 +238,10 @@ TEST_F_CORO(frontend_validation_test, remove_existing) {
       co_await upsert_cluster_link(create_base_metadata()),
       cluster::cluster_link::errc::success);
     EXPECT_EQ(
-      co_await delete_cluster_link(name_t("link1")),
+      co_await delete_cluster_link(name_t("link1"), false),
       cluster::cluster_link::errc::success);
     EXPECT_EQ(
-      co_await delete_cluster_link(name_t("link1")),
+      co_await delete_cluster_link(name_t("link1"), false),
       cluster::cluster_link::errc::does_not_exist);
 }
 
@@ -247,7 +250,7 @@ TEST_F_CORO(frontend_validation_test, remove_empty_link) {
       co_await upsert_cluster_link(create_base_metadata()),
       cluster::cluster_link::errc::success);
     EXPECT_EQ(
-      co_await delete_cluster_link(name_t("link1")),
+      co_await delete_cluster_link(name_t("link1"), false),
       cluster::cluster_link::errc::success);
 }
 
@@ -270,7 +273,7 @@ TEST_F_CORO(frontend_validation_test, remove_link_with_topics) {
       cluster::cluster_link::errc::success);
     // Try to delete the link, should fail
     EXPECT_EQ(
-      co_await delete_cluster_link(name_t("link1")),
+      co_await delete_cluster_link(name_t("link1"), false),
       cluster::cluster_link::errc::link_has_active_shadow_topics);
     // Add another topic and transition the first one to failed_over
     add_mirror_topic_cmd cmd1{
@@ -282,7 +285,7 @@ TEST_F_CORO(frontend_validation_test, remove_link_with_topics) {
       cluster::cluster_link::errc::success);
     // Try delete again, should still fail
     EXPECT_EQ(
-      co_await delete_cluster_link(name_t("link1")),
+      co_await delete_cluster_link(name_t("link1"), false),
       cluster::cluster_link::errc::link_has_active_shadow_topics);
     // Transition first topic to failed_over
     EXPECT_EQ(
@@ -290,7 +293,7 @@ TEST_F_CORO(frontend_validation_test, remove_link_with_topics) {
       cluster::cluster_link::errc::success);
     // Try delete again, should still fail
     EXPECT_EQ(
-      co_await delete_cluster_link(name_t("link1")),
+      co_await delete_cluster_link(name_t("link1"), false),
       cluster::cluster_link::errc::link_has_active_shadow_topics);
     // Transition second topic to failed_over
     EXPECT_EQ(
@@ -298,7 +301,34 @@ TEST_F_CORO(frontend_validation_test, remove_link_with_topics) {
       cluster::cluster_link::errc::success);
     // Now the delete should succeed
     EXPECT_EQ(
-      co_await delete_cluster_link(name_t("link1")),
+      co_await delete_cluster_link(name_t("link1"), false),
+      cluster::cluster_link::errc::success);
+}
+
+TEST_F_CORO(frontend_validation_test, remove_link_with_topics_forced) {
+    // create a link
+    EXPECT_EQ(
+      co_await upsert_cluster_link(create_base_metadata()),
+      cluster::cluster_link::errc::success);
+    // Add a topic to the link
+    auto maybe_link_id = _table.local().find_id_by_name(name_t("link1"));
+    EXPECT_TRUE(maybe_link_id.has_value())
+      << "Unable to find link ID for link1";
+    auto link_id = maybe_link_id.value();
+    add_mirror_topic_cmd cmd0{
+      .topic = model::topic("mirror-topic-0"),
+      .metadata = testing::create_mirror_topic_metadata(
+        mirror_topic_status::active, model::topic("mirror-topic-0"))};
+    EXPECT_EQ(
+      co_await add_mirror_topic(link_id, std::move(cmd0)),
+      cluster::cluster_link::errc::success);
+    // Try to delete the link, should fail
+    EXPECT_EQ(
+      co_await delete_cluster_link(name_t("link1"), false),
+      cluster::cluster_link::errc::link_has_active_shadow_topics);
+    // Now the delete should succeed with force being true
+    EXPECT_EQ(
+      co_await delete_cluster_link(name_t("link1"), true),
       cluster::cluster_link::errc::success);
 }
 

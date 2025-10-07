@@ -254,7 +254,7 @@ ss::future<std::error_code> table::apply_update(model::record_batch b) {
                 revision);
           },
           [&table, revision](const cluster::cluster_link_remove_cmd& remove) {
-              return table.remove_link(remove.key, revision);
+              return table.remove_link(remove.value.link_name, revision);
           },
           [&table,
            revision](const cluster::cluster_link_add_mirror_topic_cmd& add) {

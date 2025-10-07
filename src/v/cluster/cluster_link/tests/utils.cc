@@ -32,8 +32,9 @@ model::record_batch create_upsert_command(model::offset offset, metadata link) {
     return batch;
 }
 
-model::record_batch create_remove_command(name_t name) {
-    cluster::cluster_link_remove_cmd cmd(std::move(name), 0);
+model::record_batch create_remove_command(name_t name, bool force) {
+    cluster::cluster_link_remove_cmd cmd(
+      0, {.link_name = std::move(name), .force = force});
     return cluster::serde_serialize_cmd(std::move(cmd));
 }
 
