@@ -1705,7 +1705,7 @@ bool update_fetch_partition(
 }
 
 ss::future<response_ptr> op_context::send_response() && {
-    /// Account for special internal topic bytes for usage
+    auto fetched_data_size = uint64_t{0};
     auto internal_topic_bytes = size_t{0};
     for (const auto& topic : response.data.responses) {
         const bool bytes_to_exclude = std::find(
@@ -1713,14 +1713,21 @@ ss::future<response_ptr> op_context::send_response() && {
                                         usage_excluded_topics.cend(),
                                         topic.topic)
                                       != usage_excluded_topics.cend();
-        if (bytes_to_exclude) {
-            for (const auto& part : topic.partitions) {
-                if (part.records) {
-                    internal_topic_bytes += part.records->size_bytes();
+
+        for (const auto& part : topic.partitions) {
+            if (part.records) {
+                auto part_size = part.records->size_bytes();
+                fetched_data_size += part_size;
+
+                /// Account for special internal topic bytes for usage
+                if (bytes_to_exclude) {
+                    internal_topic_bytes += part_size;
                 }
             }
         }
     }
+
+    rctx.connection()->attributes().fetch_bytes.record(fetched_data_size);
 
     // Sessionless fetch
     if (session_ctx.is_sessionless()) {
