@@ -87,7 +87,7 @@ struct log_compaction_meta_eq {
     }
 };
 
-using logs_type_t = chunked_hash_set<
+using log_set_t = chunked_hash_set<
   log_compaction_meta_ptr,
   log_compaction_meta_hash,
   log_compaction_meta_eq>;
