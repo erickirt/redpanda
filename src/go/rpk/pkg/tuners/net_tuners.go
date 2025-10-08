@@ -151,7 +151,7 @@ func (f *netTunersFactory) NewNICsBalanceServiceTuner(
 	interfaces []string,
 ) Tunable {
 	return NewCheckedTunable(
-		f.checkersFactory.NewNicIRQAffinityStaticChecker(interfaces),
+		f.checkersFactory.NewNicIRQBalanceChecker(interfaces),
 		func() TuneResult {
 			var IRQs []int
 			for _, ifaceName := range interfaces {
