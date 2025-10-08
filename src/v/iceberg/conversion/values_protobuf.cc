@@ -39,6 +39,15 @@ type_conversion_error(const pb::FieldDescriptor& fd) {
         fd.type_name()));
 }
 
+std::optional<value_conversion_exception> check_recursion_depth(int depth) {
+    if (depth > max_recursion_depth) {
+        return value_conversion_exception(
+          fmt::format(
+            "Maximum recursion depth {} exceeded", max_recursion_depth));
+    }
+    return std::nullopt;
+}
+
 template<typename BaseT, typename IcebergT, typename DefaultF>
 std::optional<IcebergT> convert(
   std::optional<parsed::message::field> f,
@@ -243,10 +252,8 @@ serialize_protobuf_value_to_json(
 ss::future<result<std::monostate, value_conversion_exception>>
 serialize_protobuf_list_to_json(
   serde::json::writer& writer, const parsed::message& list, int depth) {
-    if (depth >= max_recursion_depth) {
-        co_return value_conversion_exception(
-          fmt::format(
-            "Maximum recursion depth {} exceeded", max_recursion_depth));
+    if (auto err = check_recursion_depth(depth); err.has_value()) {
+        co_return *err;
     }
 
     writer.begin_array();
@@ -271,10 +278,8 @@ serialize_protobuf_list_to_json(
 ss::future<result<std::monostate, value_conversion_exception>>
 serialize_protobuf_map_to_json(
   serde::json::writer& writer, const parsed::message& map, int depth) {
-    if (depth >= max_recursion_depth) {
-        co_return value_conversion_exception(
-          fmt::format(
-            "Maximum recursion depth {} exceeded", max_recursion_depth));
+    if (auto err = check_recursion_depth(depth); err.has_value()) {
+        co_return *err;
     }
 
     writer.begin_object();
@@ -300,10 +305,8 @@ serialize_protobuf_map_to_json(
 ss::future<result<std::monostate, value_conversion_exception>>
 serialize_protobuf_value_to_json(
   serde::json::writer& writer, const parsed::message& value_msg, int depth) {
-    if (depth >= max_recursion_depth) {
-        co_return value_conversion_exception(
-          fmt::format(
-            "Maximum recursion depth {} exceeded", max_recursion_depth));
+    if (auto err = check_recursion_depth(depth); err.has_value()) {
+        co_return *err;
     }
 
     for (const auto& [field_num, field_value] : value_msg.fields) {
@@ -531,10 +534,10 @@ ss::future<optional_value_outcome> message_to_value(
             "Recursive message types are not supported. Descriptor: {}",
             descriptor.DebugString()));
     }
-    if (stack.size() >= max_recursion_depth) {
+    if (stack.size() > max_recursion_depth) {
         co_return value_conversion_exception(
           fmt::format(
-            "Reached maximum recursion depth. Descriptor: {}",
+            "Exceeded maximum recursion depth. Descriptor: {}",
             descriptor.DebugString()));
     }
 

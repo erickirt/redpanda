@@ -32,8 +32,6 @@ namespace pb = google::protobuf;
 using field_outcome = conversion_outcome<iceberg::nested_field_ptr>;
 using struct_outcome = conversion_outcome<iceberg::struct_type>;
 
-static constexpr int max_recursion_depth = 100;
-
 field_outcome from_protobuf(
   const pb::FieldDescriptor& fd, bool is_repeated, proto_descriptors_stack&);
 
@@ -62,7 +60,7 @@ struct_outcome struct_from_protobuf(
         return conversion_exception(
           fmt::format(
             "Protocol buffer field {} not supported - max nested depth of {} "
-            "reached",
+            "exceeded",
             msg.DebugString(),
             max_recursion_depth));
     }
