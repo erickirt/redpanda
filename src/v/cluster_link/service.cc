@@ -74,6 +74,36 @@ struct shard_report_reducer {
     }
     std::optional<result_t> result;
 };
+
+struct shard_link_report_reducer {
+    using result_t = ::cluster_link::rpc::shadow_link_status_report_response;
+    void operator()(result_t shard_result) {
+        if (!result) {
+            result = std::move(shard_result);
+            return;
+        }
+        if (
+          shard_result.err_code != ::cluster_link::errc::success
+          && result->err_code == ::cluster_link::errc::success) {
+            // Keep the first error we see
+            result->err_code = shard_result.err_code;
+        }
+        for (auto& [topic, response] : shard_result.topic_responses) {
+            auto& existing = result->topic_responses[topic];
+            existing.status = response.status;
+            for (auto& [pid, report] : response.partition_reports) {
+                existing.partition_reports.emplace(pid, std::move(report));
+            }
+        }
+    }
+    std::optional<result_t> get() && {
+        if (!result) {
+            return std::nullopt;
+        }
+        return std::move(result);
+    }
+    std::optional<result_t> result;
+};
 } // namespace
 
 namespace cluster_link {
@@ -751,6 +781,80 @@ service::shadow_topic_report(model::id_t link_id, const ::model::topic& topic) {
         co_return std::unexpected<errc>(errc::rpc_error);
     }
     co_return result;
+}
+
+ss::future<rpc::shadow_link_status_report_response>
+service::node_local_shadow_link_report(
+  rpc::shadow_link_status_report_request req) {
+    shard_link_report_reducer reducer{};
+    const auto& link_id = req.link_id;
+
+    co_await container().map_reduce(
+      reducer,
+      [](service& s, const model::id_t& id) {
+          return s.shard_local_shadow_link_report(id);
+      },
+      link_id);
+    auto result = std::move(reducer).get();
+    if (result) {
+        vlog(cllog.trace, "shadow link report for node {}: {}", _self, *result);
+        co_return std::move(*result);
+    }
+    vlog(
+      cllog.error,
+      "No result from shard link report reducer for link {}",
+      link_id);
+
+    co_return rpc::shadow_link_status_report_response{
+      .err_code = errc::link_id_not_found, .link_id = link_id};
+}
+
+rpc::shadow_link_status_report_response
+service::shard_local_shadow_link_report(model::id_t id) {
+    rpc::shadow_link_status_report_response result;
+    result.link_id = id;
+
+    auto res = _manager->get_partition_offsets_report_for_link(id);
+    if (!res.has_value()) {
+        vlog(
+          cllog.warn,
+          "Failed to get shard local shadow link report for link {}: {} ({})",
+          id,
+          res.assume_error().code(),
+          res.assume_error().message());
+        result.err_code = res.assume_error().code();
+        return result;
+    }
+    auto value = std::move(res.assume_value());
+    result.err_code = errc::success;
+
+    for (const auto& [topic, offsets] : value) {
+        if (offsets.update_time == ss::lowres_clock::time_point{}) {
+            // no offsets have been set for this partition
+            continue;
+        }
+        result.topic_responses[topic.tp.topic]
+          .partition_reports[topic.tp.partition]
+          = rpc::shadow_topic_partition_leader_report{
+            .partition = topic.tp.partition,
+            .source_partition_start_offset = offsets.source_start_offset,
+            .source_partition_high_watermark = offsets.source_hwm,
+            .source_partition_last_stable_offset = offsets.source_lso,
+            .last_update_time
+            = std::chrono::duration_cast<std::chrono::milliseconds>(
+              offsets.update_time.time_since_epoch()),
+            .shadow_partition_high_watermark = offsets.shadow_hwm,
+          };
+    }
+
+    vlog(
+      cllog.trace,
+      "shadow link report for shard {}/{}: {}",
+      _self,
+      ss::this_shard_id(),
+      result);
+
+    return result;
 }
 
 } // namespace cluster_link
