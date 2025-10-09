@@ -12,6 +12,7 @@ import google.protobuf.duration_pb2
 import google.protobuf.field_mask_pb2
 import random
 import re
+import threading
 
 from ducktape.cluster.cluster_spec import ClusterSpec
 from connectrpc.errors import ConnectError, ConnectErrorCode
@@ -545,6 +546,116 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
             ConnectError, lambda e: e.code == ConnectErrorCode.NOT_FOUND
         ):
             self.get_link(test_link)
+
+    @cluster(num_nodes=6)
+    def test_toggle_cluster_config(self):
+        first_topic = TopicSpec(
+            name="first-topic", partition_count=1, replication_factor=3
+        )
+        self.source_default_client().create_topic(first_topic)
+
+        self.create_link("test-link")
+
+        self.target_cluster.service.wait_until(
+            lambda: self._topics_are_present_in_target_cluster([first_topic]),
+            timeout_sec=20,
+            backoff_sec=1,
+            err_msg="Failed to find first-topic in target cluster",
+        )
+
+        self.logger.info("Disabling cluster linking on target cluster")
+        self.target_cluster_service.set_cluster_config({"enable_shadow_linking": False})
+        with expect_exception(
+            ConnectError, lambda e: e.code == ConnectErrorCode.FAILED_PRECONDITION
+        ):
+            self.get_link("test-link")
+
+        # Validate that nothing got replicated
+        self.source_cluster_rpk.produce(
+            first_topic.name, key="test-first", msg="test-first"
+        )
+
+        def _check_hwm(
+            rpk: RpkTool, topic_name: str, partition_id: int, expected_hwm: int
+        ):
+            partition_info = list(rpk.describe_topic(topic_name))
+            for p in partition_info:
+                if p.id == partition_id:
+                    return p.high_watermark >= expected_hwm
+
+            return False
+
+        # Validate that the topic does not contain any data
+        with expect_exception(ducktape.errors.TimeoutError, lambda _: True):
+            self.target_cluster_service.wait_until(
+                lambda: _check_hwm(self.target_cluster_rpk, first_topic.name, 0, 1),
+                timeout_sec=5,
+                backoff_sec=1,
+            )
+        # validate that the topic is still not writable
+        with expect_exception(RpkException, lambda _: True):
+            self.target_cluster_rpk.produce(first_topic.name, key="test", msg="test")
+
+        second_topic = TopicSpec(
+            name="second-topic", partition_count=1, replication_factor=3
+        )
+        self.source_default_client().create_topic(second_topic)
+
+        # Now verify that the second topic is not replicated
+        with expect_exception(ducktape.errors.TimeoutError, lambda _: True):
+            self.target_cluster.service.wait_until(
+                lambda: self._topics_are_present_in_target_cluster([second_topic]),
+                timeout_sec=5,
+                backoff_sec=1,
+            )
+
+        # Now re enable shadow linking and wait for the topic to appear
+        self.target_cluster_service.set_cluster_config({"enable_shadow_linking": True})
+        self.target_cluster.service.wait_until(
+            lambda: self._topics_are_present_in_target_cluster([second_topic]),
+            timeout_sec=20,
+            backoff_sec=1,
+            err_msg="Failed to find second-topic in target cluster",
+        )
+
+        # Now wait for the first topic to have data
+        self.target_cluster_service.wait_until(
+            lambda: _check_hwm(self.target_cluster_rpk, first_topic.name, 0, 1),
+            timeout_sec=20,
+            backoff_sec=1,
+        )
+
+    @cluster(num_nodes=6)
+    def test_rapid_shadow_link_toggling(self):
+        self.create_link("test-link")
+
+        def toggle_shadow_linking(times: int):
+            state: bool = True
+            for _ in range(times):
+                state = not state
+                self.target_cluster_service.set_cluster_config(
+                    {"enable_shadow_linking": state}
+                )
+
+        toggle_thread = threading.Thread(target=toggle_shadow_linking, args=(200,))
+
+        toggle_thread.start()
+        topics: list[TopicSpec] = []
+        for i in range(10):
+            topic = TopicSpec(
+                name=f"source-topic-{i}", partition_count=3, replication_factor=3
+            )
+            self.source_default_client().create_topic(topic)
+            topics.append(topic)
+
+        self.target_cluster.service.wait_until(
+            lambda: self._topics_are_present_in_target_cluster(topics),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="Failed to find first-topic in target cluster",
+        )
+
+        toggle_thread.join()
 
 
 class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
