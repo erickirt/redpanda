@@ -119,6 +119,7 @@ redpanda_cc_library(
         ":logger",
         "//src/v/cluster_link/model",
         "//src/v/kafka/server:topic_config_utils",
+        "//src/v/model",
         "@fmt",
     ],
     visibility = ["//src/v/cluster_link:__subpackages__"],
