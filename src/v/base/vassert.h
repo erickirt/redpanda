@@ -94,3 +94,20 @@ inline void assert_failed_thunk0(
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define dassert(...)
 #endif
+
+/// Crash the process if this line is ever reached, including in release builds.
+///
+/// This macro provides a safe alternative to std::unreachable() that guarantees
+/// program termination with a clear error message and backtrace when reached.
+/// Unlike std::unreachable() which results in undefined behavior if reached,
+/// vunreachable() will always terminate the process cleanly with diagnostic
+/// information.
+///
+/// Note: This macro might result in slightly worse assembly code and does not
+/// enable certain compiler optimizations like std::unreachable() would.
+#define vunreachable(msg, args...)                                             \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
+    do {                                                                       \
+        ::detail::assert_failed_thunk0(                                        \
+          "(" __FILE__ ":" STR_VASSERT(__LINE__) ")", msg, ##args);            \
+    } while (0)
