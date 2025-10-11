@@ -679,6 +679,77 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
         ):
             self.create_link("test-link")
 
+    @cluster(num_nodes=6)
+    def test_deny_prefix(self):
+        topics = [
+            TopicSpec(name="__redpanda-topic", partition_count=3, replication_factor=3),
+            TopicSpec(name="_redpanda-topic", partition_count=3, replication_factor=3),
+            TopicSpec(name="normal-topic", partition_count=3, replication_factor=3),
+        ]
+
+        for topic in topics:
+            self.source_default_client().create_topic(topic)
+
+        shadow_link = self.create_link("test-link")
+
+        def _only_normal_topic_present_in_target_cluster():
+            topics_in_target = {t for t in self.target_cluster_rpk.list_topics()}
+            self.logger.info(f"Topics in target cluster: {topics_in_target}")
+            return len(topics_in_target) == 1 and "normal-topic" in topics_in_target
+
+        self.target_cluster_service.wait_until(
+            _only_normal_topic_present_in_target_cluster,
+            timeout_sec=20,
+            backoff_sec=1,
+            err_msg="Failed to find only normal-topic in the target cluster",
+        )
+
+        # Now attempt to add a filter to specifically include _redpanda.audit_log
+        update_mask = google.protobuf.field_mask_pb2.FieldMask(
+            paths=[
+                "configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters"
+            ]
+        )
+        shadow_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters.extend(
+            [
+                shadow_link_pb2.NameFilter(
+                    pattern_type=shadow_link_pb2.PATTERN_TYPE_LITERAL,
+                    filter_type=shadow_link_pb2.FILTER_TYPE_INCLUDE,
+                    name="_redpanda.audit_log",
+                )
+            ]
+        )
+
+        with expect_exception(
+            ConnectError, lambda e: e.code == ConnectErrorCode.INVALID_ARGUMENT
+        ):
+            self.update_link(shadow_link=shadow_link, update_mask=update_mask)
+
+        shadow_link = self.get_link("test-link")
+        # Now create a link adding the two above topics
+        shadow_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters.extend(
+            [
+                shadow_link_pb2.NameFilter(
+                    pattern_type=shadow_link_pb2.PATTERN_TYPE_LITERAL,
+                    filter_type=shadow_link_pb2.FILTER_TYPE_INCLUDE,
+                    name="__redpanda-topic",
+                ),
+                shadow_link_pb2.NameFilter(
+                    pattern_type=shadow_link_pb2.PATTERN_TYPE_LITERAL,
+                    filter_type=shadow_link_pb2.FILTER_TYPE_INCLUDE,
+                    name="_redpanda-topic",
+                ),
+            ]
+        )
+        self.update_link(shadow_link=shadow_link, update_mask=update_mask)
+
+        self.target_cluster_service.wait_until(
+            lambda: self._topics_are_present_in_target_cluster(topics),
+            timeout_sec=20,
+            backoff_sec=1,
+            err_msg="Failed to find all topics in the target cluster",
+        )
+
 
 class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
     def leadership_shuffler(self, redpanda, topic: str, enabled: bool):

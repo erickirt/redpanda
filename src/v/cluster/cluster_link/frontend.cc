@@ -1003,13 +1003,25 @@ errc frontend::validator::validate_metadata_mirroring_config(
                 "Filter pattern contains invalid characters");
               return true;
           }
+          // Do not permit specifying the consumer offsets or audit logging
+          // topic
           if (
-            p.pattern.starts_with("_redpanda")
-            || p.pattern.starts_with("__redpanda")
-            || p.pattern == ::model::kafka_consumer_offsets_topic()) {
+            p.pattern == ::model::kafka_consumer_offsets_topic()
+            || p.pattern == ::model::kafka_audit_logging_topic()) {
               vlog(
                 cluster::clusterlog.info,
                 "Filter pattern filtering on invalid topic name: {}",
+                p.pattern);
+              return true;
+          }
+          // Do not permit specifying "_redpanda" or "__redpanda" as a topic
+          // name prefix
+          if (
+            p.pattern_type == ::cluster_link::model::filter_pattern_type::prefix
+            && (p.pattern == "_redpanda" || p.pattern == "__redpanda")) {
+              vlog(
+                cluster::clusterlog.info,
+                "Filter pattern filtering on invalid topic name prefix: {}",
                 p.pattern);
               return true;
           }
