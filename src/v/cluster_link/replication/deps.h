@@ -39,6 +39,9 @@ public:
     // Notifies the sink of any terminal failure that can
     // result in replicator not being able to start/progress.
     virtual void notify_replicator_failure(::model::term_id) = 0;
+
+    // Returns the HWM of the partition
+    virtual kafka::offset high_watermark() const = 0;
 };
 
 class data_sink_factory {

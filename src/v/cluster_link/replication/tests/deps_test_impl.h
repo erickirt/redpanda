@@ -26,6 +26,7 @@ public:
       ::model::timeout_clock::duration timeout,
       ss::abort_source& as) override;
     void notify_replicator_failure(::model::term_id) override;
+    kafka::offset high_watermark() const final;
 
 private:
     size_t _records_consumed;

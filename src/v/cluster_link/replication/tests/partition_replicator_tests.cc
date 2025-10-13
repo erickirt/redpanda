@@ -139,6 +139,8 @@ public:
 
     void set_fail_replication(bool value) { _fail_replication = value; }
 
+    kafka::offset high_watermark() const final { return {}; }
+
 private:
     model::ntp _ntp{"kafka", "test", model::partition_id(0)};
     mutex _replication_mu{"test_replication"};

@@ -221,4 +221,9 @@ void local_partition_sink::notify_replicator_failure(::model::term_id term) {
         });
     }
 }
+
+kafka::offset local_partition_sink::high_watermark() const {
+    _gate.check();
+    return ::model::offset_cast(_partition->high_watermark());
+}
 } // namespace cluster_link::replication

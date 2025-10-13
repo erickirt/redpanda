@@ -85,6 +85,8 @@ public:
 
     void notify_replicator_failure(model::term_id) final {}
 
+    kafka::offset high_watermark() const final { return {}; }
+
 private:
     ss::gate _gate;
 };
