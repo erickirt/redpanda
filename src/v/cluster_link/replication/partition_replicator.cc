@@ -30,7 +30,8 @@ partition_replicator::partition_replicator(
   std::unique_ptr<data_source> source,
   std::unique_ptr<data_sink> sink,
   ss::scheduling_group scheduling_group,
-  std::optional<replication_probe::configuration> cfg)
+  std::optional<replication_probe::configuration> cfg,
+  link_data_probe_ptr ldp)
   : _ntp(ntp)
   , _term(term)
   , _config_provider(config_provider)
@@ -41,7 +42,8 @@ partition_replicator::partition_replicator(
   , _backoff_policy(
       make_exponential_backoff_policy<ss::lowres_clock>(
         base_backoff, max_backoff))
-  , _probe{} {
+  , _probe{}
+  , _link_data_probe{std::move(ldp)} {
     if (cfg.has_value()) {
         _probe.emplace(std::move(cfg.value()), ntp, *this);
     }
@@ -139,6 +141,11 @@ ss::future<> partition_replicator::replicate_and_wait(
     static constexpr auto large_timeout
       = std::chrono::duration_cast<model::timeout_clock::duration>(5min);
 
+    auto probe_update = fetch_counters::from_fetch_data(ctx.fdata);
+    if (_link_data_probe) {
+        _link_data_probe->add_fetched(probe_update);
+    }
+
     auto stages = _sink->replicate(
       std::move(ctx.fdata.batches), large_timeout, as);
     auto enqueue_f = co_await ss::coroutine::as_future(
@@ -177,11 +184,16 @@ ss::future<> partition_replicator::replicate_and_wait(
        end = ctx.end,
        inflight = std::move(ctx.inflight_units),
        data = std::move(ctx.fdata.units),
-       &as]() mutable {
+       &as,
+       probe_update]() mutable {
           return handle_replication_result(std::move(f), begin, end)
-            .then([&as](bool success) {
+            .then([this, &as, probe_update](bool success) {
                 if (!success) {
                     as.request_abort();
+                    return;
+                }
+                if (_link_data_probe) {
+                    _link_data_probe->add_written(probe_update);
                 }
             })
             .finally(
@@ -207,6 +219,12 @@ partition_replicator::get_partition_offsets_report() const {
       .shadow_hwm = sink_info,
     };
 }
+
+void partition_replicator::set_data_probe(link_data_probe_ptr ldp) {
+    _link_data_probe = std::move(ldp);
+}
+
+void partition_replicator::unset_data_probe() { _link_data_probe = nullptr; }
 
 kafka::offset partition_replicator::get_partition_lag() const {
     constexpr kafka::offset invalid{-1};

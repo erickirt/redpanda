@@ -63,7 +63,8 @@ public:
       std::unique_ptr<data_source> source,
       std::unique_ptr<data_sink> sink,
       ss::scheduling_group sg = ss::default_scheduling_group(),
-      std::optional<replication_probe::configuration> cfg = std::nullopt);
+      std::optional<replication_probe::configuration> cfg = std::nullopt,
+      link_data_probe_ptr ldp = nullptr);
     ss::future<> start();
     ss::future<> stop();
 
@@ -74,6 +75,9 @@ public:
     partition_offsets_report get_partition_offsets_report() const;
 
     void maybe_synchronize_start_offset();
+
+    void set_data_probe(link_data_probe_ptr);
+    void unset_data_probe();
 
     kafka::offset get_partition_lag() const;
 
@@ -111,6 +115,7 @@ private:
     backoff_policy _backoff_policy;
     std::optional<kafka::offset> _in_progress_truncate_offset{std::nullopt};
     std::optional<replication_probe> _probe;
+    link_data_probe_ptr _link_data_probe;
 };
 
 } // namespace cluster_link::replication
