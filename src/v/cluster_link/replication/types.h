@@ -16,6 +16,8 @@
 #include "model/record.h"
 #include "ssx/semaphore.h"
 
+#include <cstdio>
+
 namespace cluster_link::replication {
 struct partition_offsets_report {
     kafka::offset source_start_offset{-1};
@@ -32,4 +34,27 @@ struct fetch_data {
     ssx::semaphore_units units;
 };
 
+struct fetch_counters {
+    size_t n_bytes{};
+    size_t n_records{};
+
+    static fetch_counters from_fetch_data(const fetch_data& data);
+
+    fetch_counters& operator+=(const fetch_counters& rhs) {
+        n_bytes += rhs.n_bytes;
+        n_records += rhs.n_records;
+        return *this;
+    }
+};
+
+struct link_data_probe {
+    fetch_counters total_fetched;
+    fetch_counters total_written;
+
+    void add_fetched(const fetch_counters& fc) { total_fetched += fc; }
+
+    void add_written(const fetch_counters& fc) { total_written += fc; }
+};
+
+using link_data_probe_ptr = ss::lw_shared_ptr<link_data_probe>;
 } // namespace cluster_link::replication
