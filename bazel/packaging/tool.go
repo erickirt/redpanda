@@ -113,12 +113,21 @@ func createPackage(cfg pkgConfig, createDir func(path string) error, createFile 
 
 func createTarball(cfg pkgConfig, w io.Writer) error {
 	tw := tar.NewWriter(w)
-	defer tw.Close()
+	defer func() {
+		if err := tw.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing tar writer: %v\n", err)
+		}
+	}()
 	writeFile := func(fileConfig fileConfig) error {
 		file, err := os.Open(fileConfig.SourcePath)
 		if err != nil {
 			return err
 		}
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "error closing file %s: %v\n", fileConfig.SourcePath, err)
+			}
+		}()
 		info, err := file.Stat()
 		if err != nil {
 			return err
@@ -156,12 +165,20 @@ func copyFile(src string, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
+	defer func() {
+		if err := srcFile.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing source file %s: %v\n", src, err)
+		}
+	}()
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer dstFile.Close()
+	defer func() {
+		if err := dstFile.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "error closing destination file %s: %v\n", dst, err)
+		}
+	}()
 	_, err = dstFile.ReadFrom(srcFile)
 	if err != nil {
 		return err
@@ -212,11 +229,23 @@ func runTool() error {
 		if err != nil {
 			return fmt.Errorf("unable to open output file: %w", err)
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "error closing output file %s: %v\n", *output, err)
+			}
+		}()
 		bw := bufio.NewWriter(file)
-		defer bw.Flush()
+		defer func() {
+			if err := bw.Flush(); err != nil {
+				fmt.Fprintf(os.Stderr, "error flushing buffered writer: %v\n", err)
+			}
+		}()
 		gw := gzip.NewWriter(bw)
-		defer gw.Close()
+		defer func() {
+			if err := gw.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "error closing gzip writer: %v\n", err)
+			}
+		}()
 		if err := createTarball(cfg, gw); err != nil {
 			return fmt.Errorf("unable to create tarball: %w", err)
 		}
