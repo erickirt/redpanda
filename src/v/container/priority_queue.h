@@ -12,6 +12,7 @@
 
 #include "base/vassert.h"
 #include "container/chunked_vector.h"
+#include "ssx/async_algorithm.h"
 
 #include <algorithm>
 #include <ranges>
@@ -76,6 +77,22 @@ public:
     [[nodiscard]] container_type extract_sorted() && noexcept {
         std::ranges::sort_heap(_cont, _comp);
         return std::move(_cont);
+    }
+
+    /// Returns the underlying container sorted.
+    /// \return The container sorted according to the comparison function.
+    ss::future<container_type> async_extract_sorted() && noexcept {
+        auto first = std::ranges::begin(_cont);
+        auto last = std::ranges::end(_cont);
+        auto distance = last - first;
+        co_await ssx::async_while(
+          [&distance]() { return distance > 1; },
+          [&]() mutable {
+              std::ranges::pop_heap(first, last, _comp);
+              --last;
+              --distance;
+          });
+        co_return std::move(_cont);
     }
 
 protected:
@@ -238,6 +255,21 @@ public:
         }
     }
 
+    /// \brief Inserts a range of elements..
+    /// \tparam Range The type of range to insert.
+    /// \param range The range of elements to insert.
+    template<std::ranges::sized_range Range>
+    requires std::is_nothrow_move_assignable_v<value_type>
+    ss::future<> async_push_range(Range&& range) {
+        if constexpr (base::has_reserve) {
+            reserve(base::size() + std::ranges::size(range));
+        }
+
+        co_await ssx::async_for_each(
+          base::template forward_view<Range>(range),
+          [this]<typename V>(V&& val) { this->push(std::forward<V>(val)); });
+    }
+
     /// \brief Swaps the contents of this queue with another.
     /// \param other The other priority_queue to swap with.
     using base::swap;
@@ -336,6 +368,22 @@ public:
         for (auto&& val : base::template forward_view<Range>(range)) {
             push(std::forward<decltype(val)>(val));
         }
+    }
+
+    /// \brief Inserts a range of elements. Worse elements may be evicted if the
+    /// container is full.
+    /// \param range The range of elements to insert.
+    /// \return ss::future<void>
+    template<std::ranges::sized_range Range>
+    requires std::is_nothrow_move_assignable_v<value_type>
+    ss::future<> async_push_range(Range&& range) {
+        if constexpr (base::has_reserve) {
+            reserve(base::size() + std::ranges::size(range));
+        }
+
+        co_await ssx::async_for_each(
+          base::template forward_view<Range>(range),
+          [this]<typename V>(V&& val) { this->push(std::forward<V>(val)); });
     }
 
     /// \brief Swaps the contents of this queue with another.

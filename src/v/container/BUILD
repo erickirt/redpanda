@@ -114,5 +114,6 @@ redpanda_cc_library(
     deps = [
         ":chunked_vector",
         "//src/v/base",
+        "//src/v/ssx:async_algorithm",
     ],
 )

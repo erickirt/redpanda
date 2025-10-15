@@ -231,6 +231,25 @@ TYPED_TEST(PriorityQueueCommonTest, ExtractSorted) {
     EXPECT_EQ(sorted[4], this->make_value(5));
 }
 
+TYPED_TEST(PriorityQueueCommonTest, AsyncExtractSorted) {
+    auto pq = this->make_queue();
+
+    std::vector<typename TestFixture::value_type> values;
+    for (int val : {3, 1, 4, 1, 5}) {
+        values.push_back(this->make_value(val));
+    }
+    pq.async_push_range(std::move(values)).get();
+
+    auto sorted = std::move(pq).async_extract_sorted().get();
+
+    EXPECT_EQ(sorted.size(), 5);
+    EXPECT_EQ(sorted[0], this->make_value(1));
+    EXPECT_EQ(sorted[1], this->make_value(1));
+    EXPECT_EQ(sorted[2], this->make_value(3));
+    EXPECT_EQ(sorted[3], this->make_value(4));
+    EXPECT_EQ(sorted[4], this->make_value(5));
+}
+
 TYPED_TEST(PriorityQueueCommonTest, CustomComparator) {
     auto pq = this->make_queue_with_comp(std::ranges::greater{});
 
@@ -376,6 +395,22 @@ TYPED_TEST(BoundedPriorityQueueTest, TopKBehavior) {
     EXPECT_EQ(bpq.size(), 3);
 
     auto results = std::move(bpq).extract_sorted();
+
+    // Should be the top 3 elements in descending order
+    auto expected = this->make_values({20, 15, 12});
+    EXPECT_EQ(results, expected);
+}
+
+TYPED_TEST(BoundedPriorityQueueTest, AsyncExtractSorted) {
+    auto bpq = this->make_bounded_queue(3); // Keep top 3 elements
+
+    // Insert elements in random order
+    bpq.async_push_range(this->make_values({5, 10, 2, 15, 8, 20, 1, 12})).get();
+
+    // Should contain the 3 largest elements: 20, 15, 12
+    EXPECT_EQ(bpq.size(), 3);
+
+    auto results = std::move(bpq).async_extract_sorted().get();
 
     // Should be the top 3 elements in descending order
     auto expected = this->make_values({20, 15, 12});
