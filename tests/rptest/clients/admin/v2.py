@@ -1,5 +1,5 @@
 import random
-from typing import Literal, Protocol, final
+from typing import Literal, Protocol, final, Any
 
 import urllib3
 import urllib3.util
@@ -81,8 +81,9 @@ class Admin:
             self._headers = {}
         self._protocol = protocol
 
-    def _make_service(self, service_clazz):
-        node = random.choice(self._rp.started_nodes())
+    def _make_service(self, service_clazz, node: ClusterNode | None = None):
+        if not node:
+            node = random.choice(self._rp.started_nodes())
         client = service_clazz(
             base_url=f"http://{node.account.hostname}:9644",
             protocol=ConnectProtocol.CONNECT_PROTOBUF
@@ -94,17 +95,21 @@ class Admin:
         )
         return client
 
-    def broker(self) -> broker_pb2_connect.BrokerServiceClient:
-        return self._make_service(broker_pb2_connect.BrokerServiceClient)
+    def broker(self, **kwargs: Any) -> broker_pb2_connect.BrokerServiceClient:
+        return self._make_service(broker_pb2_connect.BrokerServiceClient, **kwargs)
 
-    def cluster(self) -> cluster_pb2_connect.ClusterServiceClient:
-        return self._make_service(cluster_pb2_connect.ClusterServiceClient)
+    def cluster(self, **kwargs: Any) -> cluster_pb2_connect.ClusterServiceClient:
+        return self._make_service(cluster_pb2_connect.ClusterServiceClient, **kwargs)
 
-    def datalake(self) -> datalake_pb2_connect.DatalakeServiceClient:
-        return self._make_service(datalake_pb2_connect.DatalakeServiceClient)
+    def datalake(self, **kwargs: Any) -> datalake_pb2_connect.DatalakeServiceClient:
+        return self._make_service(datalake_pb2_connect.DatalakeServiceClient, **kwargs)
 
-    def debug(self) -> debug_pb2_connect.DebugServiceClient:
-        return self._make_service(debug_pb2_connect.DebugServiceClient)
+    def debug(self, **kwargs: Any) -> debug_pb2_connect.DebugServiceClient:
+        return self._make_service(debug_pb2_connect.DebugServiceClient, **kwargs)
 
-    def shadow_link(self) -> shadow_link_pb2_connect.ShadowLinkServiceClient:
-        return self._make_service(shadow_link_pb2_connect.ShadowLinkServiceClient)
+    def shadow_link(
+        self, **kwargs: Any
+    ) -> shadow_link_pb2_connect.ShadowLinkServiceClient:
+        return self._make_service(
+            shadow_link_pb2_connect.ShadowLinkServiceClient, **kwargs
+        )
