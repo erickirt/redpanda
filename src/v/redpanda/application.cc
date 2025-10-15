@@ -1180,7 +1180,8 @@ void application::configure_admin_server(model::node_id node_id) {
               std::ref(_kafka_connections_service),
               controller->get_feature_table()));
           s.add_service(
-            std::make_unique<admin::internal::breakglass_service_impl>());
+            std::make_unique<admin::internal::breakglass_service_impl>(
+              controller.get()));
       })
       .get();
 }
