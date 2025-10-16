@@ -775,6 +775,7 @@ ss::future<kafka::error_code> fetcher::maybe_initialise_fetch_offsets(
               response_partition.partition_id,
               response_partition.offset);
             fetch_state.fetch_offset = response_partition.offset;
+            fetch_state.fetcher_epoch = next_epoch();
             fetch_state.high_watermark.reset();
             fetch_state.incremental_include = true;
         }
