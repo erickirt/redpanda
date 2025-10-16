@@ -77,6 +77,13 @@ public:
     ss::future<get_topic_state_reply>
       get_topic_state(get_topic_state_request, local_only = local_only::no);
 
+    /**
+     * Returns the partition of datalake coordinator topic that
+     * coordinates datalake tasks for this topic partitions.
+     */
+    std::optional<model::partition_id>
+    coordinator_partition(const model::topic&) const;
+
 private:
     using proto_t = datalake::coordinator::rpc::impl::
       datalake_coordinator_rpc_client_protocol;
@@ -102,13 +109,6 @@ private:
     auto process(req_t req, bool local_only);
 
     ss::future<bool> ensure_topic_exists();
-
-    /**
-     * Returns the partition of datalake coordinator topic that
-     * coordinates datalake tasks for this topic partitions.
-     */
-    std::optional<model::partition_id>
-    coordinator_partition(const model::topic&) const;
 
     ss::future<ensure_table_exists_reply> ensure_table_exists_locally(
       ensure_table_exists_request,
