@@ -59,11 +59,11 @@ class NetTunerTest(RedpandaTest):
         self.node.account.ssh("systemctl restart redpanda-tuner")
         self.node.account.ssh(f"rm -rf {NET_TUNER_CONFIG_FILE_PATH}")
 
-    def start_rp(self):
+    def start_rp(self, additional_args: str = ""):
         # Need to explicitly pass listener config otherwise RP will complain about 0.0.0.0 listeners
         self.redpanda.start_node_with_rpk(
             self.node,
-            additional_args=f"--rpc-addr={self.node.account.hostname} --kafka-addr=dnslistener://{self.node.account.hostname}",
+            additional_args=f"--rpc-addr={self.node.account.hostname} --kafka-addr=dnslistener://{self.node.account.hostname} {additional_args}",
             clean_node=False,
         )
 
@@ -223,6 +223,8 @@ class NetTunerTest(RedpandaTest):
         expected_interrupt_setup: ExpectedInterruptSetup,
         dedicated_cores: int,
         rps_rfs: bool = True,
+        additional_tune_args: list[str] = [],
+        additional_start_args: str = "",
     ):
         self.rpk.config_set(
             "rpk.cores_per_dedicated_interrupt_core", str(dedicated_cores)
@@ -231,9 +233,9 @@ class NetTunerTest(RedpandaTest):
         if not rps_rfs:
             self.rpk.config_set("rpk.allow_rps_rfs_tuner", "false")
 
-        self.rpk.tune("net", ["--mode", "dedicated"])
+        self.rpk.tune("net", ["--mode", "dedicated"] + additional_tune_args)
 
-        self.start_rp()
+        self.start_rp(additional_args=additional_start_args)
 
         self._test_interrupt_config(self.node, self.rpk, expected_interrupt_setup)
 
@@ -301,6 +303,30 @@ class AwsNetTunerTest(NetTunerTest):
         )
 
         self._test_tune_net_dedicated_core_auto_detect(expected_interrupt_setup, 4)
+
+    @cluster(num_nodes=1)
+    def test_tune_net_dedicated_1_different_tuner_path(self):
+        expected_interrupt_setup = self.ExpectedInterruptSetup(
+            interrupts_masks=["8"],
+            redpanda_cores={0, 1, 2},
+            rps_cpu_mask="7",
+            rps_cpu_flow_count=int(self.TARGET_RFS_TABLE_SIZE / 1),
+            rfs_table_size=self.TARGET_RFS_TABLE_SIZE,
+            rx_tx_queue_count=1,
+        )
+
+        # if we leak this it's fine as nothing else uses this path
+        alternative_path = "/tmp/redpanda_net_tuner_config_123"
+
+        self._test_tune_net_dedicated_core(
+            expected_interrupt_setup,
+            4,
+            additional_tune_args=["--tuner-config-path", alternative_path],
+            additional_start_args=f"--tuner-config-path={alternative_path}",
+        )
+
+        self.node.account.ssh(f"test -e {alternative_path}")
+        self.node.account.ssh(f"rm -rf {alternative_path}")
 
     @cluster(num_nodes=1)
     def test_tune_net_dedicated_1_core_no_rps_rfs(self):

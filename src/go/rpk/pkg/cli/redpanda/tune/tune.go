@@ -137,6 +137,7 @@ func addTunerParamsFlags(cmd *cobra.Command, tunerParams *factory.TunerParams) {
 	cmd.Flags().StringSliceVarP(&tunerParams.Nics, "nic", "n", nil, "Network Interface Controllers to tune")
 	cmd.Flags().StringSliceVarP(&tunerParams.Directories, "dirs", "r", nil, "List of *data* directories or places to store data (e.g. /var/vectorized/redpanda/); usually your XFS filesystem on an NVMe SSD device")
 	cmd.Flags().BoolVar(&tunerParams.RebootAllowed, "reboot-allowed", false, "Allow tuners to tune boot parameters and request system reboot")
+	cmd.Flags().StringVar(&tunerParams.NetConfigPath, "tuner-config-path", "", "Alternative path to where to write the net tuner config file to")
 }
 
 func tune(

@@ -51,6 +51,7 @@ func mockNetTunersFactory(
 		irq.NewCPUMasks(fs, hwlocCmd, exec),
 		exec,
 		proc,
+		"",
 	), nil
 }
 

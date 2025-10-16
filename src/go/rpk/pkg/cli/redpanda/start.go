@@ -129,6 +129,7 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 		wellKnownIo     string
 		mode            string
 	)
+	netTunerConfigFilePath := ""
 	sFlags := seastarFlags{}
 
 	cmd := &cobra.Command{
@@ -342,6 +343,7 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				cmd.Flags(),
 				!prestartCfg.checkEnabled,
 				resolveWellKnownIo,
+				netTunerConfigFilePath,
 			)
 			if err != nil {
 				return err
@@ -400,6 +402,7 @@ https://redpanda.com/feedback
 	f.BoolVar(&sFlags.overprovisioned, overprovisionedFlag, false, "Enable overprovisioning")
 	f.BoolVar(&sFlags.unsafeBypassFsync, unsafeBypassFsyncFlag, false, "Enable unsafe-bypass-fsync")
 	f.StringVar(&mode, modeFlag, "", "Mode sets well-known configuration properties for development or test environments; use --mode help for more info")
+	f.StringVar(&netTunerConfigFilePath, "tuner-config-path", "", "Alternative path to read the net tuner config file from (if exists)")
 
 	f.DurationVar(&timeout, "timeout", 10000*time.Millisecond, "The maximum time to wait for the checks and tune processes to complete (e.g. 300ms, 1.5s, 2h45m)")
 	for flag := range flagsMap(sFlags) {
@@ -456,17 +459,24 @@ func prestart(
 
 // Tries to read the tuner config file and extract the RedpandaCpuset from it.
 // Returns empty string in case no cpuset/file was found.
-func readTunerConfigCpuset(fs afero.Fs) (string, error) {
-	exists, err := afero.Exists(fs, network.NetTunerConfigFile)
+func readTunerConfigCpuset(fs afero.Fs, configFilePath string) (string, error) {
+	filePath := network.DefaultNetTunerConfigFile
+	if configFilePath != "" {
+		filePath = configFilePath
+	}
+	exists, err := afero.Exists(fs, filePath)
 	if err != nil {
 		return "", err
 	}
 
 	if !exists {
+		if filePath != network.DefaultNetTunerConfigFile {
+			return "", fmt.Errorf("--tuner-config-path specified but file %s not found", filePath)
+		}
 		return "", nil
 	}
 
-	content, err := afero.ReadFile(fs, network.NetTunerConfigFile)
+	content, err := afero.ReadFile(fs, filePath)
 	if err != nil {
 		return "", err
 	}
@@ -498,6 +508,7 @@ func buildRedpandaFlags(
 	flags *pflag.FlagSet,
 	skipChecks bool,
 	ioResolver func(*config.RedpandaYaml, bool) (*iotune.IoProperties, error),
+	netTunerConfigFilePath string,
 ) (*rp.RedpandaArgs, error) {
 	wellKnownIOSet := y.Rpk.Tuners.WellKnownIo != ""
 	ioPropsSet := flags.Changed(ioPropertiesFileFlag) || flags.Changed(ioPropertiesFlag)
@@ -512,7 +523,7 @@ func buildRedpandaFlags(
 	preserve := make(map[string]bool, 2)
 
 	// Check if tuner config file exists and read redpanda cpuset from it
-	tunerConfigCpuset, err := readTunerConfigCpuset(fs)
+	tunerConfigCpuset, err := readTunerConfigCpuset(fs, netTunerConfigFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tuner config file: %w", err)
 	}
