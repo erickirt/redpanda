@@ -311,15 +311,9 @@ void admin_server::register_debug_routes() {
           vlog(adminlog.info, "Request to get leaders info");
           using result_t = ss::httpd::debug_json::leader_info;
           using leaders = cluster::partition_leaders_table::leaders_info_t;
-          using cme
-            = cluster::partition_leaders_table::concurrent_modification_error;
-          return _metadata_cache.local()
-            .get_leaders()
-            .handle_exception_type([](const cme& ex) -> ss::future<leaders> {
-                throw ss::httpd::base_exception(
-                  ex.what(), ss::http::reply::status_type::service_unavailable);
-            })
-            .then([](leaders leaders_info) {
+
+          return _metadata_cache.local().get_leaders().then(
+            [](leaders leaders_info) {
                 return ss::make_ready_future<ss::json::json_return_type>(
                   ss::json::stream_range_as_array(
                     lw_shared_container(std::move(leaders_info)),

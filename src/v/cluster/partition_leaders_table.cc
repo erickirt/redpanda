@@ -236,10 +236,6 @@ void partition_leaders_table::do_update_partition_leader(
         if (!leader_id) {
             ++_leaderless_partition_count;
         }
-        /**
-         * We only increment version if any of the maps content was modified
-         */
-        ++_version;
     }
 
     vlog(
@@ -366,7 +362,6 @@ ss::future<> partition_leaders_table::remove_leader(
             _topic_leaders.erase(t_it);
             ++_topic_map_version;
         }
-        ++_version;
     }
 }
 
@@ -376,7 +371,6 @@ ss::future<> partition_leaders_table::reset() {
     auto u = co_await _mutex.get_units();
     _topic_leaders.clear();
     _leaderless_partition_count = 0;
-    ++_version;
     ++_topic_map_version;
 }
 
@@ -385,22 +379,18 @@ partition_leaders_table::get_leaders() {
     auto holder = _gate.hold();
     auto u = co_await _mutex.get_units();
     leaders_info_t ans;
-    ans.reserve(_topic_leaders.size());
-    auto version_snapshot = _version;
     ssx::async_counter counter;
     for (auto& [tp_ns, partition_leaders] : _topic_leaders) {
         co_await ssx::async_for_each_counter(
           counter,
           partition_leaders.begin(),
           partition_leaders.end(),
-          [this, &tp_ns, &ans, version_snapshot](
-            const partition_leaders::value_type& p) mutable {
+          [&tp_ns, &ans](const partition_leaders::value_type& p) mutable {
               const auto& [p_id, leader_info] = p;
               /**
                * Modification validation must happen before accessing the
                * element as previous iteration might have yield
                */
-              throw_if_modified(version_snapshot);
               leader_info_t info{
                 .tp_ns = tp_ns,
                 .pid = model::partition_id(p_id),
@@ -412,7 +402,6 @@ partition_leaders_table::get_leaders() {
               };
               ans.push_back(std::move(info));
           });
-        throw_if_modified(version_snapshot);
     }
     co_return ans;
 }
