@@ -51,6 +51,7 @@ func mockNetTunersFactory(
 		irq.NewCPUMasks(fs, hwlocCmd, exec),
 		exec,
 		proc,
+		"",
 	), nil
 }
 
@@ -227,7 +228,7 @@ func TestYaml(t *testing.T) {
     interrupts_cpuset_size: 1
 `
 
-	var cfg tuners.NetTunerConfig
+	var cfg tuners.NodeTunerState
 	err := yaml.Unmarshal([]byte(yml), &cfg)
 	require.NoError(t, err)
 

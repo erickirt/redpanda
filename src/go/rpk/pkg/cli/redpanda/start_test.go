@@ -1787,7 +1787,7 @@ func Test_buildRedpandaFlags(t *testing.T) {
 			// We can safely pass 'skipCheck:true' to buildRedpandaFlags since
 			// this is only used for the ioResolver function, and we are mocking
 			// it.
-			rpArgs, err := buildRedpandaFlags(fs, tt.args.y, tt.args.args, tt.args.sFlags, cmdFlag, true, ioResolver)
+			rpArgs, err := buildRedpandaFlags(fs, tt.args.y, tt.args.args, tt.args.sFlags, cmdFlag, true, ioResolver, "")
 			if tt.expErr {
 				require.Error(t, err)
 				return
