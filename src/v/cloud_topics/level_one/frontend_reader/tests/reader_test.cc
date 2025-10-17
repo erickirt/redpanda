@@ -12,7 +12,7 @@
 #include "cloud_topics/level_one/common/fake_io.h"
 #include "cloud_topics/level_one/common/object.h"
 #include "cloud_topics/level_one/common/object_id.h"
-#include "cloud_topics/level_one/frontend_reader/reader.h"
+#include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/frontend_reader/tests/l1_reader_fixture.h"
 #include "cloud_topics/level_one/metastore/simple_metastore.h"
 #include "cloud_topics/log_reader_config.h"

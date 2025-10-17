@@ -3,10 +3,10 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 redpanda_cc_library(
     name = "reader",
     srcs = [
-        "reader.cc",
+        "level_one_reader.cc",
     ],
     hdrs = [
-        "reader.h",
+        "level_one_reader.h",
     ],
     visibility = ["//visibility:public"],
     deps = [
