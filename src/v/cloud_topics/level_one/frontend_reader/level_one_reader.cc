@@ -48,9 +48,18 @@ level_one_log_reader_impl::level_one_log_reader_impl(
     vlog(_log.debug, "New reader created {}", _config);
 }
 
+/*
+ * Error handling
+ * ==============
+ *
+ * Exceptions should not be used unless you intend for the exception to be
+ * propogated back to the user of a model::record_batch_reader. In this case an
+ * exception that carries a string message can be useful for debugging.
+ */
 ss::future<model::record_batch_reader::storage_t>
 level_one_log_reader_impl::do_load_slice(
   model::timeout_clock::time_point deadline) {
+    try {
     chunked_circular_buffer<model::record_batch> res;
 
     // First switch: ensure batches are materialized or the reader
@@ -93,6 +102,12 @@ level_one_log_reader_impl::do_load_slice(
         break;
     }
     co_return res;
+    } catch (...) {
+        vlog(
+          _log.error, "Reader caught exception: {}", std::current_exception());
+        _state = state::end_of_stream;
+        throw;
+    }
 }
 
 ss::future<std::optional<level_one_log_reader_impl::current_object>>
@@ -146,12 +161,6 @@ level_one_log_reader_impl::lookup_object_for_offset(
             co_return std::nullopt;
 
         default:
-            vlog(
-              _log.error,
-              "Failed to query metastore offset {}: {}",
-              offset,
-              response.error());
-            _state = state::end_of_stream;
             throw std::runtime_error(_log.format(
               "Metastore query failed offset {}: {}",
               offset,
