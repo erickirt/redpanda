@@ -49,7 +49,7 @@ LIFECYCLE_STATE_PURGED: LifecycleState.ValueType
 global___LifecycleState = LifecycleState
 
 @typing.final
-class CoordinatorGetStateRequest(google.protobuf.message.Message):
+class GetCoordinatorStateRequest(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     TOPICS_FILTER_FIELD_NUMBER: builtins.int
 
@@ -64,10 +64,29 @@ class CoordinatorGetStateRequest(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['topics_filter', b'topics_filter']) -> None:
         ...
-global___CoordinatorGetStateRequest = CoordinatorGetStateRequest
+global___GetCoordinatorStateRequest = GetCoordinatorStateRequest
 
 @typing.final
-class CoordinatorGetStateResponse(google.protobuf.message.Message):
+class GetCoordinatorStateResponse(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    STATE_FIELD_NUMBER: builtins.int
+
+    @property
+    def state(self) -> global___CoordinatorState:
+        ...
+
+    def __init__(self, *, state: global___CoordinatorState | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['state', b'state']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['state', b'state']) -> None:
+        ...
+global___GetCoordinatorStateResponse = GetCoordinatorStateResponse
+
+@typing.final
+class CoordinatorState(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     @typing.final
@@ -100,7 +119,7 @@ class CoordinatorGetStateResponse(google.protobuf.message.Message):
 
     def ClearField(self, field_name: typing.Literal['topic_states', b'topic_states']) -> None:
         ...
-global___CoordinatorGetStateResponse = CoordinatorGetStateResponse
+global___CoordinatorState = CoordinatorState
 
 @typing.final
 class DataFile(google.protobuf.message.Message):
@@ -133,25 +152,25 @@ class TranslatedOffsetRange(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
     START_OFFSET_FIELD_NUMBER: builtins.int
     LAST_OFFSET_FIELD_NUMBER: builtins.int
-    FILES_FIELD_NUMBER: builtins.int
+    DATA_FILES_FIELD_NUMBER: builtins.int
     DLQ_FILES_FIELD_NUMBER: builtins.int
-    KAFKA_BYTES_PROCESSED_FIELD_NUMBER: builtins.int
+    KAFKA_PROCESSED_BYTES_FIELD_NUMBER: builtins.int
     start_offset: builtins.int
     last_offset: builtins.int
-    kafka_bytes_processed: builtins.int
+    kafka_processed_bytes: builtins.int
 
     @property
-    def files(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___DataFile]:
+    def data_files(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___DataFile]:
         ...
 
     @property
     def dlq_files(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[global___DataFile]:
         ...
 
-    def __init__(self, *, start_offset: builtins.int=..., last_offset: builtins.int=..., files: collections.abc.Iterable[global___DataFile] | None=..., dlq_files: collections.abc.Iterable[global___DataFile] | None=..., kafka_bytes_processed: builtins.int=...) -> None:
+    def __init__(self, *, start_offset: builtins.int=..., last_offset: builtins.int=..., data_files: collections.abc.Iterable[global___DataFile] | None=..., dlq_files: collections.abc.Iterable[global___DataFile] | None=..., kafka_processed_bytes: builtins.int=...) -> None:
         ...
 
-    def ClearField(self, field_name: typing.Literal['dlq_files', b'dlq_files', 'files', b'files', 'kafka_bytes_processed', b'kafka_bytes_processed', 'last_offset', b'last_offset', 'start_offset', b'start_offset']) -> None:
+    def ClearField(self, field_name: typing.Literal['data_files', b'data_files', 'dlq_files', b'dlq_files', 'kafka_processed_bytes', b'kafka_processed_bytes', 'last_offset', b'last_offset', 'start_offset', b'start_offset']) -> None:
         ...
 global___TranslatedOffsetRange = TranslatedOffsetRange
 
@@ -226,18 +245,18 @@ class TopicState(google.protobuf.message.Message):
     REVISION_FIELD_NUMBER: builtins.int
     PARTITION_STATES_FIELD_NUMBER: builtins.int
     LIFECYCLE_STATE_FIELD_NUMBER: builtins.int
-    TOTAL_KAFKA_BYTES_PROCESSED_FIELD_NUMBER: builtins.int
+    TOTAL_KAFKA_PROCESSED_BYTES_FIELD_NUMBER: builtins.int
     revision: builtins.int
     lifecycle_state: global___LifecycleState.ValueType
-    total_kafka_bytes_processed: builtins.int
+    total_kafka_processed_bytes: builtins.int
 
     @property
     def partition_states(self) -> google.protobuf.internal.containers.MessageMap[builtins.int, global___PartitionState]:
         ...
 
-    def __init__(self, *, revision: builtins.int=..., partition_states: collections.abc.Mapping[builtins.int, global___PartitionState] | None=..., lifecycle_state: global___LifecycleState.ValueType=..., total_kafka_bytes_processed: builtins.int=...) -> None:
+    def __init__(self, *, revision: builtins.int=..., partition_states: collections.abc.Mapping[builtins.int, global___PartitionState] | None=..., lifecycle_state: global___LifecycleState.ValueType=..., total_kafka_processed_bytes: builtins.int=...) -> None:
         ...
 
-    def ClearField(self, field_name: typing.Literal['lifecycle_state', b'lifecycle_state', 'partition_states', b'partition_states', 'revision', b'revision', 'total_kafka_bytes_processed', b'total_kafka_bytes_processed']) -> None:
+    def ClearField(self, field_name: typing.Literal['lifecycle_state', b'lifecycle_state', 'partition_states', b'partition_states', 'revision', b'revision', 'total_kafka_processed_bytes', b'total_kafka_processed_bytes']) -> None:
         ...
 global___TopicState = TopicState

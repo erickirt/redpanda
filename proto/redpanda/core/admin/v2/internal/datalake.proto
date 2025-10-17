@@ -21,23 +21,30 @@ import "proto/redpanda/core/pbgen/rpc.proto";
 
 option (redpanda.core.pbgen.cpp_namespace) = "proto::admin";
 
+// The Datalake subsystem manages everything related to Iceberg Topics that is
+// Iceberg-agnostic (e.g. offset tracking, pending parquet files).
 service DatalakeService {
-    // Gets the coordinator state for the given topics.
-    rpc CoordinatorGetState(CoordinatorGetStateRequest)
-        returns (CoordinatorGetStateResponse) {
+    // The coordinator is a system topic that manages data that has yet to be
+    // committed to Iceberg. Gets the coordinator state for the given topics.
+    rpc GetCoordinatorState(GetCoordinatorStateRequest)
+        returns (GetCoordinatorStateResponse) {
         option (redpanda.core.pbgen.rpc) = {
             authz: SUPERUSER
         };
     }
 }
 
-message CoordinatorGetStateRequest {
+message GetCoordinatorStateRequest {
     // Names of topics whose state to return. If empty, returns state for all
     // topics.
     repeated string topics_filter = 1;
 }
 
-message CoordinatorGetStateResponse {
+message GetCoordinatorStateResponse {
+    CoordinatorState state = 1;
+}
+
+message CoordinatorState {
     map<string, TopicState> topic_states = 1;
 }
 
@@ -53,9 +60,9 @@ message DataFile {
 message TranslatedOffsetRange {
     int64 start_offset = 1;
     int64 last_offset = 2;
-    repeated DataFile files = 3;
+    repeated DataFile data_files = 3;
     repeated DataFile dlq_files = 4;
-    uint64 kafka_bytes_processed = 5;
+    uint64 kafka_processed_bytes = 5;
 }
 
 message PendingEntry {
@@ -79,5 +86,5 @@ message TopicState {
     int64 revision = 1;
     map<int32, PartitionState> partition_states = 2;
     LifecycleState lifecycle_state = 3;
-    uint64 total_kafka_bytes_processed = 4;
+    uint64 total_kafka_processed_bytes = 4;
 }

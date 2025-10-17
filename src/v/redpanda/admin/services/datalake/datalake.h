@@ -12,7 +12,7 @@
 #pragma once
 
 #include "datalake/coordinator/frontend.h"
-#include "proto/redpanda/core/admin/v2/datalake.proto.h"
+#include "proto/redpanda/core/admin/v2/internal/datalake.proto.h"
 #include "redpanda/admin/proxy/client.h"
 
 namespace admin {
@@ -23,10 +23,10 @@ public:
       admin::proxy::client proxy_client,
       ss::sharded<datalake::coordinator::frontend>* coordinator_fe);
 
-    ss::future<proto::admin::coordinator_get_state_response>
-      coordinator_get_state(
+    ss::future<proto::admin::get_coordinator_state_response>
+      get_coordinator_state(
         serde::pb::rpc::context,
-        proto::admin::coordinator_get_state_request) override;
+        proto::admin::get_coordinator_state_request) override;
 
 private:
     admin::proxy::client _proxy_client;

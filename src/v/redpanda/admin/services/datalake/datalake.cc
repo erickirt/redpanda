@@ -42,17 +42,17 @@ to_proto(const datalake::coordinator::translated_offset_range& range) {
     proto::admin::translated_offset_range pb_range;
     pb_range.set_start_offset(range.start_offset());
     pb_range.set_last_offset(range.last_offset());
-    chunked_vector<proto::admin::data_file> pb_files;
+    chunked_vector<proto::admin::data_file> pb_data_files;
     for (const auto& file : range.files) {
-        pb_files.emplace_back(to_proto(file));
+        pb_data_files.emplace_back(to_proto(file));
     }
-    pb_range.set_files(std::move(pb_files));
+    pb_range.set_data_files(std::move(pb_data_files));
     chunked_vector<proto::admin::data_file> pb_dlq_files;
     for (const auto& dlq_file : range.dlq_files) {
         pb_dlq_files.emplace_back(to_proto(dlq_file));
     }
     pb_range.set_dlq_files(std::move(pb_dlq_files));
-    pb_range.set_kafka_bytes_processed(range.kafka_bytes_processed);
+    pb_range.set_kafka_processed_bytes(range.kafka_bytes_processed);
     return pb_range;
 }
 
@@ -102,9 +102,10 @@ to_proto(const datalake::coordinator::topic_state& state) {
     }
     pb_state.set_partition_states(std::move(pb_partition_states));
     pb_state.set_lifecycle_state(to_proto(state.lifecycle_state));
-    pb_state.set_total_kafka_bytes_processed(state.total_kafka_bytes_processed);
+    pb_state.set_total_kafka_processed_bytes(state.total_kafka_bytes_processed);
     return pb_state;
 }
+
 } // anonymous namespace
 
 namespace admin {
@@ -115,9 +116,9 @@ datalake_service_impl::datalake_service_impl(
   : _proxy_client(std::move(proxy_client))
   , _coordinator_fe(coordinator_fe) {}
 
-ss::future<proto::admin::coordinator_get_state_response>
-datalake_service_impl::coordinator_get_state(
-  serde::pb::rpc::context, proto::admin::coordinator_get_state_request req) {
+ss::future<proto::admin::get_coordinator_state_response>
+datalake_service_impl::get_coordinator_state(
+  serde::pb::rpc::context, proto::admin::get_coordinator_state_request req) {
     if (!_coordinator_fe->local_is_initialized()) {
         throw serde::pb::rpc::unavailable_exception(
           "Datalake coordinator frontend not initialized");
@@ -135,6 +136,7 @@ datalake_service_impl::coordinator_get_state(
                 "Datalake coordinator couldn't get coordinator partition "
                 "count"));
         }
+        // There is no topics filter, make a request for every partition.
         for (auto p = 0; p < partition_count_opt.value(); ++p) {
             topics_filter_by_partition.emplace(
               model::partition_id{p}, chunked_vector<model::topic>());
@@ -179,12 +181,14 @@ datalake_service_impl::coordinator_get_state(
     }
 
     // Convert to protobuf response.
-    proto::admin::coordinator_get_state_response response;
+    proto::admin::get_coordinator_state_response response;
     chunked_hash_map<ss::sstring, proto::admin::topic_state> pb_topic_states;
     for (const auto& [topic, state] : topic_states) {
         pb_topic_states.emplace(topic(), to_proto(state));
     }
-    response.set_topic_states(std::move(pb_topic_states));
+    proto::admin::coordinator_state state;
+    state.set_topic_states(std::move(pb_topic_states));
+    response.set_state(std::move(state));
 
     co_return response;
 }

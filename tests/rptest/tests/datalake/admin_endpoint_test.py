@@ -50,7 +50,7 @@ class DatalakeAdminEndpointTest(RedpandaTest):
         cloud_storage_type=[CloudStorageType.S3],
         catalog_type=[CatalogType.REST_JDBC],
     )
-    def test_coordinator_get_state(
+    def test_get_coordinator_state(
         self, cloud_storage_type: CloudStorageType, catalog_type: CatalogType
     ):
         """
@@ -76,31 +76,31 @@ class DatalakeAdminEndpointTest(RedpandaTest):
             dl.wait_for_translation(topic1, msg_count=count)
             dl.wait_for_translation(topic2, msg_count=count)
 
-            # Call the coordinator_get_state admin endpoint. First with a
+            # Call the get_coordinator_state admin endpoint. First with a
             # topics filter.
             admin: admin_v2.Admin = admin_v2.Admin(self.redpanda)
-            request = admin_v2.datalake_pb.CoordinatorGetStateRequest(
+            request = admin_v2.datalake_pb.GetCoordinatorStateRequest(
                 topics_filter=[topic1]
             )
-            response: admin_v2.datalake_pb.CoordinatorGetStateResponse = (
-                admin.datalake().coordinator_get_state(request)
+            response: admin_v2.datalake_pb.GetCoordinatorStateResponse = (
+                admin.datalake().get_coordinator_state(request)
             )
-            assert len(response.topic_states) == 1, (
-                f"Response should contain 2 topics: {response.topic_states}"
+            assert len(response.state.topic_states) == 1, (
+                f"Response should contain 2 topics: {response.state.topic_states}"
             )
 
             # Then get both topics (empty topics filter) and do some sanity
             # checks.
-            request = admin_v2.datalake_pb.CoordinatorGetStateRequest()
-            response: admin_v2.datalake_pb.CoordinatorGetStateResponse = (
-                admin.datalake().coordinator_get_state(request)
+            request = admin_v2.datalake_pb.GetCoordinatorStateRequest()
+            response: admin_v2.datalake_pb.GetCoordinatorStateResponse = (
+                admin.datalake().get_coordinator_state(request)
             )
 
-            assert len(response.topic_states) == 2, (
-                f"Response should contain 2 topics: {response.topic_states}"
+            assert len(response.state.topic_states) == 2, (
+                f"Response should contain 2 topics: {response.state.topic_states}"
             )
             topic_states: dict[str, admin_v2.datalake_pb.TopicState] = (
-                response.topic_states
+                response.state.topic_states
             )
 
             # Do some simple sanity checks about the state.
@@ -111,8 +111,8 @@ class DatalakeAdminEndpointTest(RedpandaTest):
             self.logger.debug(f"{topic1}: {t1_state}")
             self.logger.debug(f"{topic2}: {t2_state}")
             assert t1_state.revision != t2_state.revision
-            assert t1_state.total_kafka_bytes_processed >= 0
-            assert t2_state.total_kafka_bytes_processed >= 0
+            assert t1_state.total_kafka_processed_bytes >= 0
+            assert t2_state.total_kafka_processed_bytes >= 0
             assert (
                 t1_state.lifecycle_state
                 == admin_v2.datalake_pb.LifecycleState.LIFECYCLE_STATE_LIVE
@@ -151,7 +151,7 @@ class DatalakeAdminEndpointTest(RedpandaTest):
         cloud_storage_type=[CloudStorageType.S3],
         catalog_type=[CatalogType.REST_JDBC],
     )
-    def test_coordinator_get_state_pending(
+    def test_get_coordinator_state_pending(
         self, cloud_storage_type: CloudStorageType, catalog_type: CatalogType
     ):
         """
@@ -186,13 +186,16 @@ class DatalakeAdminEndpointTest(RedpandaTest):
                 Returns true iff there are pending entries for partition 0.
                 """
                 admin: admin_v2.Admin = admin_v2.Admin(self.redpanda)
-                request = admin_v2.datalake_pb.CoordinatorGetStateRequest()
-                response: admin_v2.datalake_pb.CoordinatorGetStateResponse = (
-                    admin.datalake().coordinator_get_state(request)
-                )
-                if topic not in response.topic_states:
+                request = admin_v2.datalake_pb.GetCoordinatorStateRequest()
+                try:
+                    response: admin_v2.datalake_pb.GetCoordinatorStateResponse = (
+                        admin.datalake().get_coordinator_state(request)
+                    )
+                except Exception as e:
                     return False
-                t_state = response.topic_states[topic]
+                if topic not in response.state.topic_states:
+                    return False
+                t_state = response.state.topic_states[topic]
                 self.logger.debug(f"{topic}: {t_state}")
                 if 0 not in t_state.partition_states:
                     return False
