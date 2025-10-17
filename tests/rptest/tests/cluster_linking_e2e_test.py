@@ -1249,6 +1249,41 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
         )
         self.verify()
 
+    @cluster(num_nodes=8)
+    def test_replication_with_truncated_topic(self):
+        topic = TopicSpec(name="source-topic", partition_count=1, replication_factor=3)
+        self.source_default_client().create_topic(topic)
+        # Populate some data
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.source_cluster.service,
+            topic=topic,
+            msg_size=4 * 1024,
+            msg_count=10000,
+            custom_node=self.preallocated_nodes,
+        )
+        self.source_cluster_rpk.trim_prefix(
+            topic="source-topic", offset=1000, partitions=[0]
+        )
+        self.create_link("test-link")
+        self.target_cluster.service.wait_until(
+            lambda: self.topic_exists_in_target(topic.name),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Topic {topic.name} not found in target cluster",
+        )
+        consumer = KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.target_cluster.service,
+            topic=topic.name,
+            group_name="test-group",
+            msg_size=4 * 1024,
+            readers=1,
+            continuous=True,
+        )
+        consumer.start()
+        consumer.wait_total_reads(count=9000, timeout_sec=60, backoff_sec=5)
+
 
 class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
     def create_source_consumer(self, topic, group_name="test_group", consumer_count=1):
