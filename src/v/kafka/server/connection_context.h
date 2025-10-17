@@ -52,7 +52,7 @@ namespace kafka {
 using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
 
 using closed_connections_t
-  = std::deque<ss::lw_shared_ptr<proto::admin::kafka_connection>>;
+  = std::deque<ss::lw_shared_ptr<const proto::admin::kafka_connection>>;
 
 class kafka_api_version_not_supported_exception : public std::runtime_error {
 public:

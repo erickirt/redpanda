@@ -862,9 +862,7 @@ proto::admin::kafka_connection connection_context::to_proto() const {
     res.set_uid(ssx::sformat("{}", _attributes.connection_id));
     res.set_listener_name(ss::sstring{listener()});
     auto conn_state = [this]() {
-        if (!_as.local_is_initialized()) {
-            return kafka_connection_state::closed;
-        } else if (_as.abort_requested()) {
+        if (!_as.local_is_initialized() || _as.abort_requested()) {
             return kafka_connection_state::aborting;
         }
         return kafka_connection_state::open;
