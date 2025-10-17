@@ -521,7 +521,6 @@ ss::future<compaction_result> disk_log_impl::segment_self_compact(
       *_readers_cache,
       _manager.resources(),
       _feature_table,
-      _kvstore,
       force_compaction);
 }
 
@@ -1132,8 +1131,7 @@ ss::future<compaction_result> disk_log_impl::do_compact_adjacent_segments(
             *_readers_cache,
             _manager.resources(),
             _feature_table,
-            _segment_rewrite_lock,
-            _kvstore);
+            _segment_rewrite_lock);
     } catch (const generation_id_mismatch_exception& e) {
         // Early abort
         vlog(gclog.info, "{}", e.what());
@@ -1648,8 +1646,7 @@ ss::future<> disk_log_impl::rewrite_segment_with_offset_map(
           *compacted_idx_writer,
           *_probe,
           storage::internal::should_apply_delta_time_offset(_feature_table),
-          _feature_table,
-          _kvstore);
+          _feature_table);
     } catch (...) {
         eptr = std::current_exception();
     }
@@ -4452,8 +4449,6 @@ ss::future<> disk_log_impl::copy_kvstore_state(
       ks, internal::start_offset_key(ntp));
     std::optional<iobuf> clean_segment = source_kvs.get(
       ks, internal::clean_segment_key(ntp));
-    std::optional<iobuf> max_removed_offset = source_kvs.get(
-      ks, internal::max_removed_offset_key(ntp));
 
     co_await storage.invoke_on(target_shard, [&](storage::api& api) {
         const auto ks = kvstore::key_space::storage;
@@ -4467,12 +4462,6 @@ ss::future<> disk_log_impl::copy_kvstore_state(
             write_futures.push_back(api.kvs().put(
               ks, internal::clean_segment_key(ntp), clean_segment->copy()));
         }
-        if (max_removed_offset) {
-            write_futures.push_back(api.kvs().put(
-              ks,
-              internal::max_removed_offset_key(ntp),
-              max_removed_offset->copy()));
-        }
         return ss::when_all_succeed(std::move(write_futures));
     });
 }
@@ -4482,8 +4471,7 @@ ss::future<> disk_log_impl::remove_kvstore_state(
     const auto ks = kvstore::key_space::storage;
     return ss::when_all_succeed(
              kvs.remove(ks, internal::start_offset_key(ntp)),
-             kvs.remove(ks, internal::clean_segment_key(ntp)),
-             kvs.remove(ks, internal::max_removed_offset_key(ntp)))
+             kvs.remove(ks, internal::clean_segment_key(ntp)))
       .discard_result();
 }
 
@@ -4578,10 +4566,6 @@ disk_log_impl::earliest_dirty_segment_ts() const {
         return std::nullopt;
     }
     return *std::ranges::min_element(dirty_segments_ts);
-}
-
-std::optional<model::offset> disk_log_impl::max_removed_offset() const {
-    return internal::read_max_removed_offset(_kvstore, config().ntp());
 }
 
 bool disk_log_impl::needs_compaction() const {

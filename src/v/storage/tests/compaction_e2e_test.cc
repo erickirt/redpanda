@@ -1470,16 +1470,10 @@ TEST_P(
     }
 
     if (wait_for_retention_ms) {
-        auto max_removed_pre_restart = log->max_removed_offset();
-        ASSERT_GT(max_removed_pre_restart, model::offset{0});
-
         restart(should_wipe::no);
         wait_for_leader(ntp).get();
         partition = app.partition_manager.local().get(ntp).get();
         log = partition->log().get();
-
-        auto max_removed_post_restart = log->max_removed_offset();
-        ASSERT_EQ(max_removed_pre_restart, max_removed_post_restart);
     }
 }
 

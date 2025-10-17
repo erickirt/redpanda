@@ -397,8 +397,7 @@ TEST(BuildOffsetMap, TestBuildSimpleMap) {
           pb,
           disk_log.readers(),
           disk_log.resources(),
-          feature_table,
-          b.storage().kvs())
+          feature_table)
           .get();
     }
 
@@ -526,7 +525,6 @@ TEST(DeduplicateSegmentsTest, TestBadReader) {
         disk_log.get_probe(),
         storage::internal::should_apply_delta_time_offset(b.feature_table()),
         b.feature_table(),
-        b.storage().kvs(),
         /*inject_reader_failure=*/true)
         .get(),
       std::runtime_error);

@@ -60,7 +60,6 @@ ss::future<index_state> deduplicate_segment(
   storage::probe& probe,
   offset_delta_time should_offset_delta_times,
   ss::sharded<features::feature_table>&,
-  kvstore&,
   bool inject_reader_failure = false);
 
 // Creates a reader for the segment starting from the last_indexed_offset
