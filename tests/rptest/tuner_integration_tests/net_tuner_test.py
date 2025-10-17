@@ -279,6 +279,24 @@ class AwsNetTunerTest(NetTunerTest):
         self._test_tune_net_mq(expected_interrupt_setup)
 
     @cluster(num_nodes=1)
+    def test_tune_net_dedicated_explicit_interfaces(self):
+        expected_interrupt_setup = self.ExpectedInterruptSetup(
+            interrupts_masks=["8"],
+            redpanda_cores={0, 1, 2},
+            rps_cpu_mask="7",
+            rps_cpu_flow_count=int(self.TARGET_RFS_TABLE_SIZE / 1),
+            rfs_table_size=self.TARGET_RFS_TABLE_SIZE,
+            rx_tx_queue_count=1,
+        )
+
+        # lo should be ignored
+        self._test_tune_net_dedicated_core(
+            expected_interrupt_setup,
+            4,
+            additional_tune_args=["--nic", "lo,ens5"],
+        )
+
+    @cluster(num_nodes=1)
     def test_tune_net_dedicated_1_core(self):
         expected_interrupt_setup = self.ExpectedInterruptSetup(
             interrupts_masks=["8"],

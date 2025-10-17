@@ -316,14 +316,21 @@ func (f *netTunersFactory) getNetTunerConfig(nic network.Nic, mode irq.Mode, cpu
 }
 
 func (f *netTunersFactory) NewInterruptConfigFileTuner(interfaces []string, mode irq.Mode, cpuMask string) Tunable {
-	if len(interfaces) == 0 {
+	// In the AllNicsSameMode we have already checked that the mode and
+	// config for all NICs is the same so we can just use the first non-virtual one.
+	var nic network.Nic
+	for _, iface := range interfaces {
+		maybeNic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, iface)
+		if maybeNic.IsHwInterface() || maybeNic.IsBondIface() {
+			nic = maybeNic
+			break
+		}
+	}
+
+	if nic == nil {
 		// No interfaces, nothing to do
 		return NewAggregatedTunable([]Tunable{})
 	}
-
-	// In the AllNicsSameMode we have already checked that the mode and
-	// config for all NICs is the same so we can just use the first here
-	nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, interfaces[0])
 
 	tunable := checkedTunable{}
 	tunable.tuneAction = func() TuneResult {
