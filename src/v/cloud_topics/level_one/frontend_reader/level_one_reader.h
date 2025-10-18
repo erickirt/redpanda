@@ -117,7 +117,11 @@ private:
     ss::future<model::record_batch_reader::storage_t>
       read_some(model::timeout_clock::time_point);
 
-    bool is_over_limit(size_t size) const;
+    /*
+     * Returns true if accepting the given number of bytes would cause the
+     * reader to exceed its configured bytes limit.
+     */
+    bool is_over_limit_with_bytes(size_t size) const;
 
     ss::future<> close_reader_safe(l1::object_reader&);
 

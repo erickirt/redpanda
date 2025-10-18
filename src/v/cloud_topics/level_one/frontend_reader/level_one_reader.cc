@@ -253,7 +253,7 @@ level_one_log_reader_impl::read_batches(l1::object_reader& reader) {
             }
 
             auto batch_size = batch.size_bytes();
-            if (is_over_limit(batch_size)) {
+            if (is_over_limit_with_bytes(batch_size)) {
                 set_end_of_stream();
                 break;
             }
@@ -353,7 +353,7 @@ bool level_one_log_reader_impl::is_end_of_stream() const {
     return _end_of_stream;
 }
 
-bool level_one_log_reader_impl::is_over_limit(size_t size) const {
+bool level_one_log_reader_impl::is_over_limit_with_bytes(size_t size) const {
     return (_config.strict_max_bytes || _config.bytes_consumed > 0)
            && (_config.bytes_consumed + size) > _config.max_bytes;
 }
