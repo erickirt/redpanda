@@ -73,6 +73,17 @@ ss::future<model::record_batch_reader::storage_t>
 level_one_log_reader_impl::read_some(
   model::timeout_clock::time_point deadline) {
     while (true) {
+        if (_next_offset > _config.max_offset) {
+            vlog(
+              _log.debug,
+              "L1 reader next_offset {} > max_offset {}: ending "
+              "stream",
+              _next_offset,
+              _config.max_offset);
+            set_end_of_stream();
+            co_return model::record_batch_reader::storage_t{};
+        }
+
         auto object = co_await lookup_object_for_offset(_next_offset, deadline);
         if (!object.has_value()) {
             set_end_of_stream();
@@ -109,16 +120,6 @@ level_one_log_reader_impl::read_some(
 ss::future<std::optional<level_one_log_reader_impl::object_info>>
 level_one_log_reader_impl::lookup_object_for_offset(
   kafka::offset offset, model::timeout_clock::time_point /*deadline*/) {
-    if (offset > _config.max_offset) {
-        vlog(
-          _log.debug,
-          "L1 reader next_offset {} > max_offset {}: ending "
-          "stream",
-          offset,
-          _config.max_offset);
-        co_return std::nullopt;
-    }
-
     ss::abort_source default_abort_source;
     auto* abort_source = _config.abort_source
                            ? &_config.abort_source.value().get()
