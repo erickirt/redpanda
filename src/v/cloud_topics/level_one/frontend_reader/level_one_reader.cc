@@ -79,19 +79,16 @@ level_one_log_reader_impl::do_load_slice(
             co_return batches;
         }
 
-        // Increment the next offset for the next metastore query.
-        // The offset is always incremented so the reader makes
-        // progress even if the offset range in the object is
-        // smaller than the metastore's metadata about the offset
-        // range covered by the object (because of, e.g. compaction).
-        auto last_offset = batches.empty()
-                             ? object
-                                 .transform([](const auto& obj) {
-                                     return obj.last_offset;
-                                 })
-                                 .value_or(_next_offset)
-                             : model::offset_cast(batches.back().last_offset());
-        _next_offset = kafka::next_offset(last_offset);
+        /*
+         * If we didn't read any batches, then start again past the end of the
+         * object. Otherwise start again after the range that was read.
+         */
+        if (batches.empty()) {
+            _next_offset = kafka::next_offset(object.value().last_offset);
+        } else {
+            _next_offset = kafka::next_offset(
+              model::offset_cast(batches.back().last_offset()));
+        }
 
         co_return batches;
 
