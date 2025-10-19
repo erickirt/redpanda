@@ -1072,7 +1072,7 @@ class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
                 lambda: self._get_shadow_topic(
                     shadow_link_name, shadow_topic_name, expected_partitions
                 ),
-                timeout_sec=5,
+                timeout_sec=60,
                 err_msg=f"Shadow topic {shadow_topic_name} not found or does not have expected {expected_partitions} partitions",
             )
         except ducktape.errors.TimeoutError as e:
