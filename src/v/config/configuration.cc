@@ -4286,10 +4286,11 @@ configuration::configuration()
   , iceberg_throttle_backlog_size_ratio(
       *this,
       "iceberg_throttle_backlog_size_ratio",
-      "Ration of the total backlog size to the disk space at which the "
-      "throttle to iceberg producers is applied",
+      "Ratio of total backlog size to disk space "
+      "that triggers throttling for Iceberg producers. "
+      "Set to `null` to disable throttling.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      0.3)
+      std::nullopt)
   , iceberg_delete(
       *this,
       "iceberg_delete",
