@@ -435,9 +435,9 @@ cluster_epoch_service<Clock>::do_update_epoch(ss::abort_source* as) {
     vlog(clusterlog.debug, "updated cluster epoch to {}", maybe_epoch);
     int64_t new_epoch = maybe_epoch.value();
     vassert(
-      new_epoch >= _cached_epoch,
-      "epochs must monotonically increase, but new epoch {} is less "
-      "than the cached epoch of {}",
+      new_epoch >= _cached_epoch && new_epoch >= 0,
+      "epochs must monotonically increase and be non-negative, but new "
+      "epoch {} is less than the cached epoch of {}",
       new_epoch,
       _cached_epoch);
     _cached_epoch_time = Clock::now();
@@ -465,7 +465,7 @@ cluster_epoch_service<Clock>::shard0_get_epoch(ssx::sharded_abort_source* as) {
     }
     ssx::composite_abort_source combined(as->local(), _abort_source);
     auto ec = co_await do_update_epoch(&combined.as());
-    if (!ec) {
+    if (ec) {
         co_return std::unexpected(ec);
     }
     co_return std::make_tuple(_cached_epoch, _cached_epoch_time);
