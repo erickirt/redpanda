@@ -230,6 +230,13 @@ controller_locked_task::controller_locked_task(
   link* link, ss::lowres_clock::duration run_interval, ss::sstring name)
   : task(link, run_interval, std::move(name)) {}
 
+model::task_status_report controller_locked_task::get_status_report() const {
+    auto report = task::get_status_report();
+    report.is_controller_locked_task
+      = model::task_status_report::is_controller_locked_task_t::yes;
+    return report;
+}
+
 bool controller_locked_task::should_start_impl(
   ss::shard_id shard, ::model::node_id current_node) const {
     return is_controller_leader(shard, current_node);
@@ -264,6 +271,10 @@ model::task_status_report task::get_status_report() const {
     report.task_name = name();
     report.task_state = get_state();
     report.task_state_reason = _last_state_change_response;
+    report.is_controller_locked_task
+      = model::task_status_report::is_controller_locked_task_t::no;
+    report.node_id = _link->self();
+    report.shard = ss::this_shard_id();
     return report;
 }
 
