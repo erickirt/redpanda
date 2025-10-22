@@ -399,10 +399,7 @@ func (f *netCheckersFactory) NewSynBacklogChecker() Checker {
 func isSet(
 	nic network.Nic, hwCheckFunction func(network.Nic) (bool, error),
 ) (bool, error) {
-	if nic.IsHwInterface() {
-		zap.L().Sugar().Debugf("'%s' is HW interface", nic.Name())
-		return hwCheckFunction(nic)
-	}
+	// Some HW interfaces might still be bond interfaces like hv_netvsc
 	if nic.IsBondIface() {
 		zap.L().Sugar().Debugf("'%s' is bond interface", nic.Name())
 		slaves, err := nic.Slaves()
@@ -418,6 +415,12 @@ func isSet(
 				return false, nil
 			}
 		}
+
+		return true, nil
+	}
+	if nic.IsHwInterface() {
+		zap.L().Sugar().Debugf("'%s' is HW interface", nic.Name())
+		return hwCheckFunction(nic)
 	}
 	return true, nil
 }

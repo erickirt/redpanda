@@ -653,10 +653,7 @@ func (f *netTunersFactory) tuneNonVirtualInterfaces(
 func tuneInterface(
 	nic network.Nic, tuneAction func(network.Nic) TuneResult,
 ) TuneResult {
-	if nic.IsHwInterface() {
-		return tuneAction(nic)
-	}
-
+	// Need to check bond interface first as some HW interfaces might also be bonds
 	if nic.IsBondIface() {
 		slaves, err := nic.Slaves()
 		if err != nil {
@@ -665,6 +662,10 @@ func tuneInterface(
 		for _, slave := range slaves {
 			return tuneInterface(slave, tuneAction)
 		}
+	}
+
+	if nic.IsHwInterface() {
+		return tuneAction(nic)
 	}
 
 	return NewTuneResult(false)
