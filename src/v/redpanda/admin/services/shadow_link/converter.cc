@@ -37,8 +37,10 @@ using proto::admin::shadow_link;
 using proto::admin::shadow_link_client_options;
 using proto::admin::shadow_link_configurations;
 using proto::admin::shadow_link_status;
+using proto::admin::shadow_link_task_status;
 using proto::admin::shadow_topic;
 using proto::admin::shadow_topic_status;
+using proto::admin::task_state;
 using proto::admin::topic_metadata_sync_options;
 using proto::admin::topic_metadata_sync_options_earliest_offset;
 using proto::admin::topic_metadata_sync_options_latest_offset;
@@ -983,6 +985,44 @@ chunked_vector<shadow_topic> create_shadow_topics(
     return shadow_topics;
 }
 
+task_state convert_task_state(cluster_link::model::task_state s) {
+    switch (s) {
+    case cluster_link::model::task_state::active:
+        return task_state::active;
+    case cluster_link::model::task_state::paused:
+        return task_state::paused;
+    case cluster_link::model::task_state::link_unavailable:
+        return task_state::link_unavailable;
+    case cluster_link::model::task_state::stopped:
+        return task_state::not_running;
+    case cluster_link::model::task_state::faulted:
+        return task_state::faulted;
+    }
+}
+
+chunked_vector<shadow_link_task_status> create_task_status(
+  const cluster_link::model::shadow_link_status_report& status_report) {
+    chunked_vector<shadow_link_task_status> task_status;
+    task_status.reserve(status_report.task_status_reports.size());
+
+    for (const auto& [task_name, statuses] :
+         status_report.task_status_reports) {
+        std::ranges::transform(
+          statuses, std::back_inserter(task_status), [](const auto& status) {
+              shadow_link_task_status task_status;
+              task_status.set_name(ss::sstring{status.task_name});
+              task_status.set_state(convert_task_state(status.task_state));
+              task_status.set_reason(ss::sstring{status.task_state_reason});
+              task_status.set_broker_id(status.node_id);
+              task_status.set_shard(status.shard);
+
+              return task_status;
+          });
+    }
+
+    return task_status;
+}
+
 shadow_link_status create_shadow_link_status(
   const cluster_link::model::metadata& md,
   const cluster_link::model::shadow_link_status_report& status_report) {
@@ -990,6 +1030,7 @@ shadow_link_status create_shadow_link_status(
 
     status.set_state(convert_link_status(md.state.status));
     status.set_shadow_topics(create_shadow_topics(md.state, status_report));
+    status.set_task_statuses(create_task_status(status_report));
 
     chunked_vector<ss::sstring> properties_synced;
     auto props = md.configuration.topic_metadata_mirroring_cfg
