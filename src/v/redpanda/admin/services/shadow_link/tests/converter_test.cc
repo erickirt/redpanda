@@ -10,7 +10,9 @@
  */
 
 #include "cluster_link/model/types.h"
+#include "crypto/crypto.h"
 #include "redpanda/admin/services/shadow_link/converter.h"
+#include "utils/base64.h"
 
 #include <gtest/gtest.h>
 
@@ -797,7 +799,10 @@ TEST(converter_test, metadata_to_shadow_link_tls_value) {
     ASSERT_TRUE(tls_settings.has_tls_pem_settings());
     const auto& tls_value_settings = tls_settings.get_tls_pem_settings();
     EXPECT_EQ(tls_value_settings.get_ca(), ca);
-    EXPECT_EQ(tls_value_settings.get_key(), key);
+    EXPECT_EQ(tls_value_settings.get_key(), "");
+    EXPECT_EQ(
+      tls_value_settings.get_key_fingerprint(),
+      bytes_to_base64(crypto::digest(crypto::digest_type::SHA256, key)));
     EXPECT_EQ(tls_value_settings.get_cert(), cert);
 }
 

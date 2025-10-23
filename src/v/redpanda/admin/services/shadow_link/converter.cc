@@ -12,6 +12,8 @@
 #include "redpanda/admin/services/shadow_link/converter.h"
 
 #include "cluster_link/model/types.h"
+#include "crypto/crypto.h"
+#include "utils/base64.h"
 
 #include <algorithm>
 #include <optional>
@@ -578,12 +580,16 @@ struct tls_visitor {
                 "tls_pem_settings");
           },
           [&key, &cert](tlspem_settings& pem_settings) {
-              pem_settings.set_key(ss::sstring{key()});
+              auto key_digest = bytes_to_base64(
+                crypto::digest(crypto::digest_type::SHA256, key()));
+              pem_settings.set_key_fingerprint(std::move(key_digest));
               pem_settings.set_cert(ss::sstring{cert()});
           },
           [this, &key, &cert](std::monostate) {
               tlspem_settings pem_settings;
-              pem_settings.set_key(ss::sstring{key()});
+              auto key_digest = bytes_to_base64(
+                crypto::digest(crypto::digest_type::SHA256, key()));
+              pem_settings.set_key_fingerprint(std::move(key_digest));
               pem_settings.set_cert(ss::sstring{cert()});
               _tls_settings->set_tls_pem_settings(std::move(pem_settings));
           });
