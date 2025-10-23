@@ -49,6 +49,8 @@ public:
     get_partition_offsets_report(const ::model::ntp&) const;
 
 private:
+    static constexpr auto start_offset_synch_interval = std::chrono::seconds{
+      30};
     ss::future<> do_start_replicator(::model::ntp, ::model::term_id);
     ss::future<>
       do_stop_replicator(::model::ntp, std::optional<::model::term_id>);
@@ -63,6 +65,7 @@ private:
     std::unique_ptr<link_configuration_provider> _config_provider;
     std::unique_ptr<data_source_factory> _source_factory;
     std::unique_ptr<data_sink_factory> _sink_factory;
+    ss::future<> maybe_sync_start_offsets();
     ssx::work_queue _queue;
     chunked_hash_map<::model::ntp, ::model::term_id> _pending_starts;
     chunked_hash_map<::model::ntp, std::optional<::model::term_id>>

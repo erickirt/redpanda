@@ -71,6 +71,7 @@ redpanda_cc_library(
         "link_replication_mgr.h",
     ],
     implementation_deps = [
+        "//src/v/ssx:async_algorithm",
         "//src/v/ssx:future_util",
     ],
     visibility = ["//src/v/cluster_link:__subpackages__"],
