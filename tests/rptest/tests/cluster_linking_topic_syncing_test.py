@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from rptest.clients.admin.proto.redpanda.core.admin.v2 import shadow_link_pb2
+from rptest.clients.admin.proto.redpanda.core.common.v1 import tls_pb2
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
@@ -444,9 +445,9 @@ class ClusterLinkingTopicSyncingWithTlsFiles(ClusterLinkingTopicSyncingTestBase)
         self.logger.debug("Adding TLS files to link")
 
         shadow_link.configurations.client_options.tls_settings.CopyFrom(
-            shadow_link_pb2.TLSSettings(
+            tls_pb2.TLSSettings(
                 enabled=True,
-                tls_file_settings=shadow_link_pb2.TLSFileSettings(
+                tls_file_settings=tls_pb2.TLSFileSettings(
                     ca_path=self.redpanda.TLS_CA_CRT_FILE,
                     key_path=self.redpanda.TLS_SERVER_KEY_FILE,
                     cert_path=self.redpanda.TLS_SERVER_CRT_FILE,
@@ -519,9 +520,9 @@ class ClusterLinkingTopicSyncingWithTlsValues(ClusterLinkingTopicSyncingTestBase
         self.logger.debug(f"key: {key_content}")
 
         shadow_link.configurations.client_options.tls_settings.CopyFrom(
-            shadow_link_pb2.TLSSettings(
+            tls_pb2.TLSSettings(
                 enabled=True,
-                tls_pem_settings=shadow_link_pb2.TLSPEMSettings(
+                tls_pem_settings=tls_pb2.TLSPEMSettings(
                     ca=ca_content, key=key_content, cert=cert_content
                 ),
             )

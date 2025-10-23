@@ -651,14 +651,14 @@ class ShadowLinkClientOptions(google.protobuf.message.Message):
         """The bootstrap servers to use"""
 
     @property
-    def tls_settings(self) -> global___TLSSettings:
+    def tls_settings(self) -> proto.redpanda.core.common.v1.tls_pb2.TLSSettings:
         """TLS settings"""
 
     @property
     def authentication_configuration(self) -> global___AuthenticationConfiguration:
         """Authentication settings"""
 
-    def __init__(self, *, bootstrap_servers: collections.abc.Iterable[builtins.str] | None=..., client_id: builtins.str=..., source_cluster_id: builtins.str=..., tls_settings: global___TLSSettings | None=..., authentication_configuration: global___AuthenticationConfiguration | None=..., metadata_max_age_ms: builtins.int=..., effective_metadata_max_age_ms: builtins.int=..., connection_timeout_ms: builtins.int=..., effective_connection_timeout_ms: builtins.int=..., retry_backoff_ms: builtins.int=..., effective_retry_backoff_ms: builtins.int=..., fetch_wait_max_ms: builtins.int=..., effective_fetch_wait_max_ms: builtins.int=..., fetch_min_bytes: builtins.int=..., effective_fetch_min_bytes: builtins.int=..., fetch_max_bytes: builtins.int=..., effective_fetch_max_bytes: builtins.int=..., fetch_partition_max_bytes: builtins.int=..., effective_fetch_partition_max_bytes: builtins.int=...) -> None:
+    def __init__(self, *, bootstrap_servers: collections.abc.Iterable[builtins.str] | None=..., client_id: builtins.str=..., source_cluster_id: builtins.str=..., tls_settings: proto.redpanda.core.common.v1.tls_pb2.TLSSettings | None=..., authentication_configuration: global___AuthenticationConfiguration | None=..., metadata_max_age_ms: builtins.int=..., effective_metadata_max_age_ms: builtins.int=..., connection_timeout_ms: builtins.int=..., effective_connection_timeout_ms: builtins.int=..., retry_backoff_ms: builtins.int=..., effective_retry_backoff_ms: builtins.int=..., fetch_wait_max_ms: builtins.int=..., effective_fetch_wait_max_ms: builtins.int=..., fetch_min_bytes: builtins.int=..., effective_fetch_min_bytes: builtins.int=..., fetch_max_bytes: builtins.int=..., effective_fetch_max_bytes: builtins.int=..., fetch_partition_max_bytes: builtins.int=..., effective_fetch_partition_max_bytes: builtins.int=...) -> None:
         ...
 
     def HasField(self, field_name: typing.Literal['_authentication_configuration', b'_authentication_configuration', '_tls_settings', b'_tls_settings', 'authentication_configuration', b'authentication_configuration', 'tls_settings', b'tls_settings']) -> builtins.bool:
@@ -901,40 +901,6 @@ class SecuritySettingsSyncOptions(google.protobuf.message.Message):
 global___SecuritySettingsSyncOptions = SecuritySettingsSyncOptions
 
 @typing.final
-class TLSSettings(google.protobuf.message.Message):
-    """TLS settings"""
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
-    ENABLED_FIELD_NUMBER: builtins.int
-    TLS_FILE_SETTINGS_FIELD_NUMBER: builtins.int
-    TLS_PEM_SETTINGS_FIELD_NUMBER: builtins.int
-    DO_NOT_SET_SNI_HOSTNAME_FIELD_NUMBER: builtins.int
-    enabled: builtins.bool
-    'Whether or not TLS is enabled'
-    do_not_set_sni_hostname: builtins.bool
-    'If true, the SNI hostname will not be provided when TLS is used'
-
-    @property
-    def tls_file_settings(self) -> global___TLSFileSettings:
-        """Certificates and keys are provided as files"""
-
-    @property
-    def tls_pem_settings(self) -> global___TLSPEMSettings:
-        """Certificates and keys are provided in PEM format"""
-
-    def __init__(self, *, enabled: builtins.bool=..., tls_file_settings: global___TLSFileSettings | None=..., tls_pem_settings: global___TLSPEMSettings | None=..., do_not_set_sni_hostname: builtins.bool=...) -> None:
-        ...
-
-    def HasField(self, field_name: typing.Literal['tls_file_settings', b'tls_file_settings', 'tls_pem_settings', b'tls_pem_settings', 'tls_settings', b'tls_settings']) -> builtins.bool:
-        ...
-
-    def ClearField(self, field_name: typing.Literal['do_not_set_sni_hostname', b'do_not_set_sni_hostname', 'enabled', b'enabled', 'tls_file_settings', b'tls_file_settings', 'tls_pem_settings', b'tls_pem_settings', 'tls_settings', b'tls_settings']) -> None:
-        ...
-
-    def WhichOneof(self, oneof_group: typing.Literal['tls_settings', b'tls_settings']) -> typing.Literal['tls_file_settings', 'tls_pem_settings'] | None:
-        ...
-global___TLSSettings = TLSSettings
-
-@typing.final
 class AuthenticationConfiguration(google.protobuf.message.Message):
     """Authentication config.  Currently only supporting SASL/SCRAM,
     however made as a oneof for expansion
@@ -958,51 +924,6 @@ class AuthenticationConfiguration(google.protobuf.message.Message):
     def WhichOneof(self, oneof_group: typing.Literal['authentication', b'authentication']) -> typing.Literal['scram_configuration'] | None:
         ...
 global___AuthenticationConfiguration = AuthenticationConfiguration
-
-@typing.final
-class TLSFileSettings(google.protobuf.message.Message):
-    """TLS file settings"""
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
-    CA_PATH_FIELD_NUMBER: builtins.int
-    KEY_PATH_FIELD_NUMBER: builtins.int
-    CERT_PATH_FIELD_NUMBER: builtins.int
-    ca_path: builtins.str
-    'Path to the CA'
-    key_path: builtins.str
-    'Key and Cert are optional but if one is provided, then both must be\n    Path to the key\n    '
-    cert_path: builtins.str
-    'Path to the cert'
-
-    def __init__(self, *, ca_path: builtins.str=..., key_path: builtins.str=..., cert_path: builtins.str=...) -> None:
-        ...
-
-    def ClearField(self, field_name: typing.Literal['ca_path', b'ca_path', 'cert_path', b'cert_path', 'key_path', b'key_path']) -> None:
-        ...
-global___TLSFileSettings = TLSFileSettings
-
-@typing.final
-class TLSPEMSettings(google.protobuf.message.Message):
-    """Used when providing the TLS information in PEM format"""
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
-    CA_FIELD_NUMBER: builtins.int
-    KEY_FIELD_NUMBER: builtins.int
-    KEY_FINGERPRINT_FIELD_NUMBER: builtins.int
-    CERT_FIELD_NUMBER: builtins.int
-    ca: builtins.str
-    'The CA'
-    key: builtins.str
-    'Key and Cert are optional but if one is provided, then both must be\n    The key\n    '
-    key_fingerprint: builtins.str
-    'The SHA-256 of the key, in base64 format'
-    cert: builtins.str
-    'The cert'
-
-    def __init__(self, *, ca: builtins.str=..., key: builtins.str=..., key_fingerprint: builtins.str=..., cert: builtins.str=...) -> None:
-        ...
-
-    def ClearField(self, field_name: typing.Literal['ca', b'ca', 'cert', b'cert', 'key', b'key', 'key_fingerprint', b'key_fingerprint']) -> None:
-        ...
-global___TLSPEMSettings = TLSPEMSettings
 
 @typing.final
 class ScramConfig(google.protobuf.message.Message):
