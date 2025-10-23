@@ -527,6 +527,9 @@ authentication_configuration create_authentication_configuration(
           scram_config scram_proto;
           scram_proto.set_username(ss::sstring{scram.username});
           scram_proto.set_password_set(true);
+          scram_proto.set_password_set_at(
+            absl::FromChrono(
+              model::to_time_point(scram.password_last_updated)));
           scram_proto.set_scram_mechanism(
             proto::admin::scram_mechanism::unspecified);
           if (scram.mechanism == "SCRAM-SHA-256") {
@@ -1119,6 +1122,58 @@ void merge_output_only_fields(
     to.connection.client_id = from.connection.client_id;
 }
 
+// Used to update any "change on" timestamps, e.g. the "password_set_at" field
+void update_timestamps(
+  const cluster_link::model::metadata& from,
+  cluster_link::model::metadata& to) {
+    if (from.connection.authn_config != to.connection.authn_config) {
+        if (!to.connection.authn_config.has_value()) {
+            return;
+        }
+        ss::visit(
+          *to.connection.authn_config,
+          [&from](cluster_link::model::scram_credentials& c) {
+              // If from does not hold SCRAM credentials, then update the
+              // timestamp of when then password was set
+              if (
+                !from.connection.authn_config.has_value()
+                || !std::holds_alternative<
+                   cluster_link::model::scram_credentials>(
+                  *from.connection.authn_config)) {
+                  if (c.password.empty()) {
+                      return;
+                  }
+                  c.password_last_updated = model::timestamp::now();
+                  return;
+              }
+              const auto& from_creds
+                = std::get<cluster_link::model::scram_credentials>(
+                  *from.connection.authn_config);
+              // If the passwords do not match, then update the timestamp of
+              // when the password was set
+              if (from_creds.password != c.password) {
+                  c.password_last_updated = model::timestamp::now();
+                  return;
+              }
+          });
+    }
+}
+
+// Used to update the timestamps for metadata fields
+void update_timestamps(cluster_link::model::metadata& to) {
+    if (!to.connection.authn_config.has_value()) {
+        return;
+    }
+    ss::visit(
+      *to.connection.authn_config,
+      [](cluster_link::model::scram_credentials& c) {
+          if (c.password.empty()) {
+              return;
+          }
+          c.password_last_updated = model::timestamp::now();
+      });
+}
+
 chunked_vector<topic_partition_information> status_to_partition_information(
   const cluster_link::rpc::shadow_link_status_topic_response& response) {
     chunked_vector<topic_partition_information> resp;
@@ -1150,6 +1205,7 @@ convert_create_to_metadata(create_shadow_link_request req) {
         auto metadata = shadow_link_to_metadata(
           std::move(req.get_shadow_link()));
         metadata.state.status = cluster_link::model::link_status::active;
+        update_timestamps(metadata);
         return metadata;
     } catch (const std::invalid_argument& e) {
         throw serde::pb::rpc::invalid_argument_exception(
@@ -1190,6 +1246,7 @@ create_update_cluster_link_config_cmd(
         auto updated_md = shadow_link_to_metadata(std::move(current_sl));
 
         merge_output_only_fields(current_metadata, updated_md);
+        update_timestamps(current_metadata, updated_md);
 
         return cluster_link::model::update_cluster_link_configuration_cmd{
           .connection = std::move(updated_md.connection),
