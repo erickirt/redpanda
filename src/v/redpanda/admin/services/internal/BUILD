@@ -19,3 +19,21 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "breakglass",
+    srcs = ["breakglass.cc"],
+    hdrs = ["breakglass.h"],
+    deps = [
+        "//proto/redpanda/core/admin/v2/internal:breakglass_redpanda_proto",
+        "//src/v/base",
+        "//src/v/cluster",
+        "//src/v/finjector",
+        "//src/v/model",
+        "//src/v/redpanda/admin/proxy:client",
+        "//src/v/serde/protobuf:rpc",
+        "//src/v/utils:to_string",
+        "@fmt",
+        "@seastar",
+    ],
+)

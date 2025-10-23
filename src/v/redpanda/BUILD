@@ -73,6 +73,7 @@ redpanda_cc_library(
         "//src/v/redpanda/admin/proxy:client",
         "//src/v/redpanda/admin/services/shadow_link",
         "//src/v/redpanda/admin/services/datalake",
+        "//src/v/redpanda/admin/services/internal:breakglass",
         "//src/v/redpanda/admin/services/internal:debug",
         "//src/v/redpanda/admin/services:cluster",
         "//src/v/resource_mgmt:cpu_profiler",

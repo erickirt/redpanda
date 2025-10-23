@@ -18,6 +18,22 @@ redpanda_proto_library(
 )
 
 proto_library(
+    name = "breakglass_proto",
+    srcs = ["breakglass.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/pbgen:options_proto",
+        "//proto/redpanda/core/pbgen:rpc_proto",
+    ],
+)
+
+redpanda_proto_library(
+    name = "breakglass_redpanda_proto",
+    protos = [":breakglass_proto"],
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
     name = "datalake_proto",
     srcs = ["datalake.proto"],
     visibility = ["//visibility:public"],
