@@ -19,6 +19,7 @@ package redpanda.core.admin.v2;
 import "proto/redpanda/core/pbgen/options.proto";
 import "proto/redpanda/core/pbgen/rpc.proto";
 import "proto/redpanda/core/common/v1/acl.proto";
+import "proto/redpanda/core/common/v1/tls.proto";
 import "google/api/field_behavior.proto";
 import "google/api/field_info.proto";
 import "google/api/resource.proto";
@@ -249,7 +250,7 @@ message ShadowLinkClientOptions {
     // message
     string source_cluster_id = 3;
     // TLS settings
-    optional TLSSettings tls_settings = 4;
+    optional common.v1.TLSSettings tls_settings = 4;
     // Authentication settings
     optional AuthenticationConfiguration authentication_configuration = 5;
     // Max metadata age.
@@ -413,20 +414,6 @@ message SecuritySettingsSyncOptions {
     // ACL filters
     repeated ACLFilter acl_filters = 4;
 }
-// TLS settings
-message TLSSettings {
-    // Whether or not TLS is enabled
-    bool enabled = 3;
-    // May provide TLS as a set of files or PEM values
-    oneof tls_settings {
-        // Certificates and keys are provided as files
-        TLSFileSettings tls_file_settings = 1;
-        // Certificates and keys are provided in PEM format
-        TLSPEMSettings tls_pem_settings = 2;
-    }
-    // If true, the SNI hostname will not be provided when TLS is used
-    bool do_not_set_sni_hostname = 4;
-}
 // Authentication config.  Currently only supporting SASL/SCRAM,
 // however made as a oneof for expansion
 message AuthenticationConfiguration {
@@ -434,28 +421,6 @@ message AuthenticationConfiguration {
         // SASL/SCRAM configuration
         ScramConfig scram_configuration = 1;
     }
-}
-// TLS file settings
-message TLSFileSettings {
-    // Path to the CA
-    string ca_path = 1;
-    // Key and Cert are optional but if one is provided, then both must be
-    // Path to the key
-    string key_path = 2;
-    // Path to the cert
-    string cert_path = 3;
-}
-// Used when providing the TLS information in PEM format
-message TLSPEMSettings {
-    // The CA
-    string ca = 1;
-    // Key and Cert are optional but if one is provided, then both must be
-    // The key
-    string key = 2 [(google.api.field_behavior) = INPUT_ONLY];
-    // The SHA-256 of the key, in base64 format
-    string key_fingerprint = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
-    // The cert
-    string cert = 4;
 }
 // SCRAM settings
 message ScramConfig {

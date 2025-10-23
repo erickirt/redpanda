@@ -73,6 +73,7 @@ proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto/redpanda/core/common/v1:acl_proto",
+        "//proto/redpanda/core/common/v1:tls_proto",
         "//proto/redpanda/core/pbgen:options_proto",
         "//proto/redpanda/core/pbgen:rpc_proto",
         "@googleapis//google/api:field_behavior_proto",
@@ -90,6 +91,7 @@ redpanda_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto/redpanda/core/common/v1:acl_redpanda_proto",
+        "//proto/redpanda/core/common/v1:tls_redpanda_proto",
         "//src/v/serde/protobuf:field_mask",
         "@abseil-cpp//absl/time:time",
     ],

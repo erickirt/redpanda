@@ -18,7 +18,7 @@ package redpanda.core.common.v1;
 
 import "proto/redpanda/core/pbgen/options.proto";
 
-option (redpanda.core.pbgen.cpp_namespace) = "proto::admin";
+option (redpanda.core.pbgen.cpp_namespace) = "proto::common";
 
 // A single topic partition within the kafka namespace.
 message TopicPartition {

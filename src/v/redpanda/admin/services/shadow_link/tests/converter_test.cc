@@ -205,7 +205,7 @@ TEST(converter_test, create_with_tls_flag_only) {
     proto::admin::create_shadow_link_request req;
     proto::admin::shadow_link_configurations shadow_link_configurations;
     proto::admin::shadow_link_client_options shadow_link_client_options;
-    proto::admin::tls_settings tls_settings;
+    proto::common::tls_settings tls_settings;
 
     tls_settings.set_enabled(true);
     shadow_link_client_options.set_tls_settings(std::move(tls_settings));
@@ -255,8 +255,8 @@ TEST(converter_test, create_with_tls_files) {
     proto::admin::create_shadow_link_request req;
     proto::admin::shadow_link_configurations shadow_link_configurations;
     proto::admin::shadow_link_client_options shadow_link_client_options;
-    proto::admin::tls_settings tls_settings;
-    proto::admin::tls_file_settings tls_file_settings;
+    proto::common::tls_settings tls_settings;
+    proto::common::tls_file_settings tls_file_settings;
 
     tls_settings.set_enabled(true);
     tls_file_settings.set_ca_path(ss::sstring{ca_file});
@@ -307,8 +307,8 @@ TEST(converter_test, create_with_tls_files_invalid) {
     proto::admin::create_shadow_link_request req;
     proto::admin::shadow_link_configurations shadow_link_configurations;
     proto::admin::shadow_link_client_options shadow_link_client_options;
-    proto::admin::tls_settings tls_settings;
-    proto::admin::tls_file_settings tls_file_settings;
+    proto::common::tls_settings tls_settings;
+    proto::common::tls_file_settings tls_file_settings;
 
     tls_file_settings.set_key_path(ss::sstring{key_file});
     tls_settings.set_tls_file_settings(std::move(tls_file_settings));
@@ -336,8 +336,8 @@ TEST(converter_test, create_with_tls_value) {
     proto::admin::create_shadow_link_request req;
     proto::admin::shadow_link_configurations shadow_link_configurations;
     proto::admin::shadow_link_client_options shadow_link_client_options;
-    proto::admin::tls_settings tls_settings;
-    proto::admin::tlspem_settings tls_pem_settings;
+    proto::common::tls_settings tls_settings;
+    proto::common::tlspem_settings tls_pem_settings;
     tls_pem_settings.set_ca(ss::sstring{ca});
     tls_pem_settings.set_key(ss::sstring{key});
     tls_pem_settings.set_cert(ss::sstring{cert});
@@ -381,8 +381,8 @@ TEST(converter_test, create_with_tls_value_invalid) {
     proto::admin::create_shadow_link_request req;
     proto::admin::shadow_link_configurations shadow_link_configurations;
     proto::admin::shadow_link_client_options shadow_link_client_options;
-    proto::admin::tls_settings tls_settings;
-    proto::admin::tlspem_settings tls_pem_settings;
+    proto::common::tls_settings tls_settings;
+    proto::common::tlspem_settings tls_pem_settings;
     tls_pem_settings.set_key(ss::sstring{key});
 
     tls_settings.set_tls_pem_settings(std::move(tls_pem_settings));
@@ -1056,12 +1056,12 @@ TEST(converter_test, test_update_tls_value) {
 
     admin::set_client_id(current_md);
 
-    proto::admin::tlspem_settings tls_pem_settings;
+    proto::common::tlspem_settings tls_pem_settings;
     tls_pem_settings.set_ca("new-ca");
     tls_pem_settings.set_key("new-key");
     tls_pem_settings.set_cert("new-cert");
 
-    proto::admin::tls_settings tls_settings;
+    proto::common::tls_settings tls_settings;
     tls_settings.set_tls_pem_settings(std::move(tls_pem_settings));
 
     proto::admin::update_shadow_link_request req;
@@ -1113,18 +1113,18 @@ TEST(converter_test, metadata_to_shadow_link_security) {
     EXPECT_EQ(filter.get_access_filter().get_principal(), "User:*");
     EXPECT_EQ(
       filter.get_access_filter().get_operation(),
-      proto::admin::acl_operation::any);
+      proto::common::acl_operation::any);
     EXPECT_EQ(
       filter.get_access_filter().get_permission_type(),
-      proto::admin::acl_permission_type::any);
+      proto::common::acl_permission_type::any);
     EXPECT_EQ(filter.get_access_filter().get_host(), "*");
 
     EXPECT_EQ(
       filter.get_resource_filter().get_resource_type(),
-      proto::admin::acl_resource::any);
+      proto::common::acl_resource::any);
     EXPECT_EQ(
       filter.get_resource_filter().get_pattern_type(),
-      proto::admin::acl_pattern::any);
+      proto::common::acl_pattern::any);
     EXPECT_EQ(filter.get_resource_filter().get_name(), "*");
 }
 
@@ -1143,16 +1143,16 @@ TEST(converter_test, shadow_link_to_metadata_security) {
     chunked_vector<proto::admin::acl_filter> filters;
     proto::admin::acl_filter filter;
     proto::admin::acl_resource_filter resource_filter;
-    resource_filter.set_resource_type(proto::admin::acl_resource::any);
-    resource_filter.set_pattern_type(proto::admin::acl_pattern::any);
+    resource_filter.set_resource_type(proto::common::acl_resource::any);
+    resource_filter.set_pattern_type(proto::common::acl_pattern::any);
     resource_filter.set_name("*");
     filter.set_resource_filter(std::move(resource_filter));
 
     proto::admin::acl_access_filter access_filter;
     access_filter.set_host("*");
     access_filter.set_principal("User:*");
-    access_filter.set_operation(proto::admin::acl_operation::any);
-    access_filter.set_permission_type(proto::admin::acl_permission_type::any);
+    access_filter.set_operation(proto::common::acl_operation::any);
+    access_filter.set_permission_type(proto::common::acl_permission_type::any);
     filter.set_access_filter(std::move(access_filter));
 
     filters.emplace_back(std::move(filter));

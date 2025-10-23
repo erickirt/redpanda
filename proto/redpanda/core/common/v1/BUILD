@@ -26,3 +26,19 @@ redpanda_proto_library(
     protos = [":ntp_proto"],
     visibility = ["//visibility:public"],
 )
+
+proto_library(
+    name = "tls_proto",
+    srcs = ["tls.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/pbgen:options_proto",
+        "@googleapis//google/api:field_behavior_proto",
+    ],
+)
+
+redpanda_proto_library(
+    name = "tls_redpanda_proto",
+    protos = [":tls_proto"],
+    visibility = ["//visibility:public"],
+)
