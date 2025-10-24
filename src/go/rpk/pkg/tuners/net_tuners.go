@@ -659,9 +659,15 @@ func tuneInterface(
 		if err != nil {
 			return NewTuneError(err)
 		}
+		var res TuneResult
 		for _, slave := range slaves {
-			return tuneInterface(slave, tuneAction)
+			res = tuneInterface(slave, tuneAction)
+			if res.IsFailed() {
+				return res
+			}
 		}
+		// return the last
+		return res
 	}
 
 	if nic.IsHwInterface() {
