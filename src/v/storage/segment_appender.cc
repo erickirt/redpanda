@@ -707,17 +707,22 @@ bool segment_appender::inflight_write::try_merge(
     return false;
 }
 
-std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
-    return o << "{no_of_chunks:" << a._opts.number_of_chunks
-             << ", closed:" << a._closed
-             << ", fallocation_offset:" << a._fallocation_offset
-             << ", stable_offset:" << a._stable_offset
-             << ", flushed_offset:" << a._flushed_offset
-             << ", committed_offset:" << a._committed_offset
-             << ", inflight:" << a._inflight.size()
-             << ", dispatched:" << a._inflight_dispatched
-             << ", merged:" << a._merged_writes
-             << ", bytes_flush_pending:" << a._bytes_flush_pending << "}";
+fmt::iterator segment_appender::format_to(fmt::iterator iterator) const {
+    return fmt::format_to(
+      iterator,
+      "{{no_of_chunks:{}, closed:{}, fallocation_offset:{}, stable_offset:{}, "
+      "flushed_offset:{}, committed_offset:{}, inflight:{}, dispatched:{}, "
+      "merged:{}, bytes_flush_pending:{}}}",
+      _opts.number_of_chunks,
+      _closed,
+      _fallocation_offset,
+      _stable_offset,
+      _flushed_offset,
+      _committed_offset,
+      _inflight.size(),
+      _inflight_dispatched,
+      _merged_writes,
+      _bytes_flush_pending);
 }
 
 std::ostream&

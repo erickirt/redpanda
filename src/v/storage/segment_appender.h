@@ -130,6 +130,8 @@ public:
 
     void set_callbacks(callbacks* callbacks) { _callbacks = callbacks; }
 
+    fmt::iterator format_to(fmt::iterator) const;
+
 private:
     using chunk_ptr = ss::lw_shared_ptr<chunk>;
 
@@ -292,7 +294,6 @@ private:
     static_assert(static_cast<uint8_t>(model::record_batch_type::MAX) <= 63);
     uint64_t _batch_types_to_write{0};
 
-    friend std::ostream& operator<<(std::ostream&, const segment_appender&);
     friend class file_io_sanitizer;
     friend struct segment_appender_test_accessor;
 };
