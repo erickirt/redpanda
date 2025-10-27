@@ -541,6 +541,76 @@ class ClusterLinkingTopicSyncingWithTlsValues(ClusterLinkingTopicSyncingTestBase
         )
 
 
+class ClusterLinkingTopicSyncingWithMtls(ClusterLinkingTopicSyncingTestBase):
+    def __init__(self, test_context, *args, **kwargs):
+        self.test_context = test_context
+        self.security = SecurityConfig()
+        self.tls = TLSCertManager(self.logger)
+        self.security.tls_provider = ClusterLinkingTLSProvider(self.tls)
+        self.security.require_client_auth = True
+        self.security.endpoint_authn_method = "mtls_identity"
+        self.security.kafka_enable_authorization = True
+        self.extra_rp_conf = {}
+
+        self.extra_rp_conf["kafka_mtls_principal_mapping_rules"] = [
+            self.security.principal_mapping_rules
+        ]
+
+        self.current_superusers = ["admin", "source-rpk", "target-rpk"]
+
+        self.extra_rp_conf["superusers"] = self.current_superusers
+
+        super().__init__(
+            test_context=self.test_context,
+            secondary_cluster_args=SecondaryClusterArgs(
+                security=self.security, extra_rp_conf=self.extra_rp_conf
+            ),
+            security=self.security,
+            extra_rp_conf=self.extra_rp_conf,
+            *args,
+            **kwargs,
+        )
+
+    def add_credentials_to_link(
+        self, shadow_link: shadow_link_pb2.ShadowLink
+    ) -> shadow_link_pb2.ShadowLink:
+        self.logger.debug("Adding TLS files to link")
+
+        shadow_link.configurations.client_options.tls_settings.CopyFrom(
+            tls_pb2.TLSSettings(
+                enabled=True,
+                tls_file_settings=tls_pb2.TLSFileSettings(
+                    ca_path=self.redpanda.TLS_CA_CRT_FILE,
+                    key_path=self.redpanda.TLS_SERVER_KEY_FILE,
+                    cert_path=self.redpanda.TLS_SERVER_CRT_FILE,
+                ),
+            )
+        )
+
+        return shadow_link
+
+    def get_source_cluster_rpk(self) -> RpkTool:
+        return RpkTool(
+            self.source_cluster.service,
+            tls_cert=self.tls.create_cert("source-rpk", common_name="source-rpk"),
+        )
+
+    def get_target_cluster_rpk(self) -> RpkTool:
+        return RpkTool(
+            self.target_cluster.service,
+            tls_cert=self.tls.create_cert("target-rpk", common_name="target-rpk"),
+        )
+
+    def setUp(self):
+        super().setUp()
+        names = [n.name for n in self.redpanda.nodes]
+        self.logger.info(f"Cluster node names: {names}")
+        superusers = set(self.current_superusers + names)
+        self.get_source_cluster_rpk().cluster_config_set(
+            key="superusers", value=json.dumps(list(superusers))
+        )
+
+
 class ClusterLinkingSchemaRegistry(ShadowLinkTestBase):
     """
     These tests verify the behavior of syncing schema registry
