@@ -158,49 +158,26 @@ func canDefaultToDedicatedMode(numOfPUs int, cpuMask string, cpuMasks irq.CPUMas
 func GetDefaultMode(
 	nic Nic, cpuMask string, cpuMasks irq.CPUMasks, rnc config.RpkNodeConfig,
 ) (irq.Mode, error) {
-	if nic.IsHwInterface() {
-		numOfPUs, err := cpuMasks.GetNumberOfPUs(cpuMask)
-		if err != nil {
-			return "", err
-		}
-
-		canDoDedicated, err := canDefaultToDedicatedMode(int(numOfPUs), cpuMask, cpuMasks, rnc)
-		if err != nil {
-			return "", err
-		}
-		var mode irq.Mode
-		if numOfPUs >= uint(rnc.Tuners.GetCoresPerDedicatedInterruptCore()) && rnc.Tuners.GetAllowDedicatedInterruptMode() && canDoDedicated {
-			mode = irq.Dedicated
-		} else {
-			mode = irq.Mq
-		}
-
-		zap.L().Sugar().Debugf("Using '%s' mode for '%s': '%d' PUs",
-			mode, nic.Name(), numOfPUs)
-
-		return mode, nil
+	numOfPUs, err := cpuMasks.GetNumberOfPUs(cpuMask)
+	if err != nil {
+		return "", err
 	}
 
-	if nic.IsBondIface() {
-		defaultMode := irq.Mq
-		slaves, err := nic.Slaves()
-		if err != nil {
-			return "", err
-		}
-		for _, slave := range slaves {
-			slaveDefaultMode, err := GetDefaultMode(slave, cpuMask, cpuMasks, rnc)
-			if err != nil {
-				return "", err
-			}
-			if slaveDefaultMode == irq.Sq {
-				defaultMode = irq.Sq
-			} else if slaveDefaultMode == irq.SqSplit && defaultMode == irq.Mq {
-				defaultMode = irq.SqSplit
-			}
-		}
-		return defaultMode, nil
+	canDoDedicated, err := canDefaultToDedicatedMode(int(numOfPUs), cpuMask, cpuMasks, rnc)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("virtual device %s is not supported", nic.Name())
+	var mode irq.Mode
+	if numOfPUs >= uint(rnc.Tuners.GetCoresPerDedicatedInterruptCore()) && rnc.Tuners.GetAllowDedicatedInterruptMode() && canDoDedicated {
+		mode = irq.Dedicated
+	} else {
+		mode = irq.Mq
+	}
+
+	zap.L().Sugar().Debugf("Using '%s' mode for '%s': '%d' PUs",
+		mode, nic.Name(), numOfPUs)
+
+	return mode, nil
 }
 
 func checkDedicatedCompatibleConfig(cpuMask string, cpuMasks irq.CPUMasks, rnc config.RpkNodeConfig) error {
@@ -482,26 +459,11 @@ func GetCurrentAndTargetChannels(
 
 func CollectIRQs(nic Nic) ([]int, error) {
 	var IRQs []int
-	if nic.IsHwInterface() {
-		nicIRQs, err := nic.GetIRQs()
-		if err != nil {
-			return nil, err
-		}
-		IRQs = append(IRQs, IrqInfosToIDs(nicIRQs)...)
+	nicIRQs, err := nic.GetIRQs()
+	if err != nil {
+		return nil, err
 	}
-	if nic.IsBondIface() {
-		slaves, err := nic.Slaves()
-		if err != nil {
-			return nil, err
-		}
-		for _, slave := range slaves {
-			slaveIRQs, err := CollectIRQs(slave)
-			if err != nil {
-				return nil, err
-			}
-			IRQs = append(IRQs, slaveIRQs...)
-		}
-	}
+	IRQs = append(IRQs, IrqInfosToIDs(nicIRQs)...)
 	return IRQs, nil
 }
 
@@ -545,7 +507,14 @@ func checkNic(nic Nic, nicMap map[string]Nic) {
 		return
 	}
 
-	nicMap[nic.Name()] = nic
+	// unroll bond slaves here such that we don't have to deal with later everywhere
+	if nic.IsBondIface() {
+		for _, slave := range nic.Slaves() {
+			checkNic(slave, nicMap)
+		}
+	} else {
+		nicMap[nic.Name()] = nic
+	}
 }
 
 func MapInterfaces(interfaces []string, fs afero.Fs,
