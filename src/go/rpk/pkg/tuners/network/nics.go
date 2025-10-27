@@ -366,7 +366,7 @@ func GetHwInterfaceIRQsDistribution(
 	if err != nil {
 		return nil, err
 	}
-	zap.L().Sugar().Debugf("Distributing rest of '%s' IRQs\n", nic.Name())
+	zap.L().Sugar().Debugf("Distributing rest of '%s' IRQs", nic.Name())
 	restIRQsDistribution, err := cpuMasks.GetIRQsDistributionMasks(
 		IrqInfosToIDs(allIRQs[irqCutOffIndex:]), effectiveConfig.IRQCPUMask)
 	if err != nil {
