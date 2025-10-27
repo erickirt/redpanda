@@ -55,6 +55,46 @@ TEST(converter_test, create_to_metadata_no_authn) {
       cluster_link::model::earliest_offset_ts);
     EXPECT_FALSE(md.configuration.topic_metadata_mirroring_cfg.starting_offset
                    .has_value());
+    EXPECT_TRUE(md.configuration.topic_metadata_mirroring_cfg.is_enabled);
+    EXPECT_TRUE(md.configuration.consumer_groups_mirroring_cfg.is_enabled);
+    EXPECT_TRUE(md.configuration.security_settings_sync_cfg.is_enabled);
+}
+
+TEST(converter_test, create_to_metadata_tasks_disabled) {
+    const auto name = "test-link";
+    proto::admin::shadow_link shadow_link;
+    proto::admin::create_shadow_link_request req;
+    proto::admin::shadow_link_configurations shadow_link_configurations;
+    proto::admin::shadow_link_client_options shadow_link_client_options;
+
+    shadow_link_client_options.set_bootstrap_servers({"localhost:9092"});
+    shadow_link_configurations.set_client_options(
+      std::move(shadow_link_client_options));
+
+    proto::admin::topic_metadata_sync_options topic_metadata_sync_options;
+    topic_metadata_sync_options.set_paused(true);
+    shadow_link_configurations.set_topic_metadata_sync_options(
+      std::move(topic_metadata_sync_options));
+
+    proto::admin::consumer_offset_sync_options consumer_offset_sync_options;
+    consumer_offset_sync_options.set_paused(true);
+    shadow_link_configurations.set_consumer_offset_sync_options(
+      std::move(consumer_offset_sync_options));
+
+    proto::admin::security_settings_sync_options security_settings_sync_options;
+    security_settings_sync_options.set_paused(true);
+    shadow_link_configurations.set_security_sync_options(
+      std::move(security_settings_sync_options));
+
+    shadow_link.set_configurations(std::move(shadow_link_configurations));
+    shadow_link.set_name(ss::sstring{name});
+    req.set_shadow_link(std::move(shadow_link));
+
+    auto md = admin::convert_create_to_metadata(std::move(req));
+
+    EXPECT_FALSE(md.configuration.topic_metadata_mirroring_cfg.is_enabled);
+    EXPECT_FALSE(md.configuration.consumer_groups_mirroring_cfg.is_enabled);
+    EXPECT_FALSE(md.configuration.security_settings_sync_cfg.is_enabled);
 }
 
 TEST(converter_test, create_no_bootstrap) {
@@ -588,6 +628,7 @@ TEST(converter_test, metadata_to_shadow_link) {
       absl::FromChrono(
         cluster_link::model::topic_metadata_mirroring_config::
           task_interval_default));
+    EXPECT_FALSE(topic_metadata_sync_options.get_paused());
 
     const auto& security_settings
       = sl.get_configurations().get_security_sync_options();
@@ -598,6 +639,7 @@ TEST(converter_test, metadata_to_shadow_link) {
       absl::FromChrono(
         cluster_link::model::security_settings_sync_config::
           task_interval_default));
+    EXPECT_FALSE(security_settings.get_paused());
 
     const auto& cg_settings
       = sl.get_configurations().get_consumer_offset_sync_options();
@@ -607,6 +649,36 @@ TEST(converter_test, metadata_to_shadow_link) {
       absl::FromChrono(
         cluster_link::model::consumer_groups_mirroring_config::
           default_task_interval));
+    EXPECT_FALSE(cg_settings.get_paused());
+}
+
+TEST(converter_test, metadata_to_shadow_link_tasks_disabled) {
+    auto uuid = uuid_t::create();
+    cluster_link::model::metadata md;
+    md.name = cluster_link::model::name_t{"test-link"};
+    md.uuid = cluster_link::model::uuid_t(uuid);
+    md.connection.bootstrap_servers = {
+      net::unresolved_address("localhost", 9092)};
+    md.configuration.topic_metadata_mirroring_cfg.is_enabled
+      = cluster_link::model::enabled_t::no;
+    md.configuration.consumer_groups_mirroring_cfg.is_enabled
+      = cluster_link::model::enabled_t::no;
+    md.configuration.security_settings_sync_cfg.is_enabled
+      = cluster_link::model::enabled_t::no;
+
+    auto sl = admin::metadata_to_shadow_link(std::move(md), {});
+
+    const auto& topic_metadata_sync_options
+      = sl.get_configurations().get_topic_metadata_sync_options();
+    EXPECT_TRUE(topic_metadata_sync_options.get_paused());
+
+    const auto& security_settings
+      = sl.get_configurations().get_security_sync_options();
+    EXPECT_TRUE(security_settings.get_paused());
+
+    const auto& cg_settings
+      = sl.get_configurations().get_consumer_offset_sync_options();
+    EXPECT_TRUE(cg_settings.get_paused());
 }
 
 TEST(converter_test, metadata_to_shadow_link_authn_scram_256) {

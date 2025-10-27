@@ -152,6 +152,8 @@ create_topic_metadata_mirroring_config(
           config.starting_offset = model::timestamp(absl::ToUnixMillis(t));
       });
 
+    config.is_enabled = cluster_link::model::enabled_t{!options.get_paused()};
+
     return config;
 }
 
@@ -184,6 +186,8 @@ create_consumer_groups_mirroring_config(
     }
 
     config.filters = to_filter_patterns(options.get_group_filters());
+
+    config.is_enabled = cluster_link::model::enabled_t{!options.get_paused()};
 
     return config;
 }
@@ -334,6 +338,8 @@ create_security_settings_sync_config(
     }
 
     config.acl_filters = to_acl_filters(options.get_acl_filters());
+
+    config.is_enabled = cluster_link::model::enabled_t{!options.get_paused()};
 
     return config;
 }
@@ -856,6 +862,7 @@ security_settings_sync_options create_security_settings_sync_options(
     options.set_effective_interval(
       absl::FromChrono(config.get_task_interval()));
     options.set_acl_filters(to_acl_filters(config.acl_filters));
+    options.set_paused(!bool(config.is_enabled));
 
     return options;
 }
@@ -904,6 +911,8 @@ topic_metadata_sync_options create_topic_metadata_sync_options(
 
     starting_offset_to_proto(cfg.starting_offset, options);
 
+    options.set_paused(!bool(cfg.is_enabled));
+
     return options;
 }
 
@@ -915,6 +924,7 @@ consumer_offset_sync_options create_consumer_offset_sync_options(
         cfg.task_interval.value_or(ss::lowres_clock::duration::zero())));
     options.set_effective_interval(absl::FromChrono(cfg.get_task_interval()));
     options.set_group_filters(to_name_filters(cfg.filters));
+    options.set_paused(!bool(cfg.is_enabled));
 
     return options;
 }
