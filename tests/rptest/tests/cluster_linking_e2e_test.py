@@ -2475,8 +2475,11 @@ class ShadowLinkCustomStartOffsetSelectionTests(ShadowLinkPreAllocTestBase):
     earliest_offset = "earliest"
     latest_offset = "latest"
     timequery_offset = "timestamp"
+    max_records = 10000
 
     def setup_starting_offset(self, topic: TopicSpec) -> tuple[float, float]:
+        initial = 1000
+        assert self.max_records > initial
         self.source_default_client().create_topic(topic)
         start_time = time.time()
         KgoVerifierProducer.oneshot(
@@ -2484,7 +2487,7 @@ class ShadowLinkCustomStartOffsetSelectionTests(ShadowLinkPreAllocTestBase):
             self.source_cluster.service,
             topic="source-topic",
             msg_size=4 * 1024,
-            msg_count=1000,
+            msg_count=initial,
             custom_node=self.preallocated_nodes,
         )
         # We produce in 2 phases so a batch cleanly ends at offset 999
@@ -2498,7 +2501,7 @@ class ShadowLinkCustomStartOffsetSelectionTests(ShadowLinkPreAllocTestBase):
             self.source_cluster.service,
             topic="source-topic",
             msg_size=4 * 1024,
-            msg_count=39000,
+            msg_count=self.max_records - initial,
             custom_node=self.preallocated_nodes,
         )
         end_time = time.time()
@@ -2732,6 +2735,22 @@ class ShadowLinkCustomStartOffsetSelectionTests(ShadowLinkPreAllocTestBase):
                 self.source_cluster_rpk, source_offset_to_fetch
             )
             self.logger.info(f"Source cluster offsets: {source_offsets}")
+
+            def do_wait_for_hwm():
+                partition_info = list(
+                    self.target_cluster_rpk.describe_topic(topic.name)
+                )
+                for p in partition_info:
+                    if p.id == 0:
+                        return p.high_watermark >= self.max_records
+
+            self.target_cluster_service.wait_until(
+                do_wait_for_hwm,
+                timeout_sec=60,
+                backoff_sec=2,
+                err_msg="Timed out waiting for hwm to catchup on target",
+                retry_on_exc=True,
+            )
 
             # If testing for earliest or latest offset, use "start", else
             # use the timequery value.  The batch fetched from the source at
