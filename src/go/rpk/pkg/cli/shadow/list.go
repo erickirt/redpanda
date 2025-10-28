@@ -36,7 +36,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			link, err := cl.ShadowLinkService().ListShadowLinks(cmd.Context(), connect.NewRequest(&adminv2.ListShadowLinksRequest{}))
-			out.MaybeDie(err, "unable to list Redpanda Shadow Links: %v", err)
+			out.MaybeDie(err, "unable to list Redpanda Shadow Links: %v", handleConnectError(err, "list", ""))
 
 			tw := out.NewTable("NAME", "UID", "STATE")
 			defer tw.Flush()

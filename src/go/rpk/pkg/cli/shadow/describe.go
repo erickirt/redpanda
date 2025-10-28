@@ -10,7 +10,6 @@
 package shadow
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -45,12 +44,7 @@ func newDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			link, err := cl.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
 				Name: linkName,
 			}))
-			if err != nil {
-				if ce := new(connect.Error); errors.As(err, &ce) && ce.Code() == connect.CodeNotFound {
-					out.Die("shadow link %q not found; use 'rpk shadow list' to list all available shadow links", linkName)
-				}
-				out.Die("unable to get Redpanda Shadow Link %q: %v", linkName, err)
-			}
+			out.MaybeDie(err, "unable to get Redpanda Shadow Link %q: %v", linkName, handleConnectError(err, "get", linkName))
 
 			printShadowLinkDescription(link.Msg.GetShadowLink(), opts)
 		},

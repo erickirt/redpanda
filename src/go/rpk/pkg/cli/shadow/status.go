@@ -48,8 +48,7 @@ func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			link, err := cl.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
 				Name: linkName,
 			}))
-			// TODO: handle NotFound error and print a friendly message.
-			out.MaybeDie(err, "unable to get Redpanda Shadow Link status %q: %v", linkName, err)
+			out.MaybeDie(err, "unable to get Redpanda Shadow Link status %q: %v", linkName, handleConnectError(err, "get", linkName))
 
 			opts.defaultOrAll()
 			printShadowLinkStatus(link.Msg.GetShadowLink(), opts)

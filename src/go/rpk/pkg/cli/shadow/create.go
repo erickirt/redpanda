@@ -70,7 +70,7 @@ skip the confirmation prompt.
 			link, err := cl.ShadowLinkService().CreateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.CreateShadowLinkRequest{
 				ShadowLink: shadowLinkConfigToProto(slCfg),
 			}))
-			out.MaybeDie(err, "unable to create shadow link: %v", err)
+			out.MaybeDie(err, "unable to create shadow link: %v", handleConnectError(err, "create", slCfg.Name))
 
 			fmt.Printf("Successfully created shadow link %q with ID %q. To query the status, run:\n  'rpk shadow status %[1]v'\n", link.Msg.GetShadowLink().GetName(), link.Msg.GetShadowLink().GetUid())
 		},

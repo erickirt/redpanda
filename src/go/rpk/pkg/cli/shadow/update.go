@@ -48,7 +48,7 @@ you must delete and recreate it.
 			link, err := cl.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
 				Name: linkName,
 			}))
-			out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", err)
+			out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", handleConnectError(err, "get", linkName))
 
 			shadowLink := link.Msg.GetShadowLink()
 			originalCfg := shadowLinkToConfig(shadowLink)
@@ -74,7 +74,7 @@ you must delete and recreate it.
 			_, err = cl.ShadowLinkService().UpdateShadowLink(cmd.Context(), connect.NewRequest(&adminv2.UpdateShadowLinkRequest{
 				ShadowLink: shadowLinkConfigToProto(updatedCfg),
 			}))
-			out.MaybeDie(err, "unable to update Shadow Link: %v", err)
+			out.MaybeDie(err, "unable to update Shadow Link: %v", handleConnectError(err, "update", linkName))
 
 			fmt.Printf("Successfully updated shadow link %q.\n", linkName)
 		},

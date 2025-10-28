@@ -55,7 +55,7 @@ the Shadow Link. This flag also disables the confirmation prompt.
 			link, err := cl.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
 				Name: linkName,
 			}))
-			out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", err)
+			out.MaybeDie(err, "unable to get Redpanda Shadow Link information: %v", handleConnectError(err, "get", linkName))
 
 			printShadowLinkInfo(link.Msg.GetShadowLink())
 			if !noConfirm && !forceDelete {
@@ -70,7 +70,7 @@ the Shadow Link. This flag also disables the confirmation prompt.
 				Name:  linkName,
 				Force: forceDelete,
 			}))
-			out.MaybeDie(err, "unable to delete Redpanda Shadow Link %q: %v", linkName, err)
+			out.MaybeDie(err, "unable to delete Redpanda Shadow Link %q: %v", linkName, handleConnectError(err, "delete", linkName))
 
 			fmt.Printf("Shadow Link %q deleted successfully\n", linkName)
 		},

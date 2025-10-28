@@ -48,7 +48,7 @@ func newFailoverCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				sl, err := cl.ShadowLinkService().GetShadowLink(cmd.Context(), connect.NewRequest(&adminv2.GetShadowLinkRequest{
 					Name: linkName,
 				}))
-				out.MaybeDie(err, "unable to get Redpanda Shadow Link %q: %v", linkName, err)
+				out.MaybeDie(err, "unable to get Redpanda Shadow Link %q: %v", linkName, handleConnectError(err, "get", linkName))
 				printOverview(sl.Msg.GetShadowLink())
 				var confirmed bool
 				if all {
@@ -65,7 +65,7 @@ func newFailoverCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				Name:            linkName,
 				ShadowTopicName: topic,
 			}))
-			out.MaybeDie(err, "unable to failover Shadow Link: %v", err)
+			out.MaybeDie(err, "unable to failover Shadow Link: %v", handleConnectError(err, "failover", linkName))
 
 			fmt.Printf(`Successfully initiated the Fail Over for Shadow Link %q. To check the status, run:
   rpk shadow status %[1]s
