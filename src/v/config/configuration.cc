@@ -4546,6 +4546,13 @@ configuration::configuration()
       "to long term storage.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , cloud_topics_long_term_garbage_collection_interval(
+      *this,
+      "cloud_topics_long_term_garbage_collection_interval",
+      "Time interval after which data is garbage collected from long "
+      "term storage.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5min)
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",
