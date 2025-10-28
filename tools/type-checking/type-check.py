@@ -305,11 +305,12 @@ class TypeCheck:
             print("No files can be promoted to stricter levels.")
 
         # Update strictness file if requested and there are promotable files
-        if self._args.update and promotable_files:
+        if self._args.update:
             self._update_strictness_file(promotable_files)
             return True
         else:
-            return not promotable_files
+            is_sorted = self._check_strictness_file_sorted()
+            return is_sorted and not promotable_files
 
     def fruit(self):
         """Show files with fewest errors at each target level (low-hanging fruit for type checking improvements)."""
@@ -483,6 +484,38 @@ class TypeCheck:
         else:
             print(self._red("✗ Some checks failed, see above for errors"))
             return False
+
+    def _check_strictness_file_sorted(self) -> bool:
+        """Check that each section of the strictness file is sorted.
+
+        Returns True if all sections are sorted, False otherwise.
+        """
+        with open(self.strictness_config_path, "r") as f:
+            config: dict[str, list[str]] = json.load(f)
+
+        all_sorted = True
+        for level_str, patterns in config.items():
+            if level_str == "comment":
+                continue
+
+            # Check if this section is sorted
+            sorted_patterns = sorted(patterns)
+            if patterns != sorted_patterns:
+                all_sorted = False
+                print(
+                    f"{self.error} Section '{level_str}' is not sorted in {self.strictness_config_path}:"
+                )
+
+                # Show which entries are out of order
+                for actual, expected in zip(patterns, sorted_patterns):
+                    if actual != expected:
+                        print(f"First mismatch at: '{actual}', expected '{expected}'")
+                        break
+
+        if all_sorted:
+            print(f"All sections in {self.strictness_config_path} are properly sorted")
+
+        return all_sorted
 
     def _update_strictness_file(
         self, promotable_files: list[tuple[Path, Level, Level]]
