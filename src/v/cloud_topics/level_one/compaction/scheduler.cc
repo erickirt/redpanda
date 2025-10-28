@@ -43,7 +43,12 @@ compaction_scheduler::compaction_scheduler(
       &_metastore->local(), &state.metadata_cache->local()))
   , _scheduling_policy(make_default_scheduling_policy())
   , _worker_manager(
-      _compaction_queue, io, metastore, &_committer, state.metadata_cache)
+      _compaction_queue,
+      io,
+      metastore,
+      &_committer,
+      state.metadata_cache,
+      _probe)
   , _compaction_interval(
       config::shard_local_cfg().log_compaction_interval_ms.bind())
   , _compaction_queue(_scheduling_policy->get_comparator()) {
@@ -53,7 +58,8 @@ compaction_scheduler::compaction_scheduler(
 compaction_scheduler::compaction_scheduler(log_info_collector info_collector)
   : _log_info_collector(std::move(info_collector))
   , _scheduling_policy(make_default_scheduling_policy())
-  , _worker_manager(_compaction_queue, nullptr, nullptr, &_committer, nullptr)
+  , _worker_manager(
+      _compaction_queue, nullptr, nullptr, &_committer, nullptr, _probe)
   , _compaction_interval(
       config::shard_local_cfg().log_compaction_interval_ms.bind())
   , _compaction_queue(_scheduling_policy->get_comparator()) {
@@ -87,6 +93,7 @@ void compaction_scheduler::manage_partition(
     _ntp_to_tidp.emplace(ntp, tidp);
     vassert(
       success, "Could not manage compacted CTP {} (concurrency issue?)", ntp);
+    _probe.set_log_count(_logs.size());
 }
 
 ss::future<>
@@ -126,6 +133,7 @@ compaction_scheduler::unmanage_partition(model::ntp ntp, std::string_view ctx) {
     // a `lw_shared_ptr`- we can allow it to go out of scope here without fear
     // of UAF elsewhere.
     co_await _worker_manager.request_stop_compaction(handle);
+    _probe.set_log_count(_logs.size());
 }
 
 void compaction_scheduler::start_bg_loop() {
@@ -160,6 +168,8 @@ ss::future<> compaction_scheduler::scheduling_loop() {
             continue;
         }
 
+        _probe.set_compaction_queue_length(_compaction_queue.size());
+
         co_await _log_info_collector.collect_info_for_logs(
           _logs, _logs_list, _compaction_queue);
 
@@ -168,6 +178,7 @@ ss::future<> compaction_scheduler::scheduling_loop() {
 }
 
 ss::future<> compaction_scheduler::start() {
+    _probe.setup_metrics();
     co_await _committer.start(
       ss::sharded_parameter([] { return make_default_committing_policy(); }),
       ss::sharded_parameter([this] { return &_io->local(); }),
