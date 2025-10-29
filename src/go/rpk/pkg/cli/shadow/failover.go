@@ -31,7 +31,34 @@ func newFailoverCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "failover [LINK_NAME]",
 		Args:  cobra.ExactArgs(1),
 		Short: "Failover a Redpanda Shadow Link",
-		Long:  `Failover a Redpanda Shadow Link or a specific topic`,
+		Long: `Failover a Redpanda Shadow Link.
+
+This command performs a failover operation for a Shadow Link. Failover converts
+shadow topics into regular topics on the destination cluster, allowing producers
+and consumers to interact with them directly. After failover, the Shadow Link
+stops replicating data from the source cluster.
+
+Use the --all flag to failover all shadow topics associated with the Shadow
+Link, or use the --topic flag to failover a specific topic. You must specify
+either --all or --topic.
+
+The command prompts you to confirm the failover operation. Use the --no-confirm
+flag to skip the confirmation prompt.
+
+WARNING: Failover is a critical operation. After failover, shadow topics become
+regular topics and replication stops. Ensure your applications are ready to
+connect to the destination cluster before performing a failover.
+`,
+		Example: `
+Failover all topics for a Shadow Link:
+  rpk shadow failover my-shadow-link --all
+
+Failover a specific topic:
+  rpk shadow failover my-shadow-link --topic my-topic
+
+Failover without confirmation:
+  rpk shadow failover my-shadow-link --all --no-confirm
+`,
 		Run: func(cmd *cobra.Command, args []string) {
 			if !all && topic == "" {
 				out.Die("either --all or --topic must be provided")
@@ -74,7 +101,7 @@ func newFailoverCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt")
-	cmd.Flags().BoolVar(&all, "all", false, "Failover all shadow links")
+	cmd.Flags().BoolVar(&all, "all", false, "Failover all shadow topics associated with the Shadow Link")
 	cmd.Flags().StringVar(&topic, "topic", "", "Specific topic to failover. If --all is not set, at least a topic must be provided")
 
 	cmd.MarkFlagsMutuallyExclusive("all", "topic")

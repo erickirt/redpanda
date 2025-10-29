@@ -30,6 +30,29 @@ func newDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "describe [LINK_NAME]",
 		Args:  cobra.ExactArgs(1),
 		Short: "Describe a Redpanda Shadow Link",
+		Long: `Describe a Redpanda Shadow Link.
+
+This command shows the Shadow Link configuration, including connection settings,
+synchronization options, and filters. Use the flags to display specific sections
+or all sections of the configuration.
+
+By default, the command displays the overview and client configuration sections.
+Use the flags to display additional sections such as topic synchronization,
+consumer offset synchronization, and security synchronization settings.
+`,
+		Example: `
+Describe a Shadow Link with default sections (overview and client):
+  rpk shadow describe my-shadow-link
+
+Display all configuration sections:
+  rpk shadow describe my-shadow-link --print-all
+
+Display specific sections:
+  rpk shadow describe my-shadow-link --print-overview --print-topic
+
+Display only the client configuration:
+  rpk shadow describe my-shadow-link -c
+`,
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load rpk config: %v", err)

@@ -31,15 +31,25 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "create",
 		Args:  cobra.NoArgs,
 		Short: "Create a Redpanda Shadow Link",
-		Long: `Create a Shadow Link
+		Long: `Create a Redpanda Shadow Link.
 
-Create a Shadow Link using a configuration file. The configuration file defines
-the connection details and settings for the Shadow Link. For details on the
-configuration file format, see:
-  rpk shadow config --help
+This command creates a Shadow Link using a configuration file that defines the
+connection details and synchronization settings.
 
-The command prompts for confirmation by default. Use the --no-confirm flag to
-skip the confirmation prompt.
+Before you create a Shadow Link, generate a configuration file with 'rpk shadow
+config generate' and update it with your source cluster details. The command
+prompts you to confirm the creation. Use the --no-confirm flag to skip the
+confirmation prompt.
+
+After you create the Shadow Link, use 'rpk shadow status' to monitor the
+replication progress.
+`,
+		Example: `
+Create a Shadow Link using a configuration file:
+  rpk shadow create --config-file shadow-link.yaml
+
+Create a Shadow Link without confirmation prompt:
+  rpk shadow create -c shadow-link.yaml --no-confirm
 `,
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)

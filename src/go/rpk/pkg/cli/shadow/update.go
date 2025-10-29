@@ -27,13 +27,21 @@ func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update [LINK_NAME]",
 		Short: "Update a Shadow Link",
-		Long: `Update a Shadow Link
+		Long: `Update a Shadow Link.
 
-This command opens your default editor to modify the Shadow Link configuration.
-Only the fields that are changed will be updated on the server.
+This command opens your default editor with the current Shadow Link
+configuration. Update the fields you want to change, save the file, and close
+the editor. The command applies only the changed fields to the Shadow Link.
 
-The Shadow Link name cannot be changed. If you need to rename a Shadow Link,
-you must delete and recreate it.
+You cannot change the Shadow Link name. If you need to rename a Shadow Link,
+delete it and create a new one with the desired name.
+
+The editor respects your EDITOR environment variable. If EDITOR is not set, the
+command uses 'vi' on Unix-like systems.
+`,
+		Example: `
+Update a Shadow Link configuration:
+  rpk shadow update my-shadow-link
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
