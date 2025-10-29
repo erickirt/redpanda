@@ -114,6 +114,8 @@ ss::future<> reconciler::reconciliation_loop() {
      * TODO: Investigate performance of polling and alternatives to polling.
      */
 
+    auto deferred = ss::defer(
+      [] { vlog(lg.debug, "Reconciliation loop exiting"); });
     ss::lowres_clock::duration next_wait = reconciliation_interval();
     while (!_gate.is_closed()) {
         try {
