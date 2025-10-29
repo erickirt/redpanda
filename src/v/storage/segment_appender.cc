@@ -626,8 +626,11 @@ ss::future<> segment_appender::flush() {
     // dispatched write will drive flush completion
     if (_head && _head->bytes_pending()) {
         auto& w = _flush_ops.emplace_back(file_byte_offset());
+        // get future first, as the flush_op may be deleted/moved when
+        // dispatching background head write.
+        auto f = w.p.get_future();
         dispatch_background_head_write();
-        return w.p.get_future();
+        return f;
     }
 
     if (file_byte_offset() <= _flushed_offset) {
