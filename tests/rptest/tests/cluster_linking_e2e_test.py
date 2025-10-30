@@ -1288,6 +1288,36 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
             err_msg="Failed to replicate shadow topic",
         )
 
+    @cluster(num_nodes=6)
+    def test_no_wasm_deploy_on_shadow_topic(self):
+        self.target_cluster_service.set_cluster_config(
+            {"data_transforms_enabled": True}, expect_restart=True
+        )
+        self.create_link("test-link")
+        topic = TopicSpec(name="test-topic", partition_count=3, replication_factor=3)
+        self.source_default_client().create_topic(topic)
+
+        wait_until(
+            lambda: self._topics_are_present_in_target_cluster([topic]),
+            timeout_sec=20,
+            err_msg="Failed to find topic in target cluster",
+        )
+
+        shadow_topic = self.get_shadow_topic("test-link", topic.name)
+        assert shadow_topic.status.state == shadow_link_pb2.SHADOW_TOPIC_STATE_ACTIVE, (
+            f"Expected shadow topic to be active, got {shadow_topic.status.state}"
+        )
+
+        self.target_cluster_rpk.create_topic(
+            topic="wasm-input", partitions=3, replicas=3
+        )
+
+        with expect_exception(RpkException, lambda _: True):
+            # Now attempt to create a wasm targeting the shadow topic
+            self.target_cluster_rpk.deploy_wasm(
+                "test-wasm", "wasm-input", [topic.name], file="tinygo/identity.wasm"
+            )
+
 
 class ShadowLinkingReplicationTests(ShadowLinkPreAllocTestBase):
     def leadership_shuffler(self, redpanda, topic: str, enabled: bool):
