@@ -14,6 +14,7 @@
 #include "cluster/cluster_link/frontend.h"
 #include "cluster/controller.h"
 #include "cluster/health_monitor_frontend.h"
+#include "cluster/id_allocator_frontend.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
@@ -380,9 +381,11 @@ public:
     static constexpr auto sync_timeout = 10s;
     explicit local_partition_sink(
       ss::lw_shared_ptr<cluster::partition> partition,
-      const cluster::metadata_cache& md_cache)
+      const cluster::metadata_cache& md_cache,
+      cluster::id_allocator_frontend& id_alloc)
       : _partition(std::move(partition))
       , _metadata_cache{md_cache}
+      , _id_allocator_frontend(id_alloc)
       , _stm(_partition->raft()
                ->stm_manager()
                ->get<kafka::write_at_offset_stm>()) {
@@ -529,6 +532,7 @@ private:
     ss::gate _gate;
     ss::lw_shared_ptr<cluster::partition> _partition;
     const cluster::metadata_cache& _metadata_cache;
+    [[maybe_unused]] cluster::id_allocator_frontend& _id_allocator_frontend;
     ss::shared_ptr<kafka::write_at_offset_stm> _stm;
     // set in start();
     std::optional<kafka::offset> _last_replicated_offset;
@@ -539,9 +543,11 @@ class local_partition_data_sink_factory
 public:
     explicit local_partition_data_sink_factory(
       ss::sharded<cluster::partition_manager>& pm,
-      ss::sharded<cluster::metadata_cache>& md_cache)
+      ss::sharded<cluster::metadata_cache>& md_cache,
+      ss::sharded<cluster::id_allocator_frontend>& id_alloc)
       : _partition_manager(pm)
-      , _metadata_cache{md_cache} {}
+      , _metadata_cache{md_cache}
+      , _id_allocator_frontend(id_alloc) {}
 
     std::unique_ptr<replication::data_sink>
     make_sink(const ::model::ntp& ntp) final {
@@ -551,12 +557,15 @@ public:
               fmt::format("Partition not found: {} on this shard", ntp));
         }
         return make_default_data_sink(
-          std::move(partition), _metadata_cache.local());
+          std::move(partition),
+          _metadata_cache.local(),
+          _id_allocator_frontend.local());
     }
 
 private:
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
+    ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
 };
 
 std::unique_ptr<replication::data_source> make_default_data_source(
@@ -567,9 +576,10 @@ std::unique_ptr<replication::data_source> make_default_data_source(
 
 std::unique_ptr<replication::data_sink> make_default_data_sink(
   ss::lw_shared_ptr<cluster::partition> partition,
-  const cluster::metadata_cache& md_cache) {
+  const cluster::metadata_cache& md_cache,
+  cluster::id_allocator_frontend& id_allocator) {
     return std::make_unique<local_partition_sink>(
-      std::move(partition), md_cache);
+      std::move(partition), md_cache, id_allocator);
 }
 
 class default_link_config_provider
@@ -776,11 +786,13 @@ public:
     explicit default_link_factory(
       ss::sharded<cluster::partition_manager>* partition_manager,
       ss::sharded<kafka::snc_quota_manager>* snc_quota_mgr,
-      ss::sharded<cluster::metadata_cache>* md_cache)
+      ss::sharded<cluster::metadata_cache>* md_cache,
+      ss::sharded<cluster::id_allocator_frontend>* id_alloc)
       : link_factory()
       , _partition_manager(partition_manager)
       , _snc_quota_mgr(snc_quota_mgr)
-      , _metadata_cache(md_cache) {}
+      , _metadata_cache(md_cache)
+      , _id_allocator_frontend(id_alloc) {}
 
     static constexpr auto link_reconciler_period = 5min;
     std::unique_ptr<link> create_link(
@@ -812,13 +824,14 @@ public:
               make_remote_consumer_configuration(config.connection),
               std::move(probe_cfg))),
           std::make_unique<local_partition_data_sink_factory>(
-            *_partition_manager, *_metadata_cache));
+            *_partition_manager, *_metadata_cache, *_id_allocator_frontend));
     }
 
 private:
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<kafka::snc_quota_manager>* _snc_quota_mgr;
     ss::sharded<cluster::metadata_cache>* _metadata_cache;
+    ss::sharded<cluster::id_allocator_frontend>* _id_allocator_frontend;
 };
 
 class kafka_consumer_groups_router : public consumer_groups_router {
@@ -905,6 +918,7 @@ service::service(
   ss::sharded<cluster::health_monitor_frontend>* hm_frontend,
   ss::sharded<cluster::security_frontend>* security_fe,
   ss::sharded<kafka::data::rpc::client>* kafka_data_rpc_client,
+  ss::sharded<cluster::id_allocator_frontend>* id_alloc,
   ss::smp_service_group smp_group,
   ss::scheduling_group scheduling_group)
   : _self(self)
@@ -922,6 +936,7 @@ service::service(
   , _hm_frontend(hm_frontend)
   , _security_fe(security_fe)
   , _kafka_data_rpc_client(kafka_data_rpc_client)
+  , _id_allocator_frontend(id_alloc)
   , _smp_group(smp_group)
   , _scheduling_group(scheduling_group)
   , _queue(_scheduling_group, [](const std::exception_ptr& ex) {
@@ -1101,7 +1116,10 @@ ss::future<> service::maybe_start_manager() {
       security_service::make_default(_security_fe),
       std::make_unique<link_registry_adapter>(&_plf->local(), this),
       std::make_unique<default_link_factory>(
-        _partition_manager, _snc_quota_mgr, _metadata_cache),
+        _partition_manager,
+        _snc_quota_mgr,
+        _metadata_cache,
+        _id_allocator_frontend),
       std::make_unique<cluster_factory>(),
       std::make_unique<kafka_consumer_groups_router>(_group_router),
       std::make_unique<health_monitor_based_partition_metadata_provider>(
