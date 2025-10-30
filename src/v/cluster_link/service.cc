@@ -531,15 +531,53 @@ public:
           kafka::make_partition_proxy(_partition).start_offset());
     }
 
+    ss::future<> maybe_sync_pid() final {
+        // each time we sync the producer ID, advanced it by some fixed amount
+        // greater than one to minimize the number of reset queries.
+        constexpr ::model::producer_id::type pid_sync_increment{1000};
+        constexpr auto timeout = 10s;
+        auto h = _gate.hold();
+        if (
+          _highest_seen_pid
+          < _last_synced_pid.value_or(::model::producer_id{0})) {
+            co_return;
+        }
+        auto next_pid = _highest_seen_pid + pid_sync_increment;
+        vlog(cllog.debug, "Setting next producer ID to {}", next_pid);
+        auto res_f = co_await ss::coroutine::as_future(
+          _id_allocator_frontend.reset_next_id(next_pid, timeout));
+
+        if (res_f.failed()) {
+            auto eptr = res_f.get_exception();
+            vlog(
+              cllog.warn,
+              "Failed to set next producer ID to {}: {}",
+              next_pid,
+              eptr);
+            co_return;
+        }
+
+        if (auto ec = res_f.get().ec; ec != cluster::errc::success) {
+            vlog(
+              cllog.warn,
+              "Failed to set next producer ID to {}: {}",
+              next_pid,
+              ec);
+            co_return;
+        }
+        _last_synced_pid = next_pid;
+    }
+
 private:
     ss::gate _gate;
     ss::lw_shared_ptr<cluster::partition> _partition;
     const cluster::metadata_cache& _metadata_cache;
-    [[maybe_unused]] cluster::id_allocator_frontend& _id_allocator_frontend;
+    cluster::id_allocator_frontend& _id_allocator_frontend;
     ss::shared_ptr<kafka::write_at_offset_stm> _stm;
     // set in start();
     std::optional<kafka::offset> _last_replicated_offset;
     ::model::producer_id _highest_seen_pid{::model::no_producer_id};
+    std::optional<::model::producer_id> _last_synced_pid;
 };
 
 class local_partition_data_sink_factory
