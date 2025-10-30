@@ -617,7 +617,7 @@ class PartitionMoveInterruption(PartitionMovementMixin, PreallocNodesTest):
             if should_cancel:
                 try:
                     admin.cancel_partition_move(topic, partition)
-                except:
+                except Exception:
                     pass
 
             self._throttle_recovery(10000000)

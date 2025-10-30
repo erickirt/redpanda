@@ -102,7 +102,7 @@ class ClientSwarmBase(Service, ABC):
         try:
             self._get(node, path)
             return True
-        except:
+        except Exception:
             return False
 
     def is_alive(self) -> bool:

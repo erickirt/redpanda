@@ -517,7 +517,7 @@ class AdminApiBasedRestore(FastCheck):
         def wait_for_topic():
             try:
                 return self._kafka_tools.describe_topic_config(self.topics[0].name)
-            except:
+            except Exception:
                 return None
 
         topic_config = wait_until_result(wait_for_topic, timeout_sec=60)

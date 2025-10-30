@@ -186,7 +186,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
             try:
                 self.logger.info(f"Running validator {validator.name()}")
                 validator.run(self)
-            except:
+            except Exception:
                 self.logger.error("Failed to run validator", exc_info=True)
 
         self._bg_loop(invoke, validator.name(), lambda: random.uniform(0.5, 1.5))
@@ -224,7 +224,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                 self.private_metrics = res
                 self.logger.info(f"Private metrics {res}")
             time.sleep(2)
-        except:
+        except Exception:
             self.logger.error("Failed to pull metrics", exc_info=True)
             time.sleep(2)
         finally:
@@ -245,7 +245,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                 f"Bucket view updated, {self.bucket_view.segment_objects} segments scanned"
             )
             time.sleep(10)
-        except:
+        except Exception:
             self.logger.error("Failed to scan bucket", exc_info=True)
             time.sleep(20)
         finally:
@@ -271,7 +271,7 @@ class TieredStorageTest(TieredStorageEndToEndTest, RedpandaTest):
                                 v.on_match(node.name, line)
                     if self.stop_flag:
                         return
-            except:
+            except Exception:
                 self.logger.error("Failed to grep logs", exc_info=True)
             finally:
                 self.logger.info("tail -f on {node.name} stopping")

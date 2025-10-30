@@ -338,7 +338,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                 def node_removed():
                     try:
                         brokers = self.redpanda._admin.get_brokers()
-                    except:
+                    except Exception:
                         return False
                     return not any(b["node_id"] == old_node_id for b in brokers)
 

@@ -493,7 +493,7 @@ class TestReadReplicaService(EndToEndTest):
             try:
                 res = admin.get_partitions(topic, partition)
                 return True, res
-            except:
+            except Exception:
                 return False, None
 
         res = wait_until_result(try_get_partitions, timeout_sec=30, backoff_sec=1)

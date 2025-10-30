@@ -219,7 +219,7 @@ class JavaCompressionTest(EndToEndTest):
             try:
                 self.consume()
                 return True
-            except:
+            except Exception:
                 return False
 
         wait_until(

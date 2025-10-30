@@ -71,7 +71,7 @@ class KeycloakConfigWriter:
     def write(self, node):
         try:
             node.account.mkdirs(self._dest_dir)
-        except:
+        except Exception:
             pass
         dest_f = os.path.join(self._dest_dir, KC_CFG)
         with tempfile.NamedTemporaryFile(mode="w") as f:

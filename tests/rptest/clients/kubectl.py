@@ -534,7 +534,7 @@ class KubeNodeShell:
         try:
             _out = self.kubectl.cmd(f"get pods -A | grep {self.pod_name}")
             return len(_out) > 0
-        except:
+        except Exception:
             # Above command fails only when pod is not found
             return False
 

@@ -389,7 +389,7 @@ class OMBValidationTest(RedpandaCloudTest):
         swarm_topic_name = "swarm_topic"
         try:
             self.rpk.delete_topic(swarm_topic_name)
-        except:
+        except Exception:
             # Ignore the exception that is thrown if the topic doesn't exist.
             pass
 

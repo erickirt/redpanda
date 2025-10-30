@@ -128,7 +128,7 @@ class LogPlayer:
                     int(parts[6]),
                     int(parts[7]),
                 )
-            except:
+            except Exception:
                 self.has_violation = True
                 e, v = sys.exc_info()[:2]
                 trace = traceback.format_exc()

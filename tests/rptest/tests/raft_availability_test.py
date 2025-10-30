@@ -104,7 +104,7 @@ class RaftAvailabilityTest(RedpandaTest):
         try:
             # Should fail
             self.ping_pong().ping_pong(timeout_s)
-        except:
+        except Exception:
             return False
         else:
             return True
@@ -113,7 +113,7 @@ class RaftAvailabilityTest(RedpandaTest):
         try:
             # Should fail
             self.ping_pong().ping_pong()
-        except:
+        except Exception:
             self.logger.exception("Cluster is unavailable as expected")
         else:
             assert False, "ping_pong should not have worked "

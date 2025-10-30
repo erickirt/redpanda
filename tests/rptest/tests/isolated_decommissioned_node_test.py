@@ -129,7 +129,7 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
                     namespace="kafka", topic=str(topic), partition=0
                 )
                 return True
-            except:
+            except Exception:
                 return False
 
         wait_until(

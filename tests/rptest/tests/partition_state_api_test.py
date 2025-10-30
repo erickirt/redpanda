@@ -227,7 +227,7 @@ class PartitionStateAPItest(RedpandaTest):
                 return self.redpanda._admin.get_offset_for_leader_epoch(
                     topic.name, 0, 1
                 )["current_leader_epoch"]
-            except:
+            except Exception:
                 self.logger.debug("Failed to get current leader epoch", exc_info=True)
                 return -1
 
@@ -242,7 +242,7 @@ class PartitionStateAPItest(RedpandaTest):
                         output["end_offset"] == expected_offset
                         and output["current_leader_epoch"] == epoch
                     )
-                except:
+                except Exception:
                     self.logger.debug(
                         f"Failed to get offset for leader epoch for node {node}",
                         exc_info=True,

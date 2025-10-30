@@ -45,7 +45,7 @@ class RetryableConsumer:
             if self.consumer != None:
                 try:
                     self.consumer.close()
-                except:
+                except Exception:
                     pass
             self.logger.debug(f"Attempting to init a consumer using {self.brokers}")
             self.consumer = Consumer(config)
