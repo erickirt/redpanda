@@ -3407,7 +3407,7 @@ class RedpandaService(Service, RedpandaServiceABC):
         cur_ver: RedpandaVersionTriple | None = None
         try:
             cur_ver = self.get_version_int_tuple(node)
-        except:  # noqa
+        except Exception:  # noqa
             pass
 
         cmd = (
@@ -4186,7 +4186,7 @@ class RedpandaService(Service, RedpandaServiceABC):
 
         try:
             self._cloud_storage_diagnostics()
-        except:
+        except Exception:
             # We are running during test teardown, so do log the exception
             # instead of propagating: this was a best effort thing
             self.logger.exception("Failed to gather cloud storage diagnostics")

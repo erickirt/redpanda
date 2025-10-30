@@ -327,7 +327,7 @@ def render_overview(title, workload_dir, stat):
                 "max/s": max_throughput,
             },
         }
-    except:
+    except Exception:
         e, v = sys.exc_info()[:2]
         trace = traceback.format_exc()
         logger.debug(v)
@@ -359,7 +359,7 @@ def render_availability(title, workload_dir, stat):
             gnuplot_file.write(jinja2.Template(AVAILABILITY).render(title=title))
 
         gnuplot(availability_gnuplot_path, _cwd=workload_dir)
-    except:
+    except Exception:
         e, v = sys.exc_info()[:2]
         trace = traceback.format_exc()
         logger.debug(v)
@@ -394,7 +394,7 @@ def render_percentiles(title, workload_dir, stat):
             )
 
         gnuplot(percentiles_gnuplot_path, _cwd=workload_dir)
-    except:
+    except Exception:
         e, v = sys.exc_info()[:2]
         trace = traceback.format_exc()
         logger.debug(v)

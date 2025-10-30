@@ -224,7 +224,7 @@ class KcatConsumer(BackgroundThreadService):
                 finally:
                     stderr_reader.join()
 
-        except:
+        except Exception:
             if self._stopping.is_set():
                 # Expect a non-zero exit code when killing during teardown
                 pass

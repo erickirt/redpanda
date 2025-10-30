@@ -179,7 +179,7 @@ class RedpandaInstaller:
             try:
                 for line in ssh_out_per_node[node]:
                     captured_output.append(line)
-            except:
+            except Exception:
                 logger.error(f"Command failed: {captured_output}")
                 raise
 
@@ -383,7 +383,7 @@ class RedpandaInstaller:
                 releases_resp.raise_for_status()
                 try:
                     releases_json = releases_resp.json()
-                except:
+                except Exception:
                     self._redpanda.logger.error(releases_resp.text)
                     raise
 

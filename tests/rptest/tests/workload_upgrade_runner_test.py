@@ -128,7 +128,7 @@ class WorkloadAdapter(PWorkload):
             try:
                 # attempt at cleanup anyway
                 self.workload.end()
-            except:
+            except Exception:
                 pass
             return None
 

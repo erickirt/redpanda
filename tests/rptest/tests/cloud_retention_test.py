@@ -286,7 +286,7 @@ class CloudRetentionTest(PreallocNodesTest):
             for partition in range(0, num_partitions):
                 try:
                     manifest = s3_snapshot.manifest_for_ntp(self.topic_name, partition)
-                except:
+                except Exception:
                     self.logger.info(f"Partition {partition} has no uploaded manifest")
                     return False
 

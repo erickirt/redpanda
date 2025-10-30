@@ -271,7 +271,7 @@ class WorkloadServiceBase(ABC, Service):
 
         try:
             stats = self.collect_stats()
-        except:
+        except Exception:
             self.logger.warn(
                 f"{self.who_am_i()}: failed to collect workload stats", exc_info=True
             )

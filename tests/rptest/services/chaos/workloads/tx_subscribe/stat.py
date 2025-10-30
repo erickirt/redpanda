@@ -126,7 +126,7 @@ set parametric
 
 plot 'throughput.log' using ($1/1000):2 title "throughput - all (per 1s)" with line lt rgb "black"{% for throughput in throughput_plots %},\\
      '{{throughput.file}}' using ($1/1000):2 title "{{throughput.title}}" with line lt rgb "{{throughput.color}}"{% endfor %}
-     
+
 
 unset multiplot
 """
@@ -447,7 +447,7 @@ def render_overview(title, workload_dir, stat, source_partitions):
             },
         }
 
-    except:
+    except Exception:
         e, v = sys.exc_info()[:2]
         trace = traceback.format_exc()
         logger.debug(v)
@@ -482,7 +482,7 @@ def render_availability(title, workload_dir, stat):
             gnuplot_file.write(jinja2.Template(AVAILABILITY).render(title=title))
 
         gnuplot(availability_gnuplot_path, _cwd=workload_dir)
-    except:
+    except Exception:
         e, v = sys.exc_info()[:2]
         trace = traceback.format_exc()
         logger.debug(v)
@@ -517,7 +517,7 @@ def render_percentiles(title, workload_dir, stat):
             )
 
         gnuplot(percentiles_gnuplot_path, _cwd=workload_dir)
-    except:
+    except Exception:
         e, v = sys.exc_info()[:2]
         trace = traceback.format_exc()
         logger.debug(v)
