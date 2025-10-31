@@ -508,6 +508,8 @@ message ShadowLinkTaskStatus {
     string reason = 3;
     // The broker the task is running on
     int32 broker_id = 4;
+    // The shard the task is running on
+    int32 shard = 5;
 }
 // Status of a ShadowTopic
 message ShadowTopicStatus {

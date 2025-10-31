@@ -86,7 +86,7 @@ public:
     model::task_state get_state() const noexcept;
 
     /// Returns the status report for this task
-    model::task_status_report get_status_report() const;
+    virtual model::task_status_report get_status_report() const;
 
     /// Returns whether or not the task is enabled
     virtual model::enabled_t is_enabled() const = 0;
@@ -146,6 +146,8 @@ class controller_locked_task : public task {
 public:
     controller_locked_task(
       link* link, ss::lowres_clock::duration run_interval, ss::sstring name);
+
+    model::task_status_report get_status_report() const override;
 
 protected:
     /// Returns true if the task should be started on the current node shard

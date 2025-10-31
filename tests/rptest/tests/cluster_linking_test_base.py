@@ -87,6 +87,11 @@ DISALLOWED_SYNCED_TOPIC_PROPERTIES = [
     "redpanda.cloud_topic.enabled",
 ]
 
+CONTROLLER_LOCKED_TASKS = [
+    "Source Topic Sync",
+    "Security Migrator Task",
+]
+
 
 class ClusterLinkingTLSProvider(TLSProvider):
     def __init__(self, tls: TLSCertManager):

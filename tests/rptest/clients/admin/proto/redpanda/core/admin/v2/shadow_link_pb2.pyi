@@ -1090,6 +1090,7 @@ class ShadowLinkTaskStatus(google.protobuf.message.Message):
     STATE_FIELD_NUMBER: builtins.int
     REASON_FIELD_NUMBER: builtins.int
     BROKER_ID_FIELD_NUMBER: builtins.int
+    SHARD_FIELD_NUMBER: builtins.int
     name: builtins.str
     'Name of the task'
     state: global___TaskState.ValueType
@@ -1098,11 +1099,13 @@ class ShadowLinkTaskStatus(google.protobuf.message.Message):
     'Reason for task being in state'
     broker_id: builtins.int
     'The broker the task is running on'
+    shard: builtins.int
+    'The shard the task is running on'
 
-    def __init__(self, *, name: builtins.str=..., state: global___TaskState.ValueType=..., reason: builtins.str=..., broker_id: builtins.int=...) -> None:
+    def __init__(self, *, name: builtins.str=..., state: global___TaskState.ValueType=..., reason: builtins.str=..., broker_id: builtins.int=..., shard: builtins.int=...) -> None:
         ...
 
-    def ClearField(self, field_name: typing.Literal['broker_id', b'broker_id', 'name', b'name', 'reason', b'reason', 'state', b'state']) -> None:
+    def ClearField(self, field_name: typing.Literal['broker_id', b'broker_id', 'name', b'name', 'reason', b'reason', 'shard', b'shard', 'state', b'state']) -> None:
         ...
 global___ShadowLinkTaskStatus = ShadowLinkTaskStatus
 

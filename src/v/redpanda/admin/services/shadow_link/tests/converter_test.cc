@@ -10,7 +10,9 @@
  */
 
 #include "cluster_link/model/types.h"
+#include "crypto/crypto.h"
 #include "redpanda/admin/services/shadow_link/converter.h"
+#include "utils/base64.h"
 
 #include <gtest/gtest.h>
 
@@ -150,6 +152,7 @@ TEST(converter_test, create_with_authn_config_scram_256) {
     shadow_link.set_name(ss::sstring{name});
     req.set_shadow_link(std::move(shadow_link));
 
+    auto now = model::to_time_point(model::timestamp::now());
     auto md = admin::convert_create_to_metadata(std::move(req));
     ASSERT_TRUE(md.connection.authn_config.has_value());
     ASSERT_TRUE(
@@ -162,6 +165,11 @@ TEST(converter_test, create_with_authn_config_scram_256) {
     EXPECT_EQ(md_authn_config.username, username);
     EXPECT_EQ(md_authn_config.password, password);
     EXPECT_EQ(md_authn_config.mechanism, mechanism);
+    auto pwd_updated = model::to_time_point(
+      md_authn_config.password_last_updated);
+    // Expect the password updated time to be within 10s
+    EXPECT_GE(pwd_updated, now - 5s);
+    EXPECT_LE(pwd_updated, now + 5s);
 }
 
 TEST(converter_test, create_with_authn_config_scram_512) {
@@ -797,7 +805,10 @@ TEST(converter_test, metadata_to_shadow_link_tls_value) {
     ASSERT_TRUE(tls_settings.has_tls_pem_settings());
     const auto& tls_value_settings = tls_settings.get_tls_pem_settings();
     EXPECT_EQ(tls_value_settings.get_ca(), ca);
-    EXPECT_EQ(tls_value_settings.get_key(), key);
+    EXPECT_EQ(tls_value_settings.get_key(), "");
+    EXPECT_EQ(
+      tls_value_settings.get_key_fingerprint(),
+      bytes_to_base64(crypto::digest(crypto::digest_type::SHA256, key)));
     EXPECT_EQ(tls_value_settings.get_cert(), cert);
 }
 
@@ -1002,7 +1013,9 @@ TEST(converter_test, update_scram_creds) {
     current_md.connection.authn_config = cluster_link::model::scram_credentials{
       .username = "old-user",
       .password = "old-password",
-      .mechanism = "SCRAM-SHA-256"};
+      .mechanism = "SCRAM-SHA-256",
+      .password_last_updated = model::to_timestamp(
+        std::chrono::system_clock::now() - 1h)};
     admin::set_client_id(current_md);
 
     proto::admin::scram_config scram_config;
@@ -1026,6 +1039,7 @@ TEST(converter_test, update_scram_creds) {
         "configurations", "client_options", "authentication_configuration"});
     req.set_update_mask(std::move(mask));
 
+    auto now = model::to_time_point(model::timestamp::now());
     auto update_cmd = admin::create_update_cluster_link_config_cmd(
       std::move(req), current_md.copy());
 
@@ -1036,6 +1050,11 @@ TEST(converter_test, update_scram_creds) {
     EXPECT_EQ(new_scram_config.username, "new-user");
     EXPECT_EQ(new_scram_config.password, "new-password");
     EXPECT_EQ(new_scram_config.mechanism, "SCRAM-SHA-512");
+    auto pwd_updated = model::to_time_point(
+      new_scram_config.password_last_updated);
+    // Expect the password updated time to be within 10s
+    EXPECT_GE(pwd_updated, now - 5s);
+    EXPECT_LE(pwd_updated, now + 5s);
 }
 
 TEST(converter_test, do_not_update_scram_creds) {

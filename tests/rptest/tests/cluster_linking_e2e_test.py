@@ -54,6 +54,7 @@ from rptest.services.redpanda import (
 )
 from rptest.services.tls import TLSCertManager
 from rptest.tests.cluster_linking_test_base import (
+    CONTROLLER_LOCKED_TASKS,
     DEFAULT_SYNCED_TOPIC_PROPERTIES,
     DISALLOWED_SYNCED_TOPIC_PROPERTIES,
     REQUIRED_SYNCED_TOPIC_PROPERTIES,
@@ -319,6 +320,87 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
             assert e.code == ConnectErrorCode.NOT_FOUND, (
                 f"Expected NOT_FOUND error code, got {e.code}"
             )
+
+        task_statuses = got_link.status.task_statuses
+        self.logger.info(f"Shadow link task_statuses: {task_statuses}")
+
+        # Get the controller leader
+        leader_id = Admin(self.target_cluster_service).get_partition_leader(
+            namespace="redpanda", topic="controller", partition=0
+        )
+
+        for task in task_statuses:
+            if task.name in CONTROLLER_LOCKED_TASKS:
+                assert task.state == shadow_link_pb2.TASK_STATE_ACTIVE, (
+                    f'Expected task "{task.name}" to be running, got {task.state}'
+                )
+                assert task.broker_id == leader_id, (
+                    f'Expected task "{task.name}" to be running on controller node {leader_id} not {task.broker_id}'
+                )
+                assert task.shard == 0, (
+                    f'Expected task "{task.name}" to be running on shard 0 not {task.shard}'
+                )
+
+    @cluster(num_nodes=6)
+    def test_task_states_change(self):
+        topic = TopicSpec(name="test-topic", partition_count=3, replication_factor=3)
+        self.source_default_client().create_topic(topic)
+        self.create_link("test-link")
+
+        wait_until(
+            lambda: self._topics_are_present_in_target_cluster([topic]),
+            timeout_sec=20,
+            err_msg="Failed to find topic in target cluster",
+        )
+
+        def _wait_for_controller_tasks_state(
+            expected_state: shadow_link_pb2.TaskState.ValueType,
+        ) -> bool:
+            # Get the controller leader
+            leader_id = Admin(self.target_cluster_service).get_partition_leader(
+                namespace="redpanda", topic="controller", partition=0
+            )
+            task_statuses = self.get_link("test-link").status.task_statuses
+            self.logger.debug(f"Task statuses: {task_statuses}")
+            for task in task_statuses:
+                if task.name in CONTROLLER_LOCKED_TASKS:
+                    assert task.broker_id == leader_id, (
+                        f'Expected task "{task.name}" to be running on controller node {leader_id} not {task.broker_id}'
+                    )
+                    assert task.shard == 0, (
+                        f'Expected task "{task.name}" to be running on shard 0 not {task.shard}'
+                    )
+                    if task.state != expected_state:
+                        return False
+            return True
+
+        wait_until(
+            lambda: _wait_for_controller_tasks_state(shadow_link_pb2.TASK_STATE_ACTIVE),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Controller locked tasks did not become active",
+        )
+
+        # Now shut down the source cluster
+        self.source_cluster.stop()
+
+        wait_until(
+            lambda: _wait_for_controller_tasks_state(
+                shadow_link_pb2.TASK_STATE_LINK_UNAVAILABLE
+            ),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Controller locked tasks did not become link unavailable",
+        )
+
+        # Now restart and expect things to recover
+        self.source_cluster.start()
+        wait_until(
+            lambda: _wait_for_controller_tasks_state(shadow_link_pb2.TASK_STATE_ACTIVE),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Controller locked tasks did not become active after source cluster restart",
+        )
 
     @cluster(num_nodes=6)
     def test_can_not_create_more_than_one_link(self):
