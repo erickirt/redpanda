@@ -2699,30 +2699,31 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
                 [by_status[s] == 0 for s in other_statuses]
             )
 
+        def _get_total_value(
+            node_samples: list[dict[str, MetricSamples]], metric_name: str
+        ) -> Optional[int]:
+            total_value = 0
+            for samples in node_samples:
+                if metric_name not in samples:
+                    return None
+                for s in samples[metric_name].samples:
+                    total_value += int(s.value)
+            return total_value
+
         def check_total_value(
             node_samples: list[dict[str, MetricSamples]],
             metric_name: str,
             expected_total: int,
         ) -> bool:
-            total_records = 0
-            for samples in node_samples:
-                if metric_name not in samples:
-                    return False
-                for s in samples[metric_name].samples:
-                    total_records += s.value
-            return total_records == expected_total
+            total_records = _get_total_value(node_samples, metric_name)
+            return total_records is not None and total_records == expected_total
 
         # This function only checks that the result is greater than zero. i.e. something has been returned by this metric
         def check_value_positive(
             node_samples: list[dict[str, MetricSamples]], metric_name: str
         ) -> bool:
-            total_value = 0
-            for samples in node_samples:
-                if metric_name not in samples:
-                    return False
-                for s in samples[metric_name].samples:
-                    total_value += s.value
-            return total_value > 0
+            total_value = _get_total_value(node_samples, metric_name)
+            return total_value is not None and total_value > 0
 
         def check_metric_exists(
             node_samples: list[dict[str, MetricSamples]], metric_name: str
