@@ -120,7 +120,7 @@ func generateSampleConfig() *ShadowLinkConfig {
 		},
 		ConsumerOffsetSyncOptions: &ConsumerOffsetSyncOptions{
 			Interval: 30 * time.Second,
-			Enabled:  true,
+			Paused:   false,
 			GroupFilters: []*NameFilter{
 				{
 					PatternType: PatternTypeLiteral,
@@ -131,7 +131,7 @@ func generateSampleConfig() *ShadowLinkConfig {
 		},
 		SecuritySyncOptions: &SecuritySettingsSyncOptions{
 			Interval: 30 * time.Second,
-			Enabled:  false,
+			Paused:   false,
 			ACLFilters: []*ACLFilter{
 				{
 					ResourceFilter: &ACLResourceFilter{
