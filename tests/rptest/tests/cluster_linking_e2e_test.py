@@ -2670,21 +2670,10 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
         self.start_producer_consumer(topic=topic_1.name, msg_size=128, msg_cnt=1000)
         self.verify()
 
-        def check_shadow_topic_states(
-            node_samples: list[dict[str, MetricSamples]], n_active: int
-        ) -> bool:
+        def collect_shadow_topic_states(
+            node_samples: list[dict[str, MetricSamples]],
+        ) -> dict[str, int]:
             sts = "shadow_topic_state"
-            other_statuses = [
-                "failed",
-                "paused",
-                "failing_over",
-                "failed_over",
-                "promoting",
-                "promoted",
-            ]
-
-            if not node_samples:
-                return False
 
             by_status: dict[str, int] = {}
             for samples in node_samples:
@@ -2695,34 +2684,63 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
                     if status not in by_status:
                         by_status[status] = 0
                     by_status[status] += int(s.value)
-            return by_status["active"] == n_active and all(
-                [by_status[s] == 0 for s in other_statuses]
-            )
+            return by_status
+
+        def check_shadow_topic_states(
+            node_samples: list[dict[str, MetricSamples]],
+            expected_states: dict[str, int],
+        ) -> bool:
+            all_states = [
+                "active",
+                "failed",
+                "paused",
+                "failing_over",
+                "failed_over",
+                "promoting",
+                "promoted",
+            ]
+            expected = {
+                **expected_states,
+                **{s: 0 for s in all_states if s not in expected_states},
+            }
+
+            by_status = collect_shadow_topic_states(node_samples)
+            return all(by_status[s] == expected[s] for s in all_states)
+
+        def _get_total_value(
+            node_samples: list[dict[str, MetricSamples]], metric_name: str
+        ) -> Optional[int]:
+            total_value = 0
+            for samples in node_samples:
+                if metric_name not in samples:
+                    return None
+                for s in samples[metric_name].samples:
+                    total_value += int(s.value)
+            return total_value
 
         def check_total_value(
             node_samples: list[dict[str, MetricSamples]],
             metric_name: str,
             expected_total: int,
         ) -> bool:
-            total_records = 0
-            for samples in node_samples:
-                if metric_name not in samples:
-                    return False
-                for s in samples[metric_name].samples:
-                    total_records += s.value
-            return total_records == expected_total
+            total_records = _get_total_value(node_samples, metric_name)
+            return total_records is not None and total_records == expected_total
 
         # This function only checks that the result is greater than zero. i.e. something has been returned by this metric
         def check_value_positive(
             node_samples: list[dict[str, MetricSamples]], metric_name: str
         ) -> bool:
-            total_value = 0
-            for samples in node_samples:
-                if metric_name not in samples:
-                    return False
-                for s in samples[metric_name].samples:
-                    total_value += s.value
-            return total_value > 0
+            total_value = _get_total_value(node_samples, metric_name)
+            return total_value is not None and total_value > 0
+
+        # This function checks that the result is at least min_value.
+        def check_value_at_least(
+            node_samples: list[dict[str, MetricSamples]],
+            metric_name: str,
+            min_value: int,
+        ) -> bool:
+            total_value = _get_total_value(node_samples, metric_name)
+            return total_value is not None and total_value >= min_value
 
         def check_metric_exists(
             node_samples: list[dict[str, MetricSamples]], metric_name: str
@@ -2733,10 +2751,13 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
             return True
 
         def active_shadow_topics_1(samples: list[dict[str, MetricSamples]]):
-            return check_shadow_topic_states(samples, 1)
+            return check_shadow_topic_states(samples, {"active": 1})
 
         def active_shadow_topics_2(samples: list[dict[str, MetricSamples]]):
-            return check_shadow_topic_states(samples, 2)
+            return check_shadow_topic_states(samples, {"active": 2})
+
+        def failed_over_topics_3(samples: list[dict[str, MetricSamples]]):
+            return check_shadow_topic_states(samples, {"failed_over": 3})
 
         def check_records_fetched_1000(samples: list[dict[str, MetricSamples]]):
             return check_total_value(samples, "total_records_fetched", 1000)
@@ -2753,8 +2774,14 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
         def check_bytes_fetched(samples: list[dict[str, MetricSamples]]):
             return check_value_positive(samples, "total_bytes_fetched")
 
+        def check_bytes_fetched_128000(samples: list[dict[str, MetricSamples]]):
+            return check_value_at_least(samples, "total_bytes_fetched", 128000)
+
         def check_bytes_written(samples: list[dict[str, MetricSamples]]):
             return check_value_positive(samples, "total_bytes_written")
+
+        def check_bytes_written_128000(samples: list[dict[str, MetricSamples]]):
+            return check_value_at_least(samples, "total_bytes_written", 128000)
 
         def check_shadow_lag_zero(node_samples: list[dict[str, MetricSamples]]) -> bool:
             return check_total_value(node_samples, "shadow_lag", 0)
@@ -2767,25 +2794,34 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
         def check_client_errors(node_samples: list[dict[str, MetricSamples]]) -> bool:
             return check_metric_exists(node_samples, "client_errors")
 
+        def validate_metrics(
+            timeout_sec: int, metric_validators: list[tuple[str, Callable]]
+        ):
+            for metric_name, validator in metric_validators:
+                self.logger.debug(f"Validating values of metric: {metric_name}")
+                wait_until(
+                    lambda: self._validate_metrics(
+                        target_nodes, [metric_name], validator
+                    ),
+                    timeout_sec=timeout_sec,
+                    backoff_sec=1,
+                    err_msg=f"Failed to get the expected metrics value for metric {metric_name}",
+                )
+
         target_nodes = self.target_cluster.service.nodes
 
-        metric_validators = [
-            ("shadow_topic_state", active_shadow_topics_1),
-            ("total_records_fetched", check_records_fetched_1000),
-            ("total_records_written", check_records_written_1000),
-            ("total_bytes_fetched", check_bytes_fetched),
-            ("total_bytes_written", check_bytes_written),
-            ("shadow_lag", check_shadow_lag_zero),
-            ("client_errors", check_client_errors),
-        ]
-        for metric_name, validator in metric_validators:
-            self.logger.debug(f"Validating values of metric: {metric_name}")
-            wait_until(
-                lambda: self._validate_metrics(target_nodes, [metric_name], validator),
-                timeout_sec=10,
-                backoff_sec=1,
-                err_msg=f"Failed to get the expected metrics value for metric {metric_name}",
-            )
+        validate_metrics(
+            timeout_sec=10,
+            metric_validators=[
+                ("shadow_topic_state", active_shadow_topics_1),
+                ("total_records_fetched", check_records_fetched_1000),
+                ("total_records_written", check_records_written_1000),
+                ("total_bytes_fetched", check_bytes_fetched_128000),
+                ("total_bytes_written", check_bytes_written_128000),
+                ("shadow_lag", check_shadow_lag_zero),
+                ("client_errors", check_client_errors),
+            ],
+        )
 
         topic_2 = TopicSpec(
             name="test-topic-2", partition_count=3, replication_factor=1
@@ -2794,23 +2830,18 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
         self.start_producer_consumer(topic=topic_2.name, msg_size=128, msg_cnt=1500)
         self.verify()
 
-        metric_validators = [
-            ("shadow_topic_state", active_shadow_topics_2),
-            ("total_records_fetched", check_records_fetched_2500),
-            ("total_records_written", check_records_written_2500),
-            ("total_bytes_fetched", check_bytes_fetched),
-            ("total_bytes_written", check_bytes_written),
-            ("shadow_lag", check_shadow_lag_zero),
-            ("client_errors", check_client_errors),
-        ]
-        for metric_name, validator in metric_validators:
-            self.logger.debug(f"Validating values of metric: {metric_name}")
-            wait_until(
-                lambda: self._validate_metrics(target_nodes, [metric_name], validator),
-                timeout_sec=10,
-                backoff_sec=1,
-                err_msg=f"Failed to get the expected metrics value for metric {metric_name}",
-            )
+        validate_metrics(
+            timeout_sec=10,
+            metric_validators=[
+                ("shadow_topic_state", active_shadow_topics_2),
+                ("total_records_fetched", check_records_fetched_2500),
+                ("total_records_written", check_records_written_2500),
+                ("total_bytes_fetched", check_bytes_fetched),
+                ("total_bytes_written", check_bytes_written),
+                ("shadow_lag", check_shadow_lag_zero),
+                ("client_errors", check_client_errors),
+            ],
+        )
 
         topic_3 = TopicSpec(
             name="test-topic-3", partition_count=1, replication_factor=3
@@ -2830,30 +2861,30 @@ class ShadowLinkingMetricsTests(ShadowLinkPreAllocTestBase):
             use_transactions=True,
             msgs_per_transaction=10000,
         )
-        metric_validators = [
-            ("shadow_lag", check_shadow_lag_positive),
-        ]
-        for metric_name, validator in metric_validators:
-            self.logger.debug(f"Validating values of metric: {metric_name}")
-            wait_until(
-                lambda: self._validate_metrics(target_nodes, [metric_name], validator),
-                timeout_sec=30,
-                backoff_sec=1,
-                err_msg=f"Failed to get the expected metrics value for metric {metric_name}",
-            )
+        validate_metrics(
+            timeout_sec=30,
+            metric_validators=[
+                ("shadow_lag", check_shadow_lag_positive),
+            ],
+        )
         self.verify()
 
-        metric_validators = [
-            ("shadow_lag", check_shadow_lag_zero),
-        ]
-        for metric_name, validator in metric_validators:
-            self.logger.debug(f"Validating values of metric: {metric_name}")
-            wait_until(
-                lambda: self._validate_metrics(target_nodes, [metric_name], validator),
-                timeout_sec=30,
-                backoff_sec=1,
-                err_msg=f"Failed to get the expected metrics value for metric {metric_name}",
-            )
+        validate_metrics(
+            timeout_sec=30,
+            metric_validators=[
+                ("shadow_lag", check_shadow_lag_zero),
+            ],
+        )
+
+        self.failover_link(name="test-link")
+        self.wait_for_link_failover(link="test-link")
+
+        validate_metrics(
+            timeout_sec=10,
+            metric_validators=[
+                ("shadow_topic_state", failed_over_topics_3),
+            ],
+        )
 
 
 class ShadowLinkCustomStartOffsetSelectionTests(ShadowLinkPreAllocTestBase):
