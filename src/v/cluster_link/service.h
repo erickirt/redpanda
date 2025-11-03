@@ -108,7 +108,8 @@ public:
     ss::future<cl_result<model::metadata>> update_mirror_topic_status(
       model::name_t link_name,
       ::model::topic topic,
-      model::mirror_topic_status);
+      model::mirror_topic_status,
+      bool force_update = false);
 
     /**
      * @brief Failover the topics of a cluster link

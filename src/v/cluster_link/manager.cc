@@ -465,16 +465,18 @@ ss::future<cl_result<model::metadata>> manager::update_cluster_link(
 ss::future<cl_result<model::metadata>> manager::update_mirror_topic_status(
   model::name_t link_name,
   ::model::topic topic,
-  model::mirror_topic_status status) {
+  model::mirror_topic_status status,
+  bool force_update) {
     static constexpr auto model_timeout = 30s;
     auto hold = _g.hold();
     vlog(
       cllog.info,
       "Attempting to update mirror topic '{}' status on link '{}' to status: "
-      "{}",
+      "{} (forced: {})",
       topic,
       link_name,
-      status);
+      status,
+      force_update);
     const auto link_id = _registry->find_link_id_by_name(link_name);
     if (!link_id.has_value()) {
         co_return err_info{
@@ -484,6 +486,8 @@ ss::future<cl_result<model::metadata>> manager::update_mirror_topic_status(
     model::update_mirror_topic_status_cmd cmd;
     cmd.topic = topic;
     cmd.status = status;
+    cmd.force_update = model::update_mirror_topic_status_cmd::force_update_t{
+      force_update};
     auto ec = co_await _registry->update_mirror_topic_state(
       *link_id, std::move(cmd), ::model::timeout_clock::now() + model_timeout);
     auto err = map_cluster_errc(ec);

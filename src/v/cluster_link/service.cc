@@ -1047,13 +1047,15 @@ ss::future<cl_result<model::metadata>> service::update_cluster_link(
 ss::future<cl_result<model::metadata>> service::update_mirror_topic_status(
   model::name_t link_name,
   ::model::topic topic,
-  model::mirror_topic_status status) {
+  model::mirror_topic_status status,
+  bool force_update) {
     auto h = _gate.hold();
     return with_manager([link_name = std::move(link_name),
                          topic = std::move(topic),
-                         status](manager* mgr) mutable {
+                         status,
+                         force_update](manager* mgr) mutable {
         return mgr->update_mirror_topic_status(
-          std::move(link_name), std::move(topic), status);
+          std::move(link_name), std::move(topic), status, force_update);
     });
 }
 

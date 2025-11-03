@@ -92,7 +92,10 @@ public:
      * @return Result containing metadata of updated mirror topic or an error.
      */
     ss::future<cl_result<model::metadata>> update_mirror_topic_status(
-      model::name_t link_name, ::model::topic, model::mirror_topic_status);
+      model::name_t link_name,
+      ::model::topic,
+      model::mirror_topic_status,
+      bool force_update = false);
 
     /**
      * @brief Fails over the topics of a cluster link
