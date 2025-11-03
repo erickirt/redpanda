@@ -464,7 +464,7 @@ ss::future<cl_result<model::metadata>> manager::update_cluster_link(
 
 ss::future<cl_result<model::metadata>> manager::update_mirror_topic_status(
   model::name_t link_name,
-  const ::model::topic& topic,
+  ::model::topic topic,
   model::mirror_topic_status status) {
     static constexpr auto model_timeout = 30s;
     auto hold = _g.hold();
