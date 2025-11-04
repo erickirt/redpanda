@@ -5783,11 +5783,19 @@ class RedpandaService(Service, RedpandaServiceABC):
         if not cloud_storage_partitions:
             return None
 
+        # Set the scrub interval down very low so the scrubs happen "soon"
+        # note that because we reset the scrubbing metadata below, the next
+        # scrub will effectively be a full scrub (since the last scrubbed
+        # offset will be forgotten).
         self.set_cluster_config(
             {
                 "cloud_storage_enable_scrubbing": True,
+                # these two intervals usually don't matter as the metadata reset
+                # forces an immediate scrub, but sometimes due to leadership
+                # transfer we end up waiting for the next full scrub cycle,
+                # see CORE-14424
                 "cloud_storage_partial_scrub_interval_ms": 100,
-                "cloud_storage_full_scrub_interval_ms": 1000 * 60 * 10,
+                "cloud_storage_full_scrub_interval_ms": 10 * 1000,
                 "cloud_storage_scrubbing_interval_jitter_ms": 100,
                 "cloud_storage_background_jobs_quota": 5000,
                 "cloud_storage_housekeeping_interval_ms": 100,
