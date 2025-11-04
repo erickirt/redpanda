@@ -2854,7 +2854,10 @@ class ShadowLinkUpdateBrokersTests(ShadowLinkPreAllocTestBase):
             tls_cert=self.tls.create_cert("other-source-rpk"),
         )
 
-    @cluster(num_nodes=9)
+    @cluster(
+        num_nodes=9,
+        log_allow_list=[re.compile(".*Broker.*does not support list groups API.*")],
+    )
     def test_update_brokers(self):
         # Create a link pointing to the old source cluster
         shadow_link = self.create_link("test-link")
