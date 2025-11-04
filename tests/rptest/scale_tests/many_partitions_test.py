@@ -281,6 +281,9 @@ class ManyPartitionsTest(PreallocNodesTest):
             consumer.free()
 
     def _repeater_worker_count(self, scale: ScaleParameters):
+        assert scale.node_memory_mib / scale.node_cpus >= 3500, (
+            "Insufficient memory on client nodes for kgo-repeater worker count"
+        )
         # Takes about half of the memory on 4GB per core nodes
         workers = 16 * scale.node_cpus
         if self.redpanda.dedicated_nodes:

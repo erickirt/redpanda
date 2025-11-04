@@ -62,24 +62,24 @@ class ScaleParameters:
 
         self.node_count = node_count = len(self.redpanda.nodes)
 
-        node_memory_mib = self.redpanda.get_node_memory_mb()
+        self.node_memory_mib = self.redpanda.get_node_memory_mb()
         self.node_cpus = self.redpanda.get_node_cpu_count()
         node_disk_free = self.redpanda.get_node_disk_free()
 
         if self.redpanda.dedicated_nodes:
             # Emulate seastar's policy for default reserved memory
-            reserved_memory = max(1536, int(0.07 * node_memory_mib) + 1)
-            effective_node_memory = node_memory_mib - reserved_memory
+            reserved_memory = max(1536, int(0.07 * self.node_memory_mib) + 1)
+            effective_node_memory = self.node_memory_mib - reserved_memory
         else:
             reserved_memory = 0
             # when in docker, we always end up passing --memory=node_memory
             # explicitly, and this amount does not have the reserve subtracted
             # from it, so we use the full amount. For details see:
             # https://github.com/scylladb/seastar/issues/375#issuecomment-2530012089
-            effective_node_memory = node_memory_mib
+            effective_node_memory = self.node_memory_mib
 
         self.logger.info(
-            f"Nodes have {self.node_cpus} cores, {node_memory_mib}MB memory, {effective_node_memory}MB available memory, {node_disk_free / (1024 * 1024)}MB free disk"
+            f"Nodes have {self.node_cpus} cores, {self.node_memory_mib}MB memory, {effective_node_memory}MB available memory, {node_disk_free / (1024 * 1024)}MB free disk"
         )
 
         # On large nodes, reserve half of shard 0 to minimize interference
@@ -291,7 +291,7 @@ class ScaleParameters:
         if effective_node_memory < required_node_memory:
             raise RuntimeError(
                 f"Node memory is too small. Effective memory: {effective_node_memory}MB "
-                f"({node_memory_mib}MB node - {reserved_memory}MB reserved), "
+                f"({self.node_memory_mib}MB node - {reserved_memory}MB reserved), "
                 f"required memory: {required_node_memory}MB, ({rnm_message})"
             )
 
