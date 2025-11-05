@@ -2249,6 +2249,9 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
                 }
                 for p in g_desc.partitions:
                     if (p.topic, p.partition) not in t_partitions:
+                        self.logger.debug(
+                            f"Group {g_name} partition {p.topic}/{p.partition} not present in target_cluster"
+                        )
                         return False
                     if p.current_offset != t_partitions[(p.topic, p.partition)]:
                         self.logger.warn(
