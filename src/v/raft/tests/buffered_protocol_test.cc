@@ -32,11 +32,6 @@ public:
         return ss::make_ready_future<result<raft::append_entries_reply>>(
           raft::append_entries_reply{});
     }
-    ss::future<result<raft::heartbeat_reply>>
-    heartbeat(model::node_id, raft::heartbeat_request, rpc::client_opts) final {
-        return ss::make_ready_future<result<raft::heartbeat_reply>>(
-          raft::heartbeat_reply{});
-    }
     ss::future<result<raft::heartbeat_reply_v2>> heartbeat_v2(
       model::node_id, raft::heartbeat_request_v2, rpc::client_opts) final {
         return ss::make_ready_future<result<raft::heartbeat_reply_v2>>(

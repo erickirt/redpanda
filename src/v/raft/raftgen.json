@@ -17,11 +17,6 @@
             "output_type": "append_entries_reply"
         },
         {
-            "name": "heartbeat",
-            "input_type": "heartbeat_request",
-            "output_type": "heartbeat_reply"
-        },
-        {
             "name": "heartbeat_v2",
             "input_type": "heartbeat_request_v2",
             "output_type": "heartbeat_reply_v2"

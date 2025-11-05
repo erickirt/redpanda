@@ -49,7 +49,6 @@ inline constexpr raft::group_id test_group(123);
 enum class msg_type {
     append_entries,
     vote,
-    heartbeat,
     heartbeat_v2,
     install_snapshot,
     timeout_now,
@@ -110,7 +109,6 @@ struct raft_node_map {
 using reply_variant = std::variant<
   vote_reply,
   append_entries_reply,
-  heartbeat_reply,
   heartbeat_reply_v2,
   install_snapshot_reply,
   timeout_now_reply,
@@ -134,9 +132,6 @@ public:
 
     ss::future<result<append_entries_reply>> append_entries(
       model::node_id, append_entries_request, rpc::client_opts) final;
-
-    ss::future<result<heartbeat_reply>>
-      heartbeat(model::node_id, heartbeat_request, rpc::client_opts) final;
 
     ss::future<result<heartbeat_reply_v2>> heartbeat_v2(
       model::node_id, heartbeat_request_v2, rpc::client_opts) final;

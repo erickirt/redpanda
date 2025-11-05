@@ -142,17 +142,6 @@ ss::future<> channel::do_dispatch_message(msg msg) {
             msg.resp_data.set_value(std::move(resp_buf));
             break;
         }
-        case msg_type::heartbeat: {
-            auto req = co_await serde::read_async<heartbeat_request>(
-              req_parser);
-
-            auto reply = co_await get_service().heartbeat(std::move(req), ctx);
-
-            iobuf resp_buf;
-            co_await serde::write_async(resp_buf, std::move(reply));
-            msg.resp_data.set_value(std::move(resp_buf));
-            break;
-        }
         case msg_type::heartbeat_v2: {
             auto req = co_await serde::read_async<heartbeat_request_v2>(
               req_parser);
@@ -276,8 +265,6 @@ static constexpr msg_type map_msg_type() {
       std::is_same_v<ReqT, append_entries_request_serde_wrapper>
       || std::is_same_v<ReqT, append_entries_request>) {
         return msg_type::append_entries;
-    } else if constexpr (std::is_same_v<ReqT, heartbeat_request>) {
-        return msg_type::heartbeat;
     } else if constexpr (std::is_same_v<ReqT, heartbeat_request_v2>) {
         return msg_type::heartbeat_v2;
     } else if constexpr (std::is_same_v<ReqT, install_snapshot_request>) {
@@ -363,12 +350,6 @@ in_memory_test_protocol::append_entries(
       append_entries_request_serde_wrapper(std::move(req)),
       std::move(opts));
 };
-
-ss::future<result<heartbeat_reply>> in_memory_test_protocol::heartbeat(
-  model::node_id id, heartbeat_request req, rpc::client_opts opts) {
-    return dispatch<heartbeat_request, heartbeat_reply>(
-      id, std::move(req), std::move(opts));
-}
 
 ss::future<result<heartbeat_reply_v2>> in_memory_test_protocol::heartbeat_v2(
   model::node_id id, heartbeat_request_v2 req, rpc::client_opts opts) {
@@ -880,9 +861,6 @@ std::ostream& operator<<(std::ostream& o, msg_type type) {
         return o;
     case msg_type::vote:
         o << "vote";
-        return o;
-    case msg_type::heartbeat:
-        o << "hb";
         return o;
     case msg_type::heartbeat_v2:
         o << "hb_v2";

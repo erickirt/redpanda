@@ -125,17 +125,6 @@ ss::future<result<append_entries_reply>> buffered_protocol::append_entries(
       });
 };
 
-ss::future<result<heartbeat_reply>> buffered_protocol::heartbeat(
-  model::node_id target_node, heartbeat_request req, rpc::client_opts opts) {
-    return apply_with_gate(
-      _gate,
-      _base_protocol,
-      target_node,
-      std::move(req),
-      std::move(opts),
-      &consensus_client_protocol::heartbeat);
-}
-
 ss::future<result<heartbeat_reply_v2>> buffered_protocol::heartbeat_v2(
   model::node_id target_node, heartbeat_request_v2 req, rpc::client_opts opts) {
     return apply_with_gate(

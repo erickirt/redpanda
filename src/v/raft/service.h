@@ -72,46 +72,6 @@ public:
           failure_probes::name());
     }
 
-    [[gnu::always_inline]] ss::future<heartbeat_reply>
-    heartbeat(heartbeat_request r, rpc::streaming_context&) final {
-        using ret_t = std::vector<append_entries_reply>;
-        const auto req_sz = r.heartbeats.size();
-        auto grouped = group_hbeats_by_shard(std::move(r.heartbeats));
-
-        std::vector<ss::future<std::vector<append_entries_reply>>> futures;
-        futures.reserve(grouped.shard_requests.size());
-        for (auto& [shard, req] : grouped.shard_requests) {
-            // dispatch to each core in parallel
-            futures.push_back(dispatch_hbeats_to_core(shard, std::move(req)));
-        }
-        // replies for groups that are not yet registered at this node
-        std::vector<append_entries_reply> group_missing_replies;
-        group_missing_replies.reserve(grouped.group_missing_requests.size());
-        std::transform(
-          std::begin(grouped.group_missing_requests),
-          std::end(grouped.group_missing_requests),
-          std::back_inserter(group_missing_replies),
-          [](heartbeat_metadata& r) {
-              return append_entries_reply{
-                .group = r.meta.group,
-                .result = reply_result::group_unavailable};
-          });
-
-        return ss::when_all_succeed(futures.begin(), futures.end())
-          .then([req_sz, missing = std::move(group_missing_replies)](
-                  std::vector<ret_t> replies) mutable {
-              ret_t ret;
-              ret.reserve(req_sz);
-              // flatten responses
-              for (auto& part : replies) {
-                  std::move(part.begin(), part.end(), std::back_inserter(ret));
-              }
-              std::move(
-                missing.begin(), missing.end(), std::back_inserter(ret));
-              return heartbeat_reply{std::move(ret)};
-          });
-    }
-
     ss::future<heartbeat_reply_v2>
     heartbeat_v2(heartbeat_request_v2 r, rpc::streaming_context&) final {
         co_await ss::coroutine::switch_to(_hb_sg);

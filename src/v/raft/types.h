@@ -252,49 +252,6 @@ struct heartbeat_metadata {
     operator<<(std::ostream& o, const heartbeat_metadata& r);
 };
 
-/// \brief this is our _biggest_ modification to how raft works
-/// to accomodate for millions of raft groups in a cluster.
-/// internally, the receiving side will simply iterate and dispatch one
-/// at a time, as well as the receiving side will trigger the
-/// individual raft responses one at a time - for example to start replaying the
-/// log at some offset
-struct heartbeat_request
-  : serde::
-      envelope<heartbeat_request, serde::version<0>, serde::compat_version<0>> {
-    std::vector<heartbeat_metadata> heartbeats;
-
-    heartbeat_request() noexcept = default;
-    explicit heartbeat_request(std::vector<heartbeat_metadata> heartbeats)
-      : heartbeats(std::move(heartbeats)) {}
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const heartbeat_request& r);
-
-    friend bool operator==(const heartbeat_request&, const heartbeat_request&)
-      = default;
-
-    ss::future<> serde_async_write(iobuf& out);
-    void serde_read(iobuf_parser&, const serde::header&);
-};
-
-struct heartbeat_reply
-  : serde::
-      envelope<heartbeat_reply, serde::version<0>, serde::compat_version<0>> {
-    std::vector<append_entries_reply> meta;
-
-    heartbeat_reply() noexcept = default;
-    explicit heartbeat_reply(std::vector<append_entries_reply> meta)
-      : meta(std::move(meta)) {}
-
-    friend std::ostream& operator<<(std::ostream& o, const heartbeat_reply& r);
-
-    friend bool operator==(const heartbeat_reply&, const heartbeat_reply&)
-      = default;
-
-    void serde_write(iobuf& out);
-    void serde_read(iobuf_parser&, const serde::header&);
-};
-
 struct vote_request
   : serde::envelope<vote_request, serde::version<0>, serde::compat_version<0>> {
     vnode node_id;
