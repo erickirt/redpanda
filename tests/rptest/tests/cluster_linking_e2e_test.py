@@ -2222,6 +2222,7 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
                     n=1,
                     timeout=5,
                     offset="start",
+                    fetch_max_wait=2,
                     format=format,
                 )
             except Exception as e:
