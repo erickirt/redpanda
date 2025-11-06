@@ -19,6 +19,7 @@
 #include "cluster/security_frontend.h"
 #include "config/configuration.h"
 #include "config/types.h"
+#include "features/feature_table.h"
 #include "kafka/client/client.h"
 #include "kafka/client/config_utils.h"
 #include "kafka/data/record_batcher.h"
@@ -171,11 +172,23 @@ ss::future<> audit_log_manager::start() {
 
     // NOTE: construct a sink on every shard, unconditionally. the kafka
     // sinks on the non-client shards will be inactive.
-    if (config::shard_local_cfg().audit_use_rpc()) {
+    const bool internal_rpcs_available
+      = _controller->get_feature_table().local().get_active_version()
+        >= features::to_cluster_version(features::release_version::v25_3_1);
+    if (config::shard_local_cfg().audit_use_rpc() && internal_rpcs_available) {
         vlog(adtlog.info, "Audit log in RPC mode");
         _sink = audit_sink::make_rpc_sink(
           this, _controller, &_rpc_client->local());
     } else {
+        if (
+          config::shard_local_cfg().audit_use_rpc() && !internal_rpcs_available
+          && ss::this_shard_id() == 0) {
+            vlog(
+              adtlog.warn,
+              "Audit log RPC mode requested but not available cluster-wide. "
+              "Falling back to Kafka Client mode. RPC mode will be available "
+              "on the next restart after all brokers are upgraded to v25.3.1+");
+        }
         vlog(adtlog.info, "Audit log in Kafka Client mode");
         _sink = audit_sink::make_kafka_sink(
           this, _controller, *_config, [this](bool v) {
