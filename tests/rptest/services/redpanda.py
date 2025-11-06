@@ -3763,11 +3763,17 @@ class RedpandaService(Service, RedpandaServiceABC):
         process_lines = []
         for line in node.account.ssh_capture("ps aux --sort=-%mem", timeout_sec=30):
             process_lines.append(line.strip())
-            self.logger.debug(line.strip())
+
+        output_str = "\n".join(process_lines)
+        self.logger.debug(f"{node.name}: ps aux output:\n{output_str}")
 
         # Capture network information
+        netstat_lines = []
         for line in node.account.ssh_capture("netstat -panelot", timeout_sec=30):
-            self.logger.debug(line.strip())
+            netstat_lines.append(line.strip())
+
+        output_str = "\n".join(netstat_lines)
+        self.logger.debug(f"{node.name}: netstat -panelot output:\n{output_str}")
 
     def _log_process_status(self, node: ClusterNode, pid: int):
         """
@@ -4731,7 +4737,7 @@ class RedpandaService(Service, RedpandaServiceABC):
                 if "--version" in line:
                     continue
 
-                self.logger.debug(f"pgrep output: {line}")
+                self.logger.debug(f"{node.name}: pgrep output: {line}")
 
                 # The pid is listed first, that's all we need
                 return int(line.split()[0])
@@ -4739,7 +4745,10 @@ class RedpandaService(Service, RedpandaServiceABC):
         except RemoteCommandError as e:
             # 1 - No processes matched or none of them could be signalled.
             if e.exit_status == 1:
+                self.logger.debug(f"{node.name}: redpanda process not found")
                 return None
+
+            self.logger.error(f"{node.name}: error checking redpanda pid: {e}")
 
             raise e
 
