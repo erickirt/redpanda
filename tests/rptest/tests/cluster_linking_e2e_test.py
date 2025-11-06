@@ -731,7 +731,12 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
             f"Expected topic filters to not be updated, got {updated_link.configurations.topic_metadata_sync_options.auto_create_shadow_topic_filters}"
         )
 
-    @cluster(num_nodes=6)
+    @cluster(
+        num_nodes=6,
+        log_allow_list=[
+            re.compile(".*Cluster link table reporting that link does not exist.*")
+        ],
+    )
     def test_delete_simple_link(self):
         def get_links_by_name():
             list_links = self.list_links()
