@@ -13,8 +13,10 @@
 #include "base/units.h"
 #include "base/vlog.h"
 #include "bytes/bytes.h"
+#include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
 #include "cloud_storage_clients/util.h"
@@ -331,7 +333,9 @@ request_creator::make_delete_objects_request(
             delete_tree.add_child("Delete.Object", key_tree);
         }
 
-        auto out = std::ostringstream{};
+        iobuf buf;
+        iobuf_ostreambuf obuf(buf);
+        std::ostream out(&obuf);
         boost::property_tree::write_xml(out, delete_tree);
         if (!out.good()) {
             throw std::runtime_error(fmt_with_ctx(
@@ -339,7 +343,7 @@ request_creator::make_delete_objects_request(
               "failed to create delete request, state: {}",
               out.rdstate()));
         }
-        return out.str();
+        return buf;
     }();
 
     auto body_md5 = [&] {
@@ -364,17 +368,14 @@ request_creator::make_delete_objects_request(
 
     header.insert(
       boost::beast::http::field::content_length,
-      fmt::format("{}", body.size()));
+      fmt::format("{}", body.size_bytes()));
 
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
         return ec;
     }
     util::url_encode_target(header);
-    return {
-      std::move(header),
-      ss::input_stream<char>{ss::data_source{
-        std::make_unique<delete_objects_body>(std::move(body))}}};
+    return {std::move(header), make_iobuf_input_stream(std::move(body))};
 }
 
 std::string request_creator::make_host(const bucket_name& name) const {
