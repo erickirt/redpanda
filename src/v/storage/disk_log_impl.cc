@@ -22,6 +22,7 @@
 #include "model/timestamp.h"
 #include "reflection/adl.h"
 #include "ssx/future-util.h"
+#include "ssx/watchdog.h"
 #include "storage/api.h"
 #include "storage/chunk_cache.h"
 #include "storage/compacted_offset_list.h"
@@ -3242,12 +3243,24 @@ ss::future<> disk_log_impl::remove_segment_permanently(
     }
     // background close
     s->tombstone();
-    if (s->has_outstanding_locks()) {
-        vlog(
-          stlog.info,
-          "Segment has outstanding locks. Might take a while to close:{}",
-          s->reader().filename());
-    }
+
+    // An arbitrary length of time for the watchdog timeout. A segment exceeding
+    // this length of time to close may indicate some sort of lock contention OR
+    // a potentially bad cluster state.
+    static constexpr auto segment_wd_timeout = 30s;
+    ssx::watchdog wd(
+      segment_wd_timeout,
+      [filename = s->filename(),
+       had_outstanding_locks = s->has_outstanding_locks(),
+       ctx = ss::sstring(ctx)] {
+          vlog(
+            stlog.warn,
+            "Segment {} exceeding {} to close{} ({})",
+            filename,
+            segment_wd_timeout,
+            had_outstanding_locks ? ", had outstanding locks" : "",
+            ctx);
+      });
 
     co_await _readers_cache->evict_segment_readers(s)
       .then([s](readers_cache::range_lock_holder cache_lock) {
