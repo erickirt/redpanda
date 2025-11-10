@@ -11,6 +11,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import RedpandaService
 from rptest.tests.redpanda_test import RedpandaMixedTest
 
 
@@ -76,6 +77,15 @@ class RedpandaMixedTestSelfTest(RedpandaMixedTest):
             sample_pattern="vectorized_application_uptime"
         )
         assert vectorized_application_uptime is not None, "expected some metrics"
+        if isinstance(self.redpanda, RedpandaService):
+            assert len(vectorized_application_uptime.samples) == 1, "should be 1 node"
+        else:
+            assert len(vectorized_application_uptime.samples) >= 1, (
+                "should be >=3s nodes"
+            )
+        assert vectorized_application_uptime.samples[0].value > 0, (
+            "expected uptime greater than 0"
+        )
 
         sample_patterns = [
             "vectorized_application_uptime",
