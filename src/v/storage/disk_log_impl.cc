@@ -3249,7 +3249,7 @@ ss::future<> disk_log_impl::remove_segment_permanently(
           s->reader().filename());
     }
 
-    return _readers_cache->evict_segment_readers(s)
+    co_await _readers_cache->evict_segment_readers(s)
       .then([s](readers_cache::range_lock_holder cache_lock) {
           return s->close().finally([cache_lock = std::move(cache_lock)] {});
       })
