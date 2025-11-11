@@ -1501,7 +1501,9 @@ class Admin:
         path = f"cloud_storage/sync_local_state/{topic}/{partition}"
         return self._request("post", path, node=node)
 
-    def get_partition_balancer_status(self, node=None, **kwargs):
+    def get_partition_balancer_status(
+        self, node: Optional[ClusterNode] = None, **kwargs: Any
+    ) -> Any:
         return self._request(
             "GET", "cluster/partition_balancer/status", node=node, **kwargs
         ).json()
