@@ -321,7 +321,7 @@ class ShadowLinkBasicTests(ShadowLinkTestBase):
         )
 
         link_uid = test_link.uid
-        assert link_uid, f"Expected some uid for shadow link"
+        assert link_uid, "Expected some uid for shadow link"
 
         got_link = self.get_link(name="test-link")
         assert got_link.name == "test-link", (
@@ -2529,7 +2529,7 @@ class ShadowLinkConsumeGroupsMirroringTest(ShadowLinkTestBase):
         partition_count = 120
 
         topic = TopicSpec(
-            name=f"source-topic",
+            name="source-topic",
             partition_count=int(partition_count),
             replication_factor=3,
         )
