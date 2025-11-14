@@ -123,7 +123,8 @@ class tx_manager_read_router
   : public leader_router<
       tx_manager_read_request,
       tx_manager_read_reply,
-      tx_manager_read_handler> {
+      tx_manager_read_handler,
+      leader_router_ungated_tag> {
 public:
     tx_manager_read_router(
       ss::sharded<cluster::partition_manager>& partition_manager,
@@ -141,7 +142,8 @@ class tx_manager_replicate_router
   : public leader_router<
       tx_manager_replicate_request,
       tx_manager_replicate_reply,
-      tx_manager_replicate_handler> {
+      tx_manager_replicate_handler,
+      leader_router_ungated_tag> {
 public:
     tx_manager_replicate_router(
       ss::sharded<cluster::partition_manager>& partition_manager,
@@ -216,6 +218,9 @@ private:
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<controller_api>& _controller_api;
     ss::sharded<topic_table>& _topics;
+    // We don't drain these routers on shutdown.
+    // Migrator only serves admin API requests, so the routers are effectively
+    // gated by admin API gate.
     tx_manager_read_router _read_router;
     tx_manager_replicate_router _replicate_router;
     int16_t _internal_topic_replication_factor;

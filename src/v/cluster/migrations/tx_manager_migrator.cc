@@ -175,7 +175,8 @@ tx_manager_read_router::tx_manager_read_router(
   : leader_router<
       tx_manager_read_request,
       tx_manager_read_reply,
-      tx_manager_read_handler>(
+      tx_manager_read_handler,
+      leader_router_ungated_tag>(
       shard_table,
       metadata_cache,
       connection_cache,
@@ -196,7 +197,8 @@ tx_manager_replicate_router::tx_manager_replicate_router(
   : leader_router<
       tx_manager_replicate_request,
       tx_manager_replicate_reply,
-      tx_manager_replicate_handler>(
+      tx_manager_replicate_handler,
+      leader_router_ungated_tag>(
       shard_table,
       metadata_cache,
       connection_cache,
