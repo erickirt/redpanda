@@ -828,7 +828,7 @@ class RedpandaInstaller:
                     node.account.ssh_output("unlink /opt/redpanda", allow_fail=True)
 
                 assert head_root_path_exists, (
-                    f"{host}: neither {head_root_path} nor /opt/redpanda exists"
+                    f"{host}: {head_root_path} doesn't exist and /opt/redpanda {'was a symlink' if opt_redpanda_exists else 'did not exist'}"
                 )
                 node.account.ssh_output(
                     f"mv {head_root_path} /opt/redpanda", allow_fail=True
