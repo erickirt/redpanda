@@ -292,6 +292,8 @@ PREV_VERSION_LOG_ALLOW_LIST = [
     # left due to unclean shutdown in a segment being recovered. Ignore these
     # in a mixed version test.
     "storage - .*parser::consume_records error: parser_errc::input_stream_not_enough_bytes .* storage::checksumming_consumer",
+    # Failure to handle Schema Registry requests due to Redpanda being shutdown (fix is in https://github.com/redpanda-data/redpanda/pull/26909)
+    "schemaregistry - .* - exception_reply: .*seastar::sleep_aborted",
 ]
 
 AUDIT_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [
