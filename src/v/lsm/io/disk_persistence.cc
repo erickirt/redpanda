@@ -11,9 +11,9 @@
 
 #include "lsm/io/disk_persistence.h"
 
-#include "base/units.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/files.h"
+#include "lsm/io/file_io.h"
 #include "lsm/io/persistence.h"
 #include "utils/file_io.h"
 #include "utils/uuid.h"
@@ -28,99 +28,6 @@
 namespace lsm::io {
 
 namespace {
-
-class disk_file_reader : public random_access_file_reader {
-public:
-    disk_file_reader(std::filesystem::path path, ss::file file)
-      : _path(std::move(path))
-      , _file(std::move(file)) {}
-
-    ss::future<ioarray> read(size_t offset, size_t n) override {
-        size_t memory_alignment = _file.memory_dma_alignment();
-        size_t disk_alignment = _file.disk_read_dma_alignment();
-        size_t adjusted_offset = ss::align_down(offset, disk_alignment);
-        size_t offset_delta = offset - adjusted_offset;
-        auto array = ioarray::aligned(
-          memory_alignment, ss::align_up(n + offset_delta, disk_alignment));
-        try {
-            size_t amt = co_await _file.dma_read(
-              adjusted_offset, array.as_iovec());
-            if (amt < offset_delta + n) {
-                throw io_error_exception(
-                  "short read: failed to read {} bytes from block at offset "
-                  "{}, "
-                  "got: "
-                  "{}",
-                  array.size(),
-                  adjusted_offset,
-                  amt);
-            }
-            co_return array.share(offset_delta, n);
-        } catch (const std::system_error& err) {
-            throw io_error_exception(err.code(), "io error reading: {}", err);
-        } catch (...) {
-            throw io_error_exception(
-              "io error reading: {}", std::current_exception());
-        }
-    }
-
-    ss::future<> close() override {
-        try {
-            co_await _file.close();
-        } catch (const std::system_error& err) {
-            throw io_error_exception(err.code(), "io error closing: {}", err);
-        } catch (...) {
-            throw io_error_exception(
-              "io error closing: {}", std::current_exception());
-        }
-    }
-
-    fmt::iterator format_to(fmt::iterator it) const override {
-        return fmt::format_to(it, "{{path={}}}", _path);
-    }
-
-private:
-    std::filesystem::path _path;
-    ss::file _file;
-};
-
-class disk_seq_file_writer : public sequential_file_writer {
-public:
-    disk_seq_file_writer(
-      std::filesystem::path path, ss::output_stream<char> stream)
-      : _path(std::move(path))
-      , _stream(std::move(stream)) {}
-
-    ss::future<> append(iobuf buf) override {
-        try {
-            for (auto& frag : buf) {
-                co_await _stream.write(frag.get(), frag.size());
-            }
-        } catch (const std::system_error& err) {
-            throw io_error_exception(err.code(), "io error writing: {}", err);
-        } catch (...) {
-            throw io_error_exception(
-              "io error writing: {}", std::current_exception());
-        }
-    }
-    ss::future<> close() override {
-        try {
-            co_await _stream.close();
-        } catch (const std::system_error& err) {
-            throw io_error_exception(err.code(), "io error closing: {}", err);
-        } catch (...) {
-            throw io_error_exception(
-              "io error closing: {}", std::current_exception());
-        }
-    }
-    fmt::iterator format_to(fmt::iterator it) const override {
-        return fmt::format_to(it, "{{path={}}}", _path);
-    }
-
-private:
-    std::filesystem::path _path;
-    ss::output_stream<char> _stream;
-};
 
 class impl
   : public data_persistence

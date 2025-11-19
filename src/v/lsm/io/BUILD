@@ -34,6 +34,7 @@ redpanda_cc_library(
     srcs = ["disk_persistence.cc"],
     hdrs = ["disk_persistence.h"],
     deps = [
+        ":file_io",
         ":persistence",
         "//src/v/base",
         "//src/v/bytes:ioarray",
@@ -42,6 +43,46 @@ redpanda_cc_library(
         "//src/v/lsm/core/internal:files",
         "//src/v/utils:file_io",
         "//src/v/utils:uuid",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "cloud_persistence",
+    srcs = ["cloud_persistence.cc"],
+    hdrs = ["cloud_persistence.h"],
+    implementation_deps = [
+        ":file_io",
+        "//src/v/base",
+        "//src/v/bytes:ioarray",
+        "//src/v/bytes:iobuf",
+        "//src/v/cloud_io:io_result",
+        "//src/v/lsm/core:exceptions",
+        "//src/v/lsm/core/internal:files",
+        "//src/v/utils:retry_chain_node",
+    ],
+    deps = [
+        ":persistence",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage_clients",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
+    name = "file_io",
+    srcs = ["file_io.cc"],
+    hdrs = ["file_io.h"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":persistence",
+        "//src/v/base",
+        "//src/v/bytes:ioarray",
+        "//src/v/bytes:iobuf",
+        "//src/v/lsm/core:exceptions",
+        "//src/v/lsm/core/internal:files",
+        "@fmt",
         "@seastar",
     ],
 )
