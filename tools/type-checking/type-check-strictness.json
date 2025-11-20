@@ -313,7 +313,6 @@
         "rptest/services/provider_clients/ec2_client.py",
         "rptest/services/redpanda_cloud.py",
         "rptest/services/redpanda_connect.py",
-        "rptest/services/redpanda_installer.py",
         "rptest/services/rpk_consumer.py",
         "rptest/services/spark_service.py",
         "rptest/services/storage.py",
