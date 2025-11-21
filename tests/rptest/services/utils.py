@@ -132,7 +132,7 @@ class LogSearch(ABC):
         "Exceptional future ignored",
         "UndefinedBehaviorSanitizer",
         "Aborting on shard",
-        "libc++abi: terminating due to uncaught exception",
+        "terminating due to uncaught exception",
         "oversized allocation",
     ]
 
@@ -157,7 +157,10 @@ class LogSearch(ABC):
 
     @abstractmethod
     def _capture_log(self, node: Any, expr: str) -> Generator[str, None, None]:
-        """Method to get log from host node. Overriden by each child."""
+        """Method to get log from host node. Overriden by each child.
+
+        expr is a GNU BRE regex (i.e., the default grep regex style), which means
+        you need to escape things like +() if you intend them to be metacharacters"""
         # Fake return type for type hint silence
         # And proper handling when called directly
         yield from []
@@ -248,6 +251,63 @@ class LogSearch(ABC):
             raise BadLogLines(bad_loglines)
 
 
+def _gnu_bre_to_ere(bre_pattern: str) -> str:
+    r"""
+    Convert a GNU Basic Regular Expression (BRE) to a GNU Extended Regular
+    Expression (ERE).
+
+    This function handles two main differences between GNU BRE and ERE:
+    1.  In BRE, `(`, `)`, `{`, `}`, `+`, `?`, and `|` are literal characters,
+        whereas in ERE they are special metacharacters. To treat them as
+        literals in ERE, they must be escaped with a backslash.
+    2.  In BRE, the escaped versions `\(`, `\)`, `\{`, `\}`, `\+`, `\?`, and
+        `\|` have special meanings (grouping, intervals, etc.), while in ERE,
+        the unescaped versions have these special meanings.
+
+    The conversion is performed by iterating through the BRE pattern and
+    applying the following rules:
+    - Unescaped `(`, `)`, `{`, `}`, `+`, `?`, `|` are escaped.
+    - Escaped `\(`, `\)`, `\{`, `\}`, `\+`, `\?`, `\|` are unescaped.
+    - Other characters, including other escaped characters (e.g., `\.`, `\*`),
+      are kept as they are.
+    - The logic correctly handles double backslashes (`\\`), ensuring they
+      are preserved.
+    """
+
+    # these are metacharacters in both ERE and GNU BRE but in BRE
+    # they must be escaped to have their metacharacter meaning
+    BRE_ESCAPED_METACHARACTERS = set("(){}+?|")
+
+    ere_pattern = ""
+    i = 0
+    while i < len(bre_pattern):
+        char = bre_pattern[i]
+        if char == "\\":
+            if i + 1 < len(bre_pattern):
+                next_char = bre_pattern[i + 1]
+                if next_char in BRE_ESCAPED_METACHARACTERS:
+                    # Unescape BRE metacharacters to become ERE metacharacters
+                    ere_pattern += next_char
+                    i += 2
+                else:
+                    # Keep other escaped characters as they are (e.g., \\, \*, \.)
+                    ere_pattern += char + next_char
+                    i += 2
+            else:
+                # Trailing backslash
+                ere_pattern += char
+                i += 1
+        elif char in BRE_ESCAPED_METACHARACTERS:
+            # Escape ERE metacharacters that are literals in BRE
+            ere_pattern += "\\" + char
+            i += 1
+        else:
+            # Keep all other characters
+            ere_pattern += char
+            i += 1
+    return ere_pattern
+
+
 class LogSearchLocal(LogSearch):
     def __init__(
         self,
@@ -260,7 +320,10 @@ class LogSearchLocal(LogSearch):
         self.targetpath = targetpath
 
     def _capture_log(self, node: ClusterNode, expr: str) -> Generator[str, None, None]:
-        cmd = f"grep {expr} {self.targetpath} || true"
+        if not expr.startswith("-P"):
+            # some naughty tests use this to force grep/rg to use PRCE
+            expr = _gnu_bre_to_ere(expr)
+        cmd = f"rg {expr} {self.targetpath} || true"
         for line in node.account.ssh_capture(cmd):
             yield line
 

@@ -11,10 +11,11 @@ from contextlib import contextmanager
 import signal
 from subprocess import CalledProcessError
 from typing import Any, Callable, Iterator
+import time
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.cluster.remoteaccount import RemoteCommandError
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ignore
 from ducktape.mark.resource import cluster as dt_cluster
 from ducktape.tests.test import Test, TestContext
 
@@ -666,6 +667,43 @@ class RedpandaClusteredServiceSelfTest(RedpandaTest):
         # Now verify that raise_on_bad_logs will catch this error
         with expect_exception(BadLogLines, validate_exception):
             self.redpanda.raise_on_bad_logs(allow_list=[])
+
+    @ignore
+    @cluster(num_nodes=3, check_allowed_error_logs=False)
+    def test_bll_bench(self):
+        """
+        Test that the LogMessage admin API correctly logs messages and that
+        ERROR level logs are caught by raise_on_bad_logs.
+
+        Ignored by default since we don't want to run benchmarks in CI.
+        """
+        # create and delete a 1000-partition topic 10 times
+        rpk = RpkTool(self.redpanda)
+
+        parts = 1000
+
+        for i in range(10):
+            topic_name = f"bll_bench_{i}"
+
+            def _all_partitions_present():
+                try:
+                    desc = list(rpk.describe_topic(topic_name))
+                    return len(desc) == parts
+                except Exception:
+                    return False
+
+            # 1000 partitions, replication factor 1 to avoid excess resource usage
+            rpk.create_topic(topic_name, partitions=parts, replicas=3)
+            self.redpanda.wait_until(
+                _all_partitions_present, timeout_sec=30, backoff_sec=1
+            )
+            rpk.delete_topic(topic_name)
+            self.logger.warning(f"c d topic {i}")
+
+        start = time.time()
+        self.redpanda.raise_on_bad_logs(allow_list=[])
+        elapsed = time.time() - start
+        self.logger.warning(f"raise_on_bad_logs elapsed {elapsed:.3f}s")
 
 
 class RedpandaServiceSelfRawTest(Test):
