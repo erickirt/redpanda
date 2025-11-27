@@ -62,7 +62,7 @@ FIXTURE_TEST(test_compaction_segment_ms, storage_e2e_fixture) {
     produces.reserve(5);
     int incomplete = 5;
     for (int i = 0; i < 5; i++) {
-        auto fut = produce_to_fixture(topic_name, &incomplete);
+        auto fut = produce_to_fixture_with_retries(topic_name, &incomplete);
         produces.emplace_back(std::move(fut));
     }
     auto partition = app.partition_manager.local().get(ntp);
