@@ -5479,11 +5479,15 @@ class RedpandaService(Service, RedpandaServiceABC):
         return store
 
     def storage(
-        self, all_nodes: bool = False, sizes: bool = False, scan_cache: bool = True
+        self,
+        *,
+        nodes: Collection[ClusterNode] | None = None,
+        sizes: bool = False,
+        scan_cache: bool = True,
     ):
         """
-        :param all_nodes: if true, report on all nodes, otherwise only report
-                          on started nodes.
+        :param nodes: if None, only report on started nodes. Otherwise, report
+                      on the nodes in the `nodes` list parameter.
         :param sizes: if true, stat each segment file and record its size in the
                       `size` attribute of Segment.
         :param scan_cache: if false, skip scanning the tiered storage cache; use
@@ -5491,20 +5495,19 @@ class RedpandaService(Service, RedpandaServiceABC):
 
         :returns: instances of ClusterStorage
         """
+        if nodes is None:
+            nodes = list(self._started)
+        assert nodes, "Empty node list specified for storage stat collection"
+
         store = ClusterStorage()
-        self.logger.debug(
-            f"Starting storage checks all_nodes={all_nodes} sizes={sizes}"
-        )
-        nodes = self.nodes if all_nodes else list(self._started)
+        self.logger.debug(f"Starting storage checks nodes={nodes} sizes={sizes}")
 
         def compute_node_storage(node: ClusterNode):
             s = self.node_storage(node, sizes=sizes, scan_cache=scan_cache)
             store.add_node(s)
 
         self.for_nodes(nodes, compute_node_storage)
-        self.logger.debug(
-            f"Finished storage checks all_nodes={all_nodes} sizes={sizes}"
-        )
+        self.logger.debug(f"Finished storage checks nodes={nodes} sizes={sizes}")
         return store
 
     def copy_data(self, dest: str, node: ClusterNode):
