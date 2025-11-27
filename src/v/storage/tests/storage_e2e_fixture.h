@@ -16,8 +16,27 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <exception>
+
 struct storage_e2e_fixture : public redpanda_thread_fixture {
     scoped_config test_local_cfg;
+
+    ss::future<> produce_to_fixture_with_retries(
+      model::topic topic_name, int* incomplete, int num_retries = 5) {
+        std::exception_ptr eptr;
+        for (int retries = num_retries; retries > 0; --retries) {
+            auto fut = co_await ss::coroutine::as_future(
+              produce_to_fixture(topic_name, incomplete));
+            if (fut.failed()) {
+                eptr = fut.get_exception();
+                continue;
+            }
+
+            fut.ignore_ready_future();
+            co_return;
+        }
+        std::rethrow_exception(eptr);
+    }
 
     // Produces to the given fixture's partition for 10 seconds.
     ss::future<> produce_to_fixture(model::topic topic_name, int* incomplete) {
