@@ -675,6 +675,27 @@ def debounce(wait_sec: float):
 
 
 class FIPSMode(Enum):
-    disabled = 0
-    permissive = 1
-    enabled = 2
+    disabled = "disabled"
+    permissive = "permissive"
+    enabled = "enabled"
+
+
+def get_fips_mode() -> FIPSMode:
+    """
+    If the file /proc/sys/crypto/fips_enabled is present and
+    contains '1' it runs in a fips environment.
+
+    If the env var REDPANDA_FIPS_PERMISSIVE is set, it runs in permissive mode
+    """
+    fips_file = "/proc/sys/crypto/fips_enabled"
+    if os.path.exists(fips_file) and os.path.isfile(fips_file):
+        with open(fips_file, "r") as f:
+            contents = f.read().strip()
+            if contents == "1":
+                return FIPSMode.enabled
+
+    permissive_flag = os.environ.get("REDPANDA_FIPS_PERMISSIVE", None)
+    if permissive_flag is not None:
+        return FIPSMode.permissive
+
+    return FIPSMode.disabled
