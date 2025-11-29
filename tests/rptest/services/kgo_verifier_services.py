@@ -47,6 +47,7 @@ class KgoVerifierParams:
         topic: Topic,
         msg_size: int,
         msg_count: int,
+        node: ClusterNode | None = None,
         seq_max_msgs: int | None = None,
         batch_max_bytes: int | None = None,
         fake_timestamp_ms: int | None = None,
@@ -73,6 +74,7 @@ class KgoVerifierParams:
         self.topic: Topic = topic
         self.msg_size: int = msg_size
         self.msg_count: int = msg_count
+        self.node: ClusterNode | None = node
         self.seq_max_msgs: int | None = seq_max_msgs
         self.batch_max_bytes: int | None = batch_max_bytes
         self.fake_timestamp_ms: int | None = fake_timestamp_ms
@@ -1281,17 +1283,25 @@ class KgoVerifierMultiService(Service):
         self._topics: Sequence[Topic] = [t.topic for t in topics]
         self._services: Sequence[KgoVerifierService] = services
 
+    def _assigned_services(self, node: ClusterNode) -> Sequence[KgoVerifierService]:
+        return [
+            svc for svc in self._services if node.name in [n.name for n in svc.nodes]
+        ]
+
     def start_node(self, node: ClusterNode, clean: bool = False, **kwargs: Any) -> None:
         if clean:
             self.clean_node(node, **kwargs)
-        for s in self._services:
+        for s in self._assigned_services(node):
+            print(f"start {s._topic}")
             s.start_node(node, clean=False, **kwargs)
 
     def wait_node(self, node: ClusterNode, timeout_sec: float | None = None) -> Any:
-        return all(s.wait_node(node, timeout_sec) for s in self._services)
+        return all(
+            s.wait_node(node, timeout_sec) for s in self._assigned_services(node)
+        )
 
     def stop_node(self, node: ClusterNode, **kwargs: Any) -> None:
-        for s in self._services:
+        for s in self._assigned_services(node):
             s.stop_node(node, **kwargs)
 
     def clean_node(self, node: ClusterNode, **kwargs: Any) -> None:
@@ -1299,7 +1309,7 @@ class KgoVerifierMultiService(Service):
         node.account.kill_process("kgo-verifier", clean_shutdown=False)
         node.account.remove("valid_offsets*json", True)
         node.account.remove("latest_value*json", True)
-        for s in self._services:
+        for s in self._assigned_services(node):
             node.account.remove(s.log_path, True)
 
 
@@ -1324,7 +1334,7 @@ class KgoVerifierMultiProducer(KgoVerifierMultiService):
                 topic.topic,
                 topic.msg_size,
                 topic.msg_count,
-                custom_node=custom_node,
+                custom_node=[topic.node] if topic.node is not None else custom_node,
                 batch_max_bytes=topic.batch_max_bytes,
                 fake_timestamp_ms=topic.fake_timestamp_ms,
                 fake_timestamp_step_ms=topic.fake_timestamp_step_ms,
@@ -1402,7 +1412,7 @@ class KgoVerifierMultiSeqConsumer(KgoVerifierMultiService):
                 redpanda,
                 topic.topic,
                 max_msgs=topic.seq_max_msgs,
-                nodes=custom_node,
+                nodes=[topic.node] if topic.node is not None else custom_node,
                 producer=producer,
                 max_throughput_mb=topic.consume_throughput_mb,
                 loop=loop,
@@ -1447,7 +1457,7 @@ class KgoVerifierMultiRandomConsumer(KgoVerifierMultiService):
                 rand_read_msgs,
                 parallel,
                 use_transactions=topic.use_transactions,
-                nodes=custom_node,
+                nodes=[topic.node] if topic.node is not None else custom_node,
                 username=username,
                 password=password,
                 enable_tls=enable_tls,
@@ -1494,7 +1504,7 @@ class KgoVerifierMultiConsumerGroupConsumer(KgoVerifierMultiService):
                 use_transactions=topic.use_transactions,
                 compacted=topic.compacted,
                 validate_latest_values=validate_latest_values,
-                nodes=custom_node,
+                nodes=[topic.node] if topic.node is not None else custom_node,
                 username=username,
                 password=password,
                 enable_tls=enable_tls,

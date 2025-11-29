@@ -340,6 +340,70 @@ class KgoVerifierSelfTest(PreallocNodesTest):
         group_consumer.wait(timeout_sec=60)
 
 
+class KgoVerifierMultiNodeSelfTest(PreallocNodesTest):
+    def __init__(self, test_context: TestContext, *args: Any, **kwargs: Any) -> None:
+        super().__init__(
+            test_context=test_context, node_prealloc_count=2, *args, **kwargs
+        )
+
+    @skip_debug_mode
+    @cluster(num_nodes=5)
+    def test_kgo_verifier_multi_node(self) -> None:
+        topics = [
+            KgoVerifierParams(
+                TopicSpec(
+                    name=t,
+                    partition_count=16,
+                    retention_bytes=16 * 1024 * 1024,
+                    segment_bytes=1024 * 1024,
+                ),
+                msg_size=random.randint(2**13, 2**14),
+                msg_count=random.randint(800, 1200),
+                node=n,
+                group_name=f"group-{t}",
+            )
+            for t, n in zip(
+                [
+                    "test-1",
+                    "test-2",
+                ],
+                self.preallocated_nodes,
+            )
+        ]
+
+        for topic in topics:
+            self.client().create_topic(cast(TopicSpec, topic.topic))
+
+        producer = KgoVerifierMultiProducer(
+            self.test_context,
+            self.redpanda,
+            topics,
+            custom_node=self.preallocated_nodes,
+            debug_logs=True,
+        )
+        producer.start()
+        producer.wait_for_acks(
+            [t.msg_count for t in topics],
+            timeout_sec=30,
+            backoff_sec=1,
+        )
+        producer.wait_for_offset_map()
+
+        seq_consumer = KgoVerifierMultiSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            topics,
+            producer=producer,
+            custom_node=self.preallocated_nodes,
+            debug_logs=True,
+            trace_logs=True,
+        )
+        seq_consumer.start(clean=False)
+
+        producer.wait(timeout_sec=60)
+        seq_consumer.wait(timeout_sec=60)
+
+
 class BucketScrubSelfTest(RedpandaTest):
     """
     Verify that if we erase an object from tiered storage,
