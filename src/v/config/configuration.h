@@ -803,6 +803,7 @@ struct configuration final : public config_store {
     bounded_property<size_t> datalake_scheduler_disk_reservation_block_size;
     property<bool> consumer_offsets_topic_batch_cache_enabled;
     enterprise<property<bool>> enable_shadow_linking;
+    property<std::chrono::milliseconds> internal_rpc_request_timeout_ms;
 
     configuration();
 

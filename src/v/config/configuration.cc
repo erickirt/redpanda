@@ -4504,6 +4504,12 @@ configuration::configuration()
       "cluster for data replication.",
       meta{.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , internal_rpc_request_timeout_ms(
+      *this,
+      "internal_rpc_request_timeout_ms",
+      "Default timeout for RPC requests between Redpanda nodes.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , cloud_topics_enabled(
       *this,
       true,
