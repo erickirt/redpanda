@@ -32,7 +32,8 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
       pps::schema_type::avro,
       {{.name{"com.acme.Referenced"},
         .sub{pps::subject{"childSubject"}},
-        .version{pps::schema_version{1}}}}};
+        .version{pps::schema_version{1}}}},
+      {}};
 
     const ss::sstring payload{
       R"(
@@ -57,14 +58,15 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
 
     // canonicalisation now requires a sharded_store, for now, minify.
     auto [rsub, unparsed] = std::move(result.def).destructure();
-    auto [def, type, refs] = std::move(unparsed).destructure();
+    auto [def, type, refs, meta] = std::move(unparsed).destructure();
 
     result.def = {
       std::move(rsub),
       pps::schema_definition{
         pps::schema_definition::raw_string{::json::minify(std::move(def)())},
         pps::schema_type::avro,
-        std::move(refs)}};
+        std::move(refs),
+        std::move(meta)}};
 
     BOOST_REQUIRE_EQUAL(expected.def, result.def);
     BOOST_REQUIRE_EQUAL(expected.id.has_value(), result.id.has_value());

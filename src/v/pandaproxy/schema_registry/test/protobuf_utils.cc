@@ -35,12 +35,12 @@ std::string sanitize(
                   pps::subject_schema{
                     pps::subject{"foo"},
                     pps::schema_definition{
-                      raw_proto, pps::schema_type::protobuf, {}}},
+                      raw_proto, pps::schema_type::protobuf, {}, {}}},
                   norm,
                   format)
                   .get();
     auto [_, schema] = std::move(psch).destructure();
-    auto [def, type, refs] = std::move(schema).destructure();
+    auto [def, type, refs, meta] = std::move(schema).destructure();
     iobuf_parser parser{std::move(def)};
     return parser.read_string(parser.bytes_left());
 }

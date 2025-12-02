@@ -25,7 +25,8 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_version_response) {
       pps::schema_type::avro,
       {{{"com.acme.Referenced"},
         pps::subject{"childSubject"},
-        pps::schema_version{1}}}};
+        pps::schema_version{1}}},
+      {}};
     const pps::subject sub{"imported-ref"};
 
     pps::get_subject_versions_version_response response{.stored_schema{

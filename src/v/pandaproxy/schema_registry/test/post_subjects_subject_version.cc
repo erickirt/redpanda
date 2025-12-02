@@ -328,7 +328,8 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
         pps::schema_type::avro,
         {{"com.redpanda.company",
           pps::subject{"company-value"},
-          pps::schema_version{1}}}}}};
+          pps::schema_version{1}}},
+        {}}}};
 
     info("Connecting client");
     auto client = make_schema_reg_client();

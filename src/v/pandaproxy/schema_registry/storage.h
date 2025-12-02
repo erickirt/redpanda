@@ -370,6 +370,7 @@ class schema_value_handler final : public json::base_handler<Encoding> {
         typename schema_definition::raw_string def;
         schema_type type{schema_type::avro};
         typename schema_definition::references refs;
+        std::optional<schema_metadata> metadata;
     };
     mutable_schema _schema;
 
@@ -559,7 +560,10 @@ public:
             _state = state::empty;
             result.schema = {
               std::move(_schema.sub),
-              {std::move(_schema.def), _schema.type, std::move(_schema.refs)}};
+              {std::move(_schema.def),
+               _schema.type,
+               std::move(_schema.refs),
+               std::move(_schema.metadata)}};
             return true;
         }
         case state::reference: {
