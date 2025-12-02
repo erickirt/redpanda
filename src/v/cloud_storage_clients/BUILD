@@ -36,6 +36,7 @@ redpanda_cc_library(
         "//src/v/bytes:iostream",
         "//src/v/bytes:streambuf",
         "//src/v/cloud_roles",
+        "//src/v/cloud_roles:auth_refresh_bg_op",
         "//src/v/cloud_roles:types",
         "//src/v/config",
         "//src/v/container:chunked_vector",

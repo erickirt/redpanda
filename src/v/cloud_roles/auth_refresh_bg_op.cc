@@ -21,13 +21,13 @@ auth_refresh_bg_op::auth_refresh_bg_op(
   ss::logger& logger,
   ss::gate& gate,
   ss::abort_source& as,
-  cloud_storage_clients::client_configuration client_conf,
-  model::cloud_credentials_source cloud_credentials_source)
+  model::cloud_credentials_source cloud_credentials_source,
+  credentials_source_config source_config)
   : _log(logger)
   , _gate(gate)
   , _as(as)
-  , _client_conf(std::move(client_conf))
-  , _cloud_credentials_source(cloud_credentials_source) {}
+  , _cloud_credentials_source(cloud_credentials_source)
+  , _source_config(std::move(source_config)) {}
 
 void auth_refresh_bg_op::maybe_start_auth_refresh_op(
   cloud_roles::credentials_update_cb_t credentials_update_cb,
@@ -38,26 +38,13 @@ void auth_refresh_bg_op::maybe_start_auth_refresh_op(
     }
 }
 
-cloud_storage_clients::client_configuration
-auth_refresh_bg_op::get_client_config() const {
-    return _client_conf;
-}
-
-void auth_refresh_bg_op::set_client_config(
-  cloud_storage_clients::client_configuration conf) {
-    _client_conf = std::move(conf);
-}
-
 void auth_refresh_bg_op::do_start_auth_refresh_op(
   cloud_roles::credentials_update_cb_t credentials_update_cb,
   ss::sstring metrics_tag) {
     if (is_static_config()) {
         // If credentials are static IE not changing, we just need to set the
         // credential object once on all cores with static strings.
-        vlog(
-          _log.info,
-          "creating static credentials based on credentials source {}",
-          _cloud_credentials_source);
+        vlog(_log.info, "creating static credentials");
 
         // Send the credentials to the client pool in a fiber
         ssx::spawn_with_gate(
@@ -68,20 +55,22 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
         // Create an implementation of refresh_credentials based on the setting
         // cloud_credentials_source.
         try {
-            auto [service_name, region_name] = ss::visit(
-              _client_conf,
-              [](const cloud_storage_clients::s3_configuration& cfg) {
-                  // S3 needs both service and region names to compose requests
-                  return std::make_pair(cfg.service, cfg.region);
+            cloud_roles::aws_service_name service_name;
+            cloud_roles::aws_region_name region_name;
+
+            ss::visit(
+              _source_config,
+              [](const cloud_roles::credentials&) {
+                  throw std::runtime_error(
+                    "non-static credentials source expected");
               },
-              [](const cloud_storage_clients::abs_configuration&) {
-                  // Azure Blob Storage does not need service or region names,
-                  // so these values are defaulted since they're ignored
-                  // downstream
-                  return std::make_pair(
-                    cloud_roles::aws_service_name{},
-                    cloud_roles::aws_region_name{});
-              });
+              [&](
+                const cloud_roles::auth_refresh_bg_op::s3_compat_config&
+                  s3_cfg) {
+                  service_name = s3_cfg.service;
+                  region_name = s3_cfg.region;
+              },
+              [&](const cloud_roles::auth_refresh_bg_op::abs_config&) {});
 
             _refresh_credentials.emplace(
               cloud_roles::make_refresh_credentials(
@@ -111,8 +100,7 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
 }
 
 bool auth_refresh_bg_op::is_static_config() const {
-    return _cloud_credentials_source
-           == model::cloud_credentials_source::config_file;
+    return std::holds_alternative<cloud_roles::credentials>(_source_config);
 }
 
 void auth_refresh_bg_op::maybe_refresh_credentials() {
@@ -136,22 +124,13 @@ uint64_t auth_refresh_bg_op::token_refresh_count() const noexcept {
 }
 
 cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
-    return ss::visit(
-      _client_conf,
-      [](const cloud_storage_clients::s3_configuration& cfg)
-        -> cloud_roles::credentials {
-          return cloud_roles::aws_credentials{
-            cfg.access_key.value(),
-            cfg.secret_key.value(),
-            std::nullopt,
-            cfg.region,
-            cfg.service};
-      },
-      [](const cloud_storage_clients::abs_configuration& cfg)
-        -> cloud_roles::credentials {
-          return cloud_roles::abs_credentials{
-            cfg.storage_account_name, cfg.shared_key.value()};
-      });
+    if (auto creds = std::get_if<cloud_roles::credentials>(&_source_config);
+        creds) {
+        return *creds;
+    } else {
+        throw std::runtime_error(
+          "static credentials requested but not provided");
+    }
 }
 
 ss::future<> auth_refresh_bg_op::stop() {

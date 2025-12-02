@@ -394,4 +394,43 @@ std::ostream& operator<<(std::ostream& o, const client_configuration& c) {
       c);
 }
 
+cloud_roles::auth_refresh_bg_op::credentials_source_config
+build_refresh_credentials_source(
+  const client_configuration& config,
+  model::cloud_credentials_source cloud_credentials_source) {
+    if (
+      cloud_credentials_source
+      == model::cloud_credentials_source::config_file) {
+        return ss::visit(
+          config,
+          [](const cloud_storage_clients::s3_configuration& s3_cfg)
+            -> cloud_roles::auth_refresh_bg_op::credentials_source_config {
+              return cloud_roles::aws_credentials{
+                .access_key_id = s3_cfg.access_key.value(),
+                .secret_access_key = s3_cfg.secret_key.value(),
+                .session_token = std::nullopt,
+                .region = s3_cfg.region,
+                .service = s3_cfg.service};
+          },
+          [](const cloud_storage_clients::abs_configuration& abs_cfg)
+            -> cloud_roles::auth_refresh_bg_op::credentials_source_config {
+              return cloud_roles::abs_credentials{
+                .storage_account = abs_cfg.storage_account_name,
+                .shared_key = abs_cfg.shared_key.value()};
+          });
+    } else {
+        return ss::visit(
+          config,
+          [](const cloud_storage_clients::s3_configuration& s3_cfg)
+            -> cloud_roles::auth_refresh_bg_op::credentials_source_config {
+              return cloud_roles::auth_refresh_bg_op::s3_compat_config{
+                .service = s3_cfg.service, .region = s3_cfg.region};
+          },
+          [](const cloud_storage_clients::abs_configuration&)
+            -> cloud_roles::auth_refresh_bg_op::credentials_source_config {
+              return cloud_roles::auth_refresh_bg_op::abs_config{};
+          });
+    }
+}
+
 } // namespace cloud_storage_clients

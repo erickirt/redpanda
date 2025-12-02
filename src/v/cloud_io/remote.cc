@@ -113,8 +113,9 @@ remote::remote(
   model::cloud_credentials_source cloud_credentials_source,
   ss::scheduling_group sg)
   : _pool(clients)
-  , _auth_refresh_bg_op{log, _gate, _as, conf, cloud_credentials_source}
+  , _auth_refresh_bg_op{log, _gate, _as, cloud_credentials_source, cloud_storage_clients::build_refresh_credentials_source(conf, cloud_credentials_source)}
   , _resources(std::make_unique<io_resources>(sg))
+  , _client_conf(conf)
   , _azure_shared_key_binding(
       config::shard_local_cfg().cloud_storage_azure_shared_key.bind())
   , _cloud_storage_backend{cloud_storage_clients::
@@ -134,9 +135,8 @@ remote::remote(
     }
 
     _azure_shared_key_binding.watch([this] {
-        auto current_config = _auth_refresh_bg_op.get_client_config();
         if (!std::holds_alternative<cloud_storage_clients::abs_configuration>(
-              current_config)) {
+              _client_conf)) {
             vlog(
               log.warn,
               "Attempt to set cloud_storage_azure_shared_key for cluster using "
@@ -160,9 +160,12 @@ remote::remote(
         }
 
         auto& abs_config = std::get<cloud_storage_clients::abs_configuration>(
-          current_config);
+          _client_conf);
         abs_config.shared_key = cloud_roles::private_key_str{*new_shared_key};
-        _auth_refresh_bg_op.set_client_config(std::move(current_config));
+
+        _auth_refresh_bg_op.set_source_config(
+          cloud_storage_clients::build_refresh_credentials_source(
+            _client_conf, model::cloud_credentials_source::config_file));
 
         _pool.local().load_credentials(
           _auth_refresh_bg_op.build_static_credentials());

@@ -222,6 +222,7 @@ private:
     cloud_roles::auth_refresh_bg_op _auth_refresh_bg_op;
     std::unique_ptr<io_resources> _resources;
 
+    cloud_storage_clients::client_configuration _client_conf;
     config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;
 
     model::cloud_storage_backend _cloud_storage_backend;

@@ -160,7 +160,6 @@ redpanda_cc_library(
     deps = [
         ":cloud_roles",
         "//src/v/base",
-        "//src/v/cloud_storage_clients",
         "//src/v/model",
         "@seastar",
     ],

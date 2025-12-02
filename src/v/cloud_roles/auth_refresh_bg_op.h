@@ -11,7 +11,6 @@
 
 #include "base/seastarx.h"
 #include "cloud_roles/refresh_credentials.h"
-#include "cloud_storage_clients/configuration.h"
 #include "model/metadata.h"
 
 #include <seastar/core/abort_source.hh>
@@ -27,12 +26,27 @@ inline constexpr ss::shard_id auth_refresh_shard_id = 0;
 /// cloud_credentials_source property.
 class auth_refresh_bg_op {
 public:
+    struct s3_compat_config {
+        cloud_roles::aws_service_name service;
+        cloud_roles::aws_region_name region;
+    };
+    struct abs_config {};
+
+    using credentials_source_config = std::variant<
+      // Static credentials from config file.
+      cloud_roles::credentials,
+      // S3 like providers (AWS, GCP).
+      s3_compat_config,
+      // Azure Blob Storage.
+      abs_config>;
+
+public:
     auth_refresh_bg_op(
       ss::logger& logger,
       ss::gate& gate,
       ss::abort_source& as,
-      cloud_storage_clients::client_configuration client_conf,
-      model::cloud_credentials_source cloud_credentials_source);
+      model::cloud_credentials_source cloud_credentials_source,
+      credentials_source_config source_config);
 
     /// Helper to decide if credentials will be regularly fetched from
     /// infrastructure APIs or loaded once from config file.
@@ -42,6 +56,15 @@ public:
     /// the S3 configuration passed to us.
     cloud_roles::credentials build_static_credentials() const;
 
+    /// Update static config.
+    void set_source_config(credentials_source_config config) {
+        if (!is_static_config()) {
+            throw std::runtime_error(
+              "cannot set static config when using dynamic credentials");
+        }
+        _source_config = std::move(config);
+    }
+
     /// Start a background refresh operation, accepting a callback which is
     /// called with newly fetched credentials periodically. The operation is
     /// started on auth_refresh_shard_id and credentials are copied to other
@@ -49,9 +72,6 @@ public:
     void maybe_start_auth_refresh_op(
       cloud_roles::credentials_update_cb_t credentials_update_cb,
       ss::sstring metrics_tag = "");
-
-    cloud_storage_clients::client_configuration get_client_config() const;
-    void set_client_config(cloud_storage_clients::client_configuration conf);
 
     ss::future<> stop();
 
@@ -71,8 +91,10 @@ private:
     ss::logger& _log;
     ss::gate& _gate;
     ss::abort_source& _as;
-    cloud_storage_clients::client_configuration _client_conf;
+
     model::cloud_credentials_source _cloud_credentials_source;
+    credentials_source_config _source_config;
+
     std::optional<cloud_roles::refresh_credentials> _refresh_credentials;
     std::optional<ss::lowres_clock::time_point> _last_refresh_time;
     uint64_t _refresh_cnt{0};

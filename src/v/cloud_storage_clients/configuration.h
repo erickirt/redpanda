@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_roles/auth_refresh_bg_op.h"
 #include "cloud_storage_clients/client_probe.h"
 #include "cloud_storage_clients/types.h"
 #include "model/metadata.h"
@@ -140,5 +141,10 @@ infer_backend_from_uri(const access_point_uri& uri);
 model::cloud_storage_backend infer_backend_from_configuration(
   const client_configuration& client_config,
   model::cloud_credentials_source cloud_storage_credentials_source);
+
+cloud_roles::auth_refresh_bg_op::credentials_source_config
+build_refresh_credentials_source(
+  const client_configuration& config,
+  model::cloud_credentials_source cloud_credentials_source);
 
 } // namespace cloud_storage_clients

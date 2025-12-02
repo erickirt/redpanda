@@ -242,12 +242,16 @@ void credential_manager::start_auth_refresh_if_needed() {
         return;
     }
 
+    auto config_source
+      = cloud_storage_clients::build_refresh_credentials_source(
+        *client_config, cfg.cloud_storage_credentials_source);
+
     auth_refresh_bg_op_.emplace(
       datalake_log,
       gate_,
       auth_refresh_as_,
-      std::move(client_config.value()),
-      get_credentials_source(cfg));
+      get_credentials_source(cfg),
+      std::move(config_source));
 
     auth_refresh_bg_op_->maybe_start_auth_refresh_op(
       [this](cloud_roles::credentials creds) -> ss::future<> {
