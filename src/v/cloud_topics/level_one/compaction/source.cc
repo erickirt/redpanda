@@ -253,9 +253,11 @@ ss::future<ss::stop_iteration> compaction_source::deduplication_iteration(
           std::make_unique<level_one_log_reader_impl>(
             config, _ntp, _tp, _metastore, _io));
 
+        co_await ct_sink.prepare_iteration(start_offset);
         auto stats = co_await rdr.consume(
           compaction_filter{ct_sink, *_map, _ntp, _removable_tombstone_ranges},
           model::no_timeout);
+        co_await ct_sink.finish_iteration(start_offset, last_offset);
         if (stats.has_removed_data()) {
             vlog(
               compaction_log.info,
