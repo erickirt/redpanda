@@ -146,3 +146,16 @@ memory_usage_lower_bound(const chunked_hash_map<K, V, Hash, EqualTo>& m) {
              * sizeof(typename chunked_hash_map<K, V>::bucket_type)
            + m.values().capacity() * sizeof(m.values()[0]);
 }
+
+template<typename K>
+struct fmt::formatter<chunked_hash_set<K>> {
+    using type = chunked_hash_set<K>;
+
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    typename FormatContext::iterator
+    format(const type& set, FormatContext& ctx) const {
+        return fmt::format_to(ctx.out(), "[{}]", fmt::join(set, ","));
+    }
+};
