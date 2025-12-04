@@ -103,12 +103,12 @@ ss::future<std::unique_ptr<impl>> impl::open(
     co_return db;
 }
 
-ss::future<> impl::apply(internal::write_batch batch) {
-    if (batch.empty()) {
+ss::future<> impl::apply(ss::lw_shared_ptr<memtable> batch) {
+    if (batch->empty()) {
         co_return;
     }
     co_await make_room_for_write();
-    _mem->apply(std::move(batch));
+    _mem->merge(std::move(batch));
 }
 
 ss::future<> impl::make_room_for_write() {

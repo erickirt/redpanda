@@ -11,10 +11,10 @@
 
 #include "lsm/lsm.h"
 
-#include "lsm/core/internal/batch.h"
 #include "lsm/core/internal/iterator.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/db/impl.h"
+#include "lsm/db/memtable.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -91,7 +91,7 @@ model::offset database::max_applied_offset() const {
 
 ss::future<> database::apply(write_batch batch) {
     auto b = std::move(batch._batch);
-    co_await _impl->apply(std::move(*b));
+    co_await _impl->apply(std::move(b));
 }
 
 ss::future<std::optional<iobuf>> database::get(std::string_view target) {
@@ -110,7 +110,7 @@ ss::future<iterator> database::create_iterator() {
 }
 
 write_batch::write_batch()
-  : _batch(std::make_unique<internal::write_batch>()) {}
+  : _batch(ss::make_lw_shared<db::memtable>()) {}
 write_batch::write_batch(write_batch&&) noexcept = default;
 write_batch& write_batch::operator=(write_batch&&) noexcept = default;
 write_batch::~write_batch() noexcept = default;

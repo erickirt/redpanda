@@ -23,7 +23,12 @@ namespace lsm {
 
 namespace db {
 class impl;
-}
+class memtable;
+} // namespace db
+
+namespace internal {
+class iterator;
+} // namespace internal
 
 class iterator;
 
@@ -70,10 +75,6 @@ public:
 private:
     std::unique_ptr<db::impl> _impl;
 };
-
-namespace internal {
-class iterator;
-}
 
 // An iterator over the contents of the database.
 class iterator {
@@ -123,10 +124,6 @@ private:
     std::unique_ptr<internal::iterator> _impl;
 };
 
-namespace internal {
-class write_batch;
-}
-
 // A batch of data that can be applied to the database.
 class write_batch {
 public:
@@ -149,7 +146,7 @@ public:
 
 private:
     friend class database;
-    std::unique_ptr<internal::write_batch> _batch;
+    ss::lw_shared_ptr<db::memtable> _batch;
 };
 
 } // namespace lsm

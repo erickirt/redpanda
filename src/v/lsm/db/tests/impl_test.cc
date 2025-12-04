@@ -10,7 +10,6 @@
  */
 
 #include "gtest/gtest.h"
-#include "lsm/core/internal/batch.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/options.h"
 #include "lsm/db/impl.h"
@@ -102,9 +101,9 @@ public:
     }
 
     void write_at_least(size_t size) {
-        lsm::internal::write_batch batch;
+        auto batch = ss::make_lw_shared<lsm::db::memtable>();
         auto seqno = _db->max_applied_seqno();
-        while (batch.memory_usage() < size) {
+        while (batch->approximate_memory_usage() < size) {
             auto key = lsm::internal::key::encode({
               .key = random_generators::gen_alphanum_max_distinct(100'000),
               .seqno = ++seqno,
@@ -113,7 +112,7 @@ public:
               random_generators::gen_alphanum_string(1_KiB));
             _shadow.insert_or_assign(
               ss::sstring(key.user_key()), value.share());
-            batch.put(key, value.share());
+            batch->put(key, value.share());
         }
         _db->apply(std::move(batch)).get();
     }
