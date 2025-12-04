@@ -1809,6 +1809,15 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             f"Expected: {expected_properties}, got: {result_raw.json()['metadata']['properties']}"
         )
 
+        self.logger.debug("Retrieving schema by id")
+        result_raw = self.sr_client.get_schemas_ids_id(id=schema_id)
+        self.logger.debug(result_raw.content)
+        assert result_raw.status_code == requests.codes.ok
+
+        assert result_raw.json()["metadata"]["properties"] == expected_properties, (
+            f"Expected: {expected_properties}, got: {result_raw.json()['metadata']['properties']}"
+        )
+
     @cluster(num_nodes=3)
     def test_post_subjects_subject(self):
         """
