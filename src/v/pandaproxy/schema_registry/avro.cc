@@ -13,6 +13,7 @@
 
 #include "bytes/streambuf.h"
 #include "json/allocator.h"
+#include "json/chunked_buffer.h"
 #include "json/chunked_input_stream.h"
 #include "json/document.h"
 #include "json/json.h"
@@ -22,7 +23,6 @@
 #include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/schema_getter.h"
-#include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "strings/string_switch.h"
 
