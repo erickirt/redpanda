@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "pandaproxy/error.h"
 #include "pandaproxy/json/rjson_util.h"
+#include "pandaproxy/schema_registry/rjson.h"
 #include "pandaproxy/schema_registry/test/avro_payloads.h"
 #include "pandaproxy/schema_registry/test/client_utils.h"
 #include "pandaproxy/schema_registry/types.h"

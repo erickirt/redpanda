@@ -10,6 +10,24 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "rjson",
+    hdrs = [
+        "rjson.h",
+    ],
+    implementation_deps = [
+        "@rapidjson",
+    ],
+    visibility = [":__subpackages__"],
+    deps = [
+        ":types",
+        "//src/v/base",
+        "//src/v/container:json",
+        "//src/v/json",
+        "//src/v/pandaproxy:json",
+    ],
+)
+
+redpanda_cc_library(
     name = "types",
     srcs = [
         "error.cc",
@@ -127,6 +145,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":rjson",
         ":subject_name_strategy",
         ":types",
         "//src/v/base",
@@ -217,6 +236,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":rjson",
         ":subject_name_strategy",
         ":types",
         "//src/v/kafka/client",

@@ -14,9 +14,7 @@
 #include "base/seastarx.h"
 #include "json/types.h"
 #include "pandaproxy/json/rjson_parse.h"
-#include "pandaproxy/json/rjson_util.h"
-#include "pandaproxy/schema_registry/types.h"
-#include "pandaproxy/schema_registry/util.h"
+#include "pandaproxy/schema_registry/rjson.h"
 #include "strings/string_switch.h"
 
 #include <seastar/core/sstring.hh>

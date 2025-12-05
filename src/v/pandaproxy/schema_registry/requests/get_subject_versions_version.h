@@ -12,8 +12,7 @@
 #pragma once
 
 #include "json/iobuf_writer.h"
-#include "pandaproxy/json/rjson_util.h"
-#include "pandaproxy/schema_registry/types.h"
+#include "pandaproxy/schema_registry/rjson.h"
 
 namespace pandaproxy::schema_registry {
 

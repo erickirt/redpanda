@@ -14,7 +14,6 @@
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "container/chunked_vector.h"
-#include "json/iobuf_writer.h"
 #include "kafka/protocol/errors.h"
 #include "model/metadata.h"
 #include "strings/string_switch.h"
@@ -607,14 +606,3 @@ struct fmt::formatter<pandaproxy::schema_registry::schema_reference> {
     // e : format for error_reporting
     char presentation{'l'};
 };
-
-namespace json {
-
-template<typename Buffer>
-void rjson_serialize(
-  json::iobuf_writer<Buffer>& w,
-  const pandaproxy::schema_registry::schema_definition::raw_string& def) {
-    w.String(def());
-}
-
-} // namespace json
