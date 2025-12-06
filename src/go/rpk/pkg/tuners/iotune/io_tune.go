@@ -70,8 +70,10 @@ func ioTuneCommandLineArgs(args IoTuneArgs) ([]string, error) {
 		return nil, errors.New("at least one directory is required for iotune")
 	}
 	var cmdArgs []string
-	cmdArgs = append(cmdArgs, "--evaluation-directory")
-	cmdArgs = append(cmdArgs, args.Dirs...)
+	for _, dir := range args.Dirs {
+		cmdArgs = append(cmdArgs, "--evaluation-directory")
+		cmdArgs = append(cmdArgs, dir)
+	}
 	if args.Format != "" {
 		cmdArgs = append(cmdArgs, "--format")
 		cmdArgs = append(cmdArgs, string(args.Format))
