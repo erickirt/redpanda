@@ -343,7 +343,7 @@ ss::future<> level_zero_log_reader_impl::materialize_batches(
         // Ask data layer to bring data from the cloud storage.
         auto mat_res = co_await _ct_api->materialize(
           _ctp->ntp(), materialize_bytes, std::move(to_materialize), deadline);
-        if (mat_res.has_error()) {
+        if (!mat_res.has_value()) {
             if (mat_res.error() == errc::shutting_down) {
                 vlog(_log.debug, "Materialize aborted due to shutdown");
                 _current = state::end_of_stream_state;

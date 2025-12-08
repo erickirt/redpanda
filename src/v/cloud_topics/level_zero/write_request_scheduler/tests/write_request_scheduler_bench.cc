@@ -67,7 +67,7 @@ struct pipeline_sink {
         auto h = _gate.hold();
         while (!_as.abort_requested()) {
             auto res = co_await stage.wait_next(&_as);
-            if (res.has_error()) {
+            if (!res.has_value()) {
                 co_return;
             }
             auto event = res.value();

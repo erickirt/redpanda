@@ -63,7 +63,7 @@ struct pipeline_sink {
               stage.id());
             auto res = co_await stage.wait_next(&_as);
             vlog(test_log.debug, "pipeline_sink event");
-            if (res.has_error()) {
+            if (!res.has_value()) {
                 vlog(
                   test_log.error, "Event subscription failed: {}", res.error());
                 continue;
@@ -189,7 +189,9 @@ static ss::future<size_t> write_until_threshold(
   write_request_balancer_fixture& fix, size_t size_threshold) {
     size_t num_requests_sent = 0;
     size_t total_size = 0;
-    std::vector<ss::future<result<chunked_vector<extent_meta>>>> wd;
+    std::vector<
+      ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>>
+      wd;
     while (total_size < size_threshold) {
         auto buf = co_await model::test::make_random_batches();
         chunked_vector<model::record_batch> batches;
@@ -443,10 +445,10 @@ TEST_F_CORO(
         auto num_requests = request_sink.local().write_requests_acked;
         ASSERT_EQ_CORO(num_requests, 3);
 
-        ASSERT_FALSE_CORO(ph00.has_error());
-        ASSERT_TRUE_CORO(ph11.has_error());
+        ASSERT_TRUE_CORO(ph00.has_value());
+        ASSERT_TRUE_CORO(!ph11.has_value());
         ASSERT_TRUE_CORO(ph11.error() == cloud_topics::errc::upload_failure);
-        ASSERT_FALSE_CORO(ph10.has_error());
+        ASSERT_TRUE_CORO(ph10.has_value());
     }
     // This test case is about the same as the previous one with the only
     // difference that the failure is injected on shard 0 (the uploading shard).
@@ -466,10 +468,10 @@ TEST_F_CORO(
         auto num_requests = request_sink.local().write_requests_acked;
         ASSERT_EQ_CORO(num_requests, 6);
 
-        ASSERT_FALSE_CORO(ph00.has_error());
-        ASSERT_TRUE_CORO(ph01.has_error());
+        ASSERT_TRUE_CORO(ph00.has_value());
+        ASSERT_TRUE_CORO(!ph01.has_value());
         ASSERT_TRUE_CORO(ph01.error() == cloud_topics::errc::upload_failure);
-        ASSERT_FALSE_CORO(ph10.has_error());
+        ASSERT_TRUE_CORO(ph10.has_value());
     }
     // The data is uploaded on shard 1 and the failure is injected on shard 0.
     {
@@ -491,10 +493,10 @@ TEST_F_CORO(
           ss::shard_id(1), [](auto& s) { return s.write_requests_acked; });
         ASSERT_EQ_CORO(num_requests1, 3);
 
-        ASSERT_FALSE_CORO(ph00.has_error());
-        ASSERT_TRUE_CORO(ph01.has_error());
+        ASSERT_TRUE_CORO(ph00.has_value());
+        ASSERT_TRUE_CORO(!ph01.has_value());
         ASSERT_TRUE_CORO(ph01.error() == cloud_topics::errc::upload_failure);
-        ASSERT_FALSE_CORO(ph10.has_error());
+        ASSERT_TRUE_CORO(ph10.has_value());
     }
 
     co_await stop();

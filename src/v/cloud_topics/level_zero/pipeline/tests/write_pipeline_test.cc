@@ -122,7 +122,7 @@ TEST_CORO(batcher_test, expired_write_request) {
     auto [pass_result, fail_result] = co_await ss::when_all_succeed(
       std::move(expect_pass_fut), std::move(expect_fail_fut));
 
-    ASSERT_TRUE_CORO(fail_result.has_error());
+    ASSERT_TRUE_CORO(!fail_result.has_value());
 
     ASSERT_TRUE_CORO(pass_result.has_value());
 }
