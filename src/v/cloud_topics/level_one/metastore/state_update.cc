@@ -94,6 +94,38 @@ contiguous_intervals_for_extents(
     return ret;
 }
 
+void remove_extents_below_start_offset_for_tp(
+  state& state, model::topic_id_partition tp, std::string_view ctx) {
+    auto& p_state
+      = state.topic_to_state[tp.topic_id].pid_to_state[tp.partition];
+    auto start_offset = p_state.start_offset;
+    while (!p_state.extents.empty()) {
+        if (p_state.extents.begin()->last_offset >= start_offset) {
+            break;
+        }
+        // The front extent falls entirely below the new start offset, meaning
+        // it's can be removed.
+        auto begin_it = p_state.extents.begin();
+        auto oid = begin_it->oid;
+        auto obj_it = state.objects.find(oid);
+        if (obj_it == state.objects.end()) {
+            // Unexpected, but benign.
+            continue;
+        }
+        obj_it->second.removed_data_size += begin_it->len;
+        vlog(
+          cd_log.debug,
+          "{} for {}: {}, removing extent {} [{}, {}]",
+          ctx,
+          tp,
+          start_offset,
+          begin_it->oid,
+          begin_it->base_offset,
+          begin_it->last_offset);
+        p_state.extents.erase(begin_it);
+    }
+}
+
 } // namespace
 
 void new_object::collect_extents_by_tidp(sorted_extents_by_tidp_t* ret) const {
@@ -725,30 +757,8 @@ set_start_offset_update::apply(state& state) {
         return std::monostate{};
     }
     p_state.start_offset = new_start_offset;
-    while (!p_state.extents.empty()) {
-        if (p_state.extents.begin()->last_offset >= new_start_offset) {
-            break;
-        }
-        // The front extent falls entirely below the new start offset, meaning
-        // it's can be removed.
-        auto begin_it = p_state.extents.begin();
-        auto oid = begin_it->oid;
-        auto obj_it = state.objects.find(oid);
-        if (obj_it == state.objects.end()) {
-            // Unexpected, but benign.
-            continue;
-        }
-        obj_it->second.removed_data_size += begin_it->len;
-        vlog(
-          cd_log.debug,
-          "New offset for {}: {}, removing extent {} [{}, {}]",
-          tp,
-          new_start_offset,
-          begin_it->oid,
-          begin_it->base_offset,
-          begin_it->last_offset);
-        p_state.extents.erase(begin_it);
-    }
+    remove_extents_below_start_offset_for_tp(state, tp, "New start offset");
+
     // Now remove terms. Note that the removal should always leave at least one
     // term start, enough to cover `next_offset`, even if the log is empty.
     while (p_state.term_starts.size() > 1) {
