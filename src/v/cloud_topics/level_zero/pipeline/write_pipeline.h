@@ -25,6 +25,7 @@
 #include <seastar/util/optimized_optional.hh>
 
 #include <exception>
+#include <expected>
 #include <functional>
 #include <type_traits>
 
@@ -53,7 +54,8 @@ public:
 
     /// Add write request to the pipeline
     /// The revision id is the topic creation revision id for the ntp.
-    ss::future<result<chunked_vector<extent_meta>>> write_and_debounce(
+    ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
+    write_and_debounce(
       model::ntp ntp,
       cluster_epoch min_epoch,
       chunked_vector<model::record_batch> batches,
@@ -92,13 +94,13 @@ public:
 
         /// Wait until either the 'deadline' is reached or the pipeline
         /// accumulated 'max_bytes' bytes
-        ss::future<checked<event, errc>> wait_until(
+        ss::future<std::expected<event, errc>> wait_until(
           size_t max_bytes,
           Clock::time_point deadline,
           ss::abort_source* as = nullptr) noexcept;
 
         /// Wait until the next write_request is added to the pipeline
-        ss::future<checked<event, errc>>
+        ss::future<std::expected<event, errc>>
         wait_next(ss::abort_source* as = nullptr) noexcept;
 
         /// Apply lambda function to every write request at certain stage.
@@ -109,7 +111,7 @@ public:
         /// When this happens the write request is unlinked from the list.
         template<class Fn>
         requires std::is_nothrow_invocable_r_v<
-          checked<request_processing_result, errc>,
+          std::expected<request_processing_result, errc>,
           Fn,
           write_request<Clock>&>
         void process(Fn&& fn) {
@@ -117,8 +119,8 @@ public:
             uint32_t count = 0;
             for (auto& req : _parent->get_pending()) {
                 if (req.stage == _ps) {
-                    checked<request_processing_result, errc> r = fn(req);
-                    if (r.has_error()) {
+                    std::expected<request_processing_result, errc> r = fn(req);
+                    if (!r.has_value()) {
                         // Drop write request using the error code from the
                         // result
                         req.set_value(r.error());

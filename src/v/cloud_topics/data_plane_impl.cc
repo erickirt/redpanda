@@ -113,8 +113,12 @@ public:
       cluster_epoch min_epoch,
       chunked_vector<model::record_batch> r,
       model::timeout_clock::time_point timeout) override {
-        return _write_pipeline.local().write_and_debounce(
+        auto res = co_await _write_pipeline.local().write_and_debounce(
           std::move(ntp), min_epoch, std::move(r), timeout);
+        if (res.has_value()) {
+            co_return std::move(res.value());
+        }
+        co_return res.error();
     }
 
     ss::future<result<chunked_vector<model::record_batch>>> materialize(

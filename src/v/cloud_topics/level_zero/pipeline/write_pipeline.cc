@@ -64,7 +64,7 @@ template<class Clock>
 write_pipeline<Clock>::~write_pipeline() = default;
 
 template<class Clock>
-ss::future<result<chunked_vector<extent_meta>>>
+ss::future<std::expected<chunked_vector<extent_meta>, std::error_code>>
 write_pipeline<Clock>::write_and_debounce(
   model::ntp ntp,
   cluster_epoch min_epoch,
@@ -115,12 +115,12 @@ write_pipeline<Clock>::write_and_debounce(
     this->signal(stage);
 
     auto res = co_await std::move(fut);
-    if (res.has_error()) {
+    if (!res.has_value()) {
         if (res.error() == errc::timeout) {
             err_probe.cancel();
             _probe.register_request_timeout();
         }
-        co_return res.error();
+        co_return std::unexpected(make_error_code(res.error()));
     }
     err_probe.cancel();
     _probe.register_request_completed();
@@ -244,7 +244,7 @@ write_pipeline<Clock>::stage::pull_write_requests(
 }
 
 template<class Clock>
-ss::future<checked<event, errc>> write_pipeline<Clock>::stage::wait_until(
+ss::future<std::expected<event, errc>> write_pipeline<Clock>::stage::wait_until(
   size_t max_bytes,
   typename Clock::time_point deadline,
   ss::abort_source* maybe_as) noexcept {
@@ -259,14 +259,14 @@ ss::future<checked<event, errc>> write_pipeline<Clock>::stage::wait_until(
     if (event_fut.failed()) {
         auto err = event_fut.get_exception();
         if (ssx::is_shutdown_exception(err)) {
-            co_return errc::shutting_down;
+            co_return std::unexpected(errc::shutting_down);
         }
-        co_return errc::unexpected_failure;
+        co_return std::unexpected(errc::unexpected_failure);
     }
     auto event = event_fut.get();
     switch (event.type) {
     case l0::event_type::shutting_down:
-        co_return errc::shutting_down;
+        co_return std::unexpected(errc::shutting_down);
     case l0::event_type::new_write_request:
     case l0::event_type::err_timedout:
         break;
@@ -278,14 +278,14 @@ ss::future<checked<event, errc>> write_pipeline<Clock>::stage::wait_until(
 }
 
 template<class Clock>
-ss::future<checked<event, errc>>
+ss::future<std::expected<event, errc>>
 write_pipeline<Clock>::stage::wait_next(ss::abort_source* maybe_as) noexcept {
     l0::event_filter<Clock> filter(l0::event_type::new_write_request, _ps);
     auto [sub, as] = choose_abort_source(maybe_as);
     auto event = co_await _parent->subscribe(filter, *as);
     switch (event.type) {
     case l0::event_type::shutting_down:
-        co_return errc::shutting_down;
+        co_return std::unexpected(errc::shutting_down);
     case l0::event_type::err_timedout:
     case l0::event_type::new_read_request:
     case l0::event_type::none:

@@ -81,7 +81,7 @@ size_t write_request_scheduler::shard_bytes() noexcept {
     _stage.process(
       [&total_bytes, &total_requests, this](
         const l0::write_request<>& req) noexcept
-        -> checked<l0::request_processing_result, errc> {
+        -> std::expected<l0::request_processing_result, errc> {
           total_bytes += req.size_bytes();
           total_requests++;
           return total_requests < _max_cardinality()
@@ -98,7 +98,7 @@ ss::future<> write_request_scheduler::bg_data_threshold() {
     while (!_as.abort_requested()) {
         auto req = co_await _stage.wait_until(
           _max_buffer_size(), ss::lowres_clock::time_point::max(), &_as);
-        if (req.has_error()) {
+        if (!req.has_value()) {
             if (req.error() == errc::shutting_down) {
                 vlog(cd_log.debug, "bg_data_threshold: shutting down");
                 co_return;
@@ -120,7 +120,7 @@ ss::future<> write_request_scheduler::bg_data_threshold() {
         // Propagate to the next stage
         _stage.process(
           [this](const l0::write_request<>& r) noexcept
-            -> checked<l0::request_processing_result, errc> {
+            -> std::expected<l0::request_processing_result, errc> {
               _probe.register_data_threshold(r.size_bytes());
               return l0::request_processing_result::advance_and_continue;
           });
@@ -350,7 +350,7 @@ write_request_scheduler::proxy_write_request(
         co_return std::unexpected(errc::upload_failure);
     }
     auto extents = extents_fut.get();
-    if (extents.has_error()) {
+    if (!extents.has_value()) {
         // Normal errors (S3 upload failure or timeout)
         // are handled here
         errc e = extents.error();
