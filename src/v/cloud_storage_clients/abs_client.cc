@@ -11,7 +11,6 @@
 #include "cloud_storage_clients/abs_client.h"
 
 #include "base/vlog.h"
-#include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage_clients/abs_error.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -1026,7 +1025,9 @@ ss::future<> abs_client::do_delete_file(
       "Attempt to use ADLSv2 endpoint without having created a client");
 
     auto header = _requestor.make_delete_file_request(
-      _data_lake_v2_client_config->uri, name, path);
+      access_point_uri{_data_lake_v2_client_config->server_addr.host()},
+      name,
+      path);
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());
