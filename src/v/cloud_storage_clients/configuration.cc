@@ -15,7 +15,6 @@
 #include "config/tls_config.h"
 #include "net/tls.h"
 #include "net/tls_certificate_probe.h"
-#include "utils/functional.h"
 
 #include <seastar/net/tls.hh>
 
@@ -234,35 +233,29 @@ abs_configuration abs_configuration::make_adls_configuration() const {
 
 void apply_self_configuration_result(
   client_configuration& cfg, const client_self_configuration_output& res) {
-    std::visit(
-      [&res](auto& cfg) -> void {
-          using cfg_type = std::decay_t<decltype(cfg)>;
-          if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
-              vassert(
-                std::holds_alternative<s3_self_configuration_result>(res),
-                "Incompatible client configuration {} and self configuration "
-                "result {}",
-                cfg,
-                res);
+    ss::visit(
+      cfg,
+      [&res](s3_configuration& cfg) {
+          vassert(
+            std::holds_alternative<s3_self_configuration_result>(res),
+            "Incompatible client configuration {} and self configuration "
+            "result {}",
+            cfg,
+            res);
 
-              cfg.url_style
-                = std::get<s3_self_configuration_result>(res).url_style;
-
-          } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
-              vassert(
-                std::holds_alternative<abs_self_configuration_result>(res),
-                "Incompatible client configuration {} and self configuration "
-                "result {}",
-                cfg,
-                res);
-
-              cfg.is_hns_enabled
-                = std::get<abs_self_configuration_result>(res).is_hns_enabled;
-          } else {
-              static_assert(always_false_v<cfg_type>, "Unknown client type");
-          }
+          cfg.url_style = std::get<s3_self_configuration_result>(res).url_style;
       },
-      cfg);
+      [&res](abs_configuration& cfg) {
+          vassert(
+            std::holds_alternative<abs_self_configuration_result>(res),
+            "Incompatible client configuration {} and self configuration "
+            "result {}",
+            cfg,
+            res);
+
+          cfg.is_hns_enabled
+            = std::get<abs_self_configuration_result>(res).is_hns_enabled;
+      });
 }
 
 std::ostream& operator<<(std::ostream& o, const abs_configuration& c) {
@@ -290,21 +283,16 @@ operator<<(std::ostream& o, const s3_self_configuration_result& r) {
 
 std::ostream&
 operator<<(std::ostream& o, const client_self_configuration_output& r) {
-    return std::visit(
-      [&o](const auto& self_cfg) -> std::ostream& {
-          using cfg_type = std::decay_t<decltype(self_cfg)>;
-          if constexpr (std::
-                          is_same_v<s3_self_configuration_result, cfg_type>) {
-              return o << "{s3_self_configuration_result: " << self_cfg << "}";
-          } else if constexpr (std::is_same_v<
-                                 abs_self_configuration_result,
-                                 cfg_type>) {
-              return o << "{abs_self_configuration_result: " << self_cfg << "}";
-          } else {
-              static_assert(always_false_v<cfg_type>, "Unknown client type");
-          }
+    ss::visit(
+      r,
+      [&o](const s3_self_configuration_result& self_cfg) {
+          o << "{s3_self_configuration_result: " << self_cfg << "}";
       },
-      r);
+      [&o](const abs_self_configuration_result& self_cfg) {
+          o << "{abs_self_configuration_result: " << self_cfg << "}";
+      });
+
+    return o;
 }
 
 model::cloud_storage_backend
@@ -384,18 +372,16 @@ model::cloud_storage_backend infer_backend_from_configuration(
 }
 
 std::ostream& operator<<(std::ostream& o, const client_configuration& c) {
-    return std::visit(
-      [&o](const auto& cfg) -> std::ostream& {
-          using cfg_type = std::decay_t<decltype(cfg)>;
-          if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
-              return o << "{s3_configuration: " << cfg << "}";
-          } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
-              return o << "{abs_configuration: " << cfg << "}";
-          } else {
-              static_assert(always_false_v<cfg_type>, "Unknown client type");
-          }
+    ss::visit(
+      c,
+      [&o](const s3_configuration& cfg) {
+          o << "{s3_configuration: " << cfg << "}";
       },
-      c);
+      [&o](const abs_configuration& cfg) {
+          o << "{abs_configuration: " << cfg << "}";
+      });
+
+    return o;
 }
 
 cloud_roles::auth_refresh_bg_op::credentials_source_config
