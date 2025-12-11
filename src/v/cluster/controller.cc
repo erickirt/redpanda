@@ -733,7 +733,8 @@ ss::future<> controller::start(
       std::ref(_drain_manager),
       std::ref(_feature_table),
       std::ref(_partition_leaders),
-      std::ref(_tp_state));
+      std::ref(_tp_state),
+      std::ref(_node_status_table));
 
     _leader_balancer = std::make_unique<leader_balancer>(
       _tp_state.local(),

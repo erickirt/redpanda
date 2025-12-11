@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/node_status_table.h"
 #include "cluster/notification.h"
 #include "features/feature_table.h"
 #include "model/metadata.h"
@@ -71,7 +72,8 @@ public:
       ss::sharded<drain_manager>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<partition_leaders_table>&,
-      ss::sharded<topic_table>&);
+      ss::sharded<topic_table>&,
+      ss::sharded<node_status_table>&);
 
     ss::future<> stop();
 
@@ -232,6 +234,7 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<partition_leaders_table>& _partition_leaders_table;
     ss::sharded<topic_table>& _topic_table;
+    ss::sharded<node_status_table>& _node_status_table;
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
