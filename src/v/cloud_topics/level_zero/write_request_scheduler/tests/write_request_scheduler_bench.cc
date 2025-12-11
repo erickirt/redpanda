@@ -43,7 +43,8 @@ struct write_request_balancer_accessor {
     static void disable_time_based_fallback(write_request_scheduler<>* s) {
         s->_test_only_disable_time_based_fallback = true;
     }
-    static ss::future<> apply_time_based_fallback(write_request_scheduler<>* s) {
+    static ss::future<>
+    apply_time_based_fallback(write_request_scheduler<>* s) {
         return s->apply_time_based_fallback();
     }
 };

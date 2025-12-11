@@ -44,7 +44,8 @@ serialized_chunk shallow_copy(serialized_chunk& chunk) {
 } // namespace
 
 template<typename Clock>
-write_request_scheduler<Clock>::write_request_scheduler(write_pipeline<Clock>::stage s)
+write_request_scheduler<Clock>::write_request_scheduler(
+  write_pipeline<Clock>::stage s)
   : _stage(s)
   , _max_buffer_size(
       config::shard_local_cfg()
@@ -133,8 +134,8 @@ ss::future<> write_request_scheduler<Clock>::bg_data_threshold() {
 }
 
 template<typename Clock>
-ss::future<>
-write_request_scheduler<Clock>::pull_and_roundtrip(std::vector<shard_info> infos) {
+ss::future<> write_request_scheduler<Clock>::pull_and_roundtrip(
+  std::vector<shard_info> infos) {
     // This method is invoked by the target shard to pull requests from
     // other shards and forward them to its own pipeline.
     std::vector<ss::future<>> in_flight;
@@ -163,13 +164,12 @@ write_request_scheduler<Clock>::pull_and_roundtrip(std::vector<shard_info> infos
                 // just a safety measure, not a correctness requirement.
                 auto ptr = ss::make_foreign(
                   std::make_unique<ss::gate::holder>(target_gate.hold()));
-                in_flight.push_back(
-                  this->container().invoke_on(
-                    info.shard,
-                    [target = ss::this_shard_id(),
-                     ptr = std::move(ptr)](write_request_scheduler<Clock>& s) mutable {
-                        return s.forward_to(target, std::move(ptr));
-                    }));
+                in_flight.push_back(this->container().invoke_on(
+                  info.shard,
+                  [target = ss::this_shard_id(), ptr = std::move(ptr)](
+                    write_request_scheduler<Clock>& s) mutable {
+                      return s.forward_to(target, std::move(ptr));
+                  }));
             }
         }
     }
@@ -222,10 +222,11 @@ ss::future<> write_request_scheduler<Clock>::apply_time_based_fallback() {
     // additional latency is not significant. If we have very high tput
     // on some shards they will be excluded from the time based fallback
     // because they will trigger the data threshold based uploads.
-    auto shard_bytes = co_await this->container().map([](write_request_scheduler<Clock>& s) {
-        return shard_info{
-          .shard = ss::this_shard_id(), .bytes = s.shard_bytes()};
-    });
+    auto shard_bytes = co_await this->container().map(
+      [](write_request_scheduler<Clock>& s) {
+          return shard_info{
+            .shard = ss::this_shard_id(), .bytes = s.shard_bytes()};
+      });
 
     // NOTE: the heuristic is based on cache behavior. The shard that
     // uploads the data has to read it. If the write request originates
@@ -286,7 +287,8 @@ ss::future<> write_request_scheduler<Clock>::apply_time_based_fallback() {
 
     if (max_shard_bytes > 0) {
         co_await this->container().invoke_on(
-          target_shard, [shard_bytes](write_request_scheduler<Clock>& scheduler) {
+          target_shard,
+          [shard_bytes](write_request_scheduler<Clock>& scheduler) {
               return scheduler.pull_and_roundtrip(shard_bytes);
           });
     }
@@ -333,7 +335,8 @@ ss::future<> write_request_scheduler<Clock>::bg_time_based_fallback() {
 /// then copy it and enqueue it to the pipeline on this shard.
 /// Then await the response and return it.
 template<typename Clock>
-ss::future<std::expected<typename write_request_scheduler<Clock>::foreign_ptr_t, errc>>
+ss::future<
+  std::expected<typename write_request_scheduler<Clock>::foreign_ptr_t, errc>>
 write_request_scheduler<Clock>::proxy_write_request(
   write_request<Clock>* req, ss::gate::holder target_gate_holder) noexcept {
     // This is executed in the context of the target shard.
