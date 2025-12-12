@@ -365,6 +365,11 @@ static cloud_storage_clients::s3_configuration transport_configuration() {
     conf.service = cloud_roles::aws_service_name("s3");
     conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
     conf.server_addr = server_addr;
+    conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
+      net::metrics_disabled::yes,
+      net::public_metrics_disabled::yes,
+      cloud_roles::aws_region_name{"region"},
+      cloud_storage_clients::endpoint_url{"endpoint"});
     return conf;
 }
 
@@ -384,9 +389,8 @@ make_credentials(const cloud_storage_clients::s3_configuration& cfg) {
 /// testing paths and listening.
 configured_test_pair
 started_client_and_server(const cloud_storage_clients::s3_configuration& conf) {
-    auto transport_conf = build_transport_configuration(conf).get();
     auto client = ss::make_shared<cloud_storage_clients::s3_client>(
-      nullptr, conf, transport_conf, conf.make_probe(), make_credentials(conf));
+      nullptr, conf, make_credentials(conf));
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
@@ -871,10 +875,13 @@ public:
             cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty)
           .get();
 
-        pool
-          .invoke_on_all(
-            &cloud_storage_clients::client_pool::start, std::nullopt)
-          .get();
+        auto credentials = cloud_roles::aws_credentials{
+          s3_conf.access_key.value(),
+          s3_conf.secret_key.value(),
+          std::nullopt,
+          s3_conf.region};
+
+        pool.local().load_credentials(std::move(credentials));
 
         server->start().get();
         server->set_routes(set_routes).get();

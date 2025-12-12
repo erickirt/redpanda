@@ -26,6 +26,9 @@
 
 #include <boost/test/tools/interface.hpp>
 
+#include <chrono>
+#include <exception>
+
 using namespace std::chrono_literals;
 
 ss::logger test_log("test-log");
@@ -42,6 +45,11 @@ static cloud_storage_clients::s3_configuration transport_configuration() {
     conf.service = cloud_roles::aws_service_name("s3");
     conf.url_style = cloud_storage_clients::s3_url_style::virtual_host;
     conf.server_addr = server_addr;
+    conf._probe = ss::make_shared<cloud_storage_clients::client_probe>(
+      net::metrics_disabled::yes,
+      net::public_metrics_disabled::yes,
+      cloud_roles::aws_region_name{"region"},
+      cloud_storage_clients::endpoint_url{"endpoint"});
     return conf;
 }
 
@@ -61,9 +69,17 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_abortable) {
         cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)
       .get();
 
-    pool.invoke_on_all(&cloud_storage_clients::client_pool::start, std::nullopt)
+    pool
+      .invoke_on_all([&conf](cloud_storage_clients::client_pool& p) {
+          auto cred = cloud_roles::aws_credentials{
+            conf.access_key.value(),
+            conf.secret_key.value(),
+            std::nullopt,
+            conf.region,
+            cloud_roles::aws_service_name{"s3"}};
+          p.load_credentials(cred);
+      })
       .get();
-
     auto pool_stop = ss::defer([&pool] { pool.stop().get(); });
 
     ss::abort_source as;
@@ -97,9 +113,16 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_with_timeout) {
         cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty)
       .get();
 
-    pool.invoke_on_all(&cloud_storage_clients::client_pool::start, std::nullopt)
+    pool
+      .invoke_on_all([&conf](cloud_storage_clients::client_pool& p) {
+          auto cred = cloud_roles::aws_credentials{
+            conf.access_key.value(),
+            conf.secret_key.value(),
+            std::nullopt,
+            conf.region};
+          p.load_credentials(cred);
+      })
       .get();
-
     auto pool_stop = ss::defer([&pool] { pool.stop().get(); });
 
     ss::abort_source as;
@@ -163,9 +186,16 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_timeout) {
         cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)
       .get();
 
-    pool.invoke_on_all(&cloud_storage_clients::client_pool::start, std::nullopt)
+    pool
+      .invoke_on_all([&conf](cloud_storage_clients::client_pool& p) {
+          auto cred = cloud_roles::aws_credentials{
+            conf.access_key.value(),
+            conf.secret_key.value(),
+            std::nullopt,
+            conf.region};
+          p.load_credentials(cred);
+      })
       .get();
-
     auto pool_stop = ss::defer([&pool] { pool.stop().get(); });
 
     {
