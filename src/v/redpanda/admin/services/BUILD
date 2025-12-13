@@ -51,9 +51,14 @@ redpanda_cc_library(
     name = "security",
     srcs = ["security.cc"],
     hdrs = ["security.h"],
-    implementation_deps = [],
+    implementation_deps = [
+        "//src/v/security",
+        "//src/v/security:request_auth",
+    ],
     deps = [
         "//proto/redpanda/core/admin/v2:security_redpanda_proto",
+        "//src/v/cluster",
         "//src/v/serde/protobuf:rpc",
+        "@seastar",
     ],
 )

@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import datetime
 import json
 import socket
 import threading
@@ -14,12 +15,15 @@ import time
 from urllib.parse import urlparse
 
 import requests
+from connectrpc.errors import ConnectError, ConnectErrorCode
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import parametrize
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from keycloak import KeycloakOpenID
 
+from rptest.clients.admin.proto.redpanda.core.admin.v2 import security_pb2
+from rptest.clients.admin.v2 import Admin as AdminV2
 from rptest.clients.kafka_cli_tools import AuthorizationError, KafkaCliTools
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.clients.rpk import AclList, RpkTool
@@ -329,6 +333,61 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         assert response.status_code == requests.codes.ok
         assert response.json()["id"] == service_user_id
         assert response.json()["expire"] > time.time()
+
+    @cluster(num_nodes=4)
+    def test_admin_v2_resolve_oidc_identity(self):
+        """
+        Test the v2 admin API for resolving OIDC identities.
+        This is the v2 equivalent of test_admin_whoami.
+        """
+
+        kc_node = self.keycloak.nodes[0]
+
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
+        token = self.get_client_credentials_token(cfg)
+
+        def resolve_oidc_identity(
+            with_auth: bool,
+        ) -> security_pb2.ResolveOidcIdentityResponse:
+            admin_v2 = AdminV2(self.redpanda)
+            req = security_pb2.ResolveOidcIdentityRequest()
+            return admin_v2.security().resolve_oidc_identity(
+                req,
+                extra_headers={"Authorization": f"Bearer {token['access_token']}"}
+                if with_auth
+                else None,
+            )
+
+        def verify_response(response: security_pb2.ResolveOidcIdentityResponse):
+            assert response.principal == service_user_id, (
+                f"Unexpected principal: {response.principal} != {service_user_id}"
+            )
+
+            now = datetime.datetime.now(datetime.timezone.utc)
+            expire = response.expire.ToDatetime(tzinfo=datetime.timezone.utc)
+            assert expire > now, f"Unexpected expire: {expire} <= {now}"
+
+        # At this point, admin API does not require auth and service_user_id is not a superuser
+        with expect_exception(
+            ConnectError,
+            lambda e: e.code == ConnectErrorCode.FAILED_PRECONDITION,
+        ):
+            _ = resolve_oidc_identity(with_auth=False)
+
+        verify_response(resolve_oidc_identity(with_auth=True))
+
+        # Require Auth for Admin
+        self.redpanda.set_cluster_config({"admin_api_require_auth": True})
+
+        with expect_exception(
+            ConnectError,
+            lambda e: e.code == ConnectErrorCode.UNAUTHENTICATED,
+        ):
+            _ = resolve_oidc_identity(with_auth=False)
+
+        verify_response(resolve_oidc_identity(with_auth=True))
 
     @cluster(num_nodes=4)
     # https://redpandadata.atlassian.net/browse/ENG-307

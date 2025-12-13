@@ -106,7 +106,8 @@ void application::configure_admin_server(model::node_id node_id) {
             std::make_unique<
               admin::internal::shadow_link_internal_service_impl>(
               create_client(), &_cluster_link_service, &metadata_cache));
-          s.add_service(std::make_unique<admin::security_service_impl>());
+          s.add_service(
+            std::make_unique<admin::security_service_impl>(controller.get()));
       })
       .get();
 }

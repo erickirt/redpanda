@@ -11,12 +11,15 @@
 
 #pragma once
 
+#include "cluster/controller.h"
 #include "proto/redpanda/core/admin/v2/security.proto.h"
 
 namespace admin {
 
 class security_service_impl : public proto::admin::security_service {
 public:
+    explicit security_service_impl(cluster::controller* controller);
+
     seastar::future<proto::admin::resolve_oidc_identity_response>
       resolve_oidc_identity(
         serde::pb::rpc::context,
@@ -28,6 +31,9 @@ public:
       revoke_oidc_sessions(
         serde::pb::rpc::context,
         proto::admin::revoke_oidc_sessions_request) override;
+
+private:
+    cluster::controller* _controller;
 };
 
 } // namespace admin
