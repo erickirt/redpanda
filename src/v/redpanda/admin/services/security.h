@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/controller.h"
+#include "kafka/server/fwd.h"
 #include "proto/redpanda/core/admin/v2/security.proto.h"
 #include "redpanda/admin/proxy/client.h"
 
@@ -20,7 +21,9 @@ namespace admin {
 class security_service_impl : public proto::admin::security_service {
 public:
     security_service_impl(
-      admin::proxy::client proxy_client, cluster::controller* controller);
+      admin::proxy::client proxy_client,
+      cluster::controller* controller,
+      ss::sharded<kafka::server>& kafka_server);
 
     seastar::future<proto::admin::resolve_oidc_identity_response>
       resolve_oidc_identity(
@@ -37,6 +40,7 @@ public:
 private:
     admin::proxy::client _proxy_client;
     cluster::controller* _controller;
+    ss::sharded<kafka::server>& _kafka_server;
 };
 
 } // namespace admin

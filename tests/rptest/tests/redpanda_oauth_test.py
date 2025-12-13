@@ -203,6 +203,20 @@ class RedpandaOIDCTestBase(Test):
             )
         return result["security_idp_latency_seconds_count"]
 
+    def get_sasl_session_revoked_total(self):
+        metrics = [
+            "kafka_rpc_sasl_session_revoked_total",
+        ]
+        samples = self.redpanda.metrics_samples(
+            metrics, self.redpanda.nodes, MetricsEndpoint.METRICS
+        )
+        result = {}
+        for k in samples.keys():
+            result[k] = result.get(k, 0) + sum(
+                [int(s.value) for s in samples[k].samples]
+            )
+        return result["kafka_rpc_sasl_session_revoked_total"]
+
 
 class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
     def __init__(self, test_context, **kwargs):
@@ -541,20 +555,6 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
 
         kc_node = self.keycloak.nodes[0]
 
-        def get_sasl_session_revoked_total():
-            metrics = [
-                "kafka_rpc_sasl_session_revoked_total",
-            ]
-            samples = self.redpanda.metrics_samples(
-                metrics, self.redpanda.nodes, MetricsEndpoint.METRICS
-            )
-            result = {}
-            for k in samples.keys():
-                result[k] = result.get(k, 0) + sum(
-                    [int(s.value) for s in samples[k].samples]
-                )
-            return result["kafka_rpc_sasl_session_revoked_total"]
-
         client_id = CLIENT_ID
         service_user_id = self.create_service_user(client_id)
         cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
@@ -642,7 +642,7 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         t1 = threading.Thread(target=consume_one)
         t1.start()
 
-        revoked_total = get_sasl_session_revoked_total()
+        revoked_total = self.get_sasl_session_revoked_total()
 
         time.sleep(5)
 
@@ -659,9 +659,142 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         self.redpanda.logger.debug("joined consumer thread")
 
         wait_until(
-            lambda: revoked_total < get_sasl_session_revoked_total(),
+            lambda: revoked_total < self.get_sasl_session_revoked_total(),
             timeout_sec=10,
             backoff_sec=1,
+        )
+
+        consumer.close()
+
+    @cluster(num_nodes=4)
+    def test_admin_v2_revoke_oidc_sessions(self):
+        FETCH_TIMEOUT_SEC = 10
+        GROUP_ID = "test_admin_revoke"
+
+        kc_node = self.keycloak.nodes[0]
+
+        client_id = CLIENT_ID
+        service_user_id = self.create_service_user(client_id)
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
+        token = self.get_client_credentials_token(cfg)
+
+        def request_revoke_oidc_sessions(
+            with_auth: bool,
+        ) -> security_pb2.RevokeOidcSessionsResponse:
+            admin_v2 = AdminV2(self.redpanda)
+            req = security_pb2.RevokeOidcSessionsRequest()
+            return admin_v2.security().revoke_oidc_sessions(
+                req,
+                extra_headers={"Authorization": f"Bearer {token['access_token']}"}
+                if with_auth
+                else None,
+            )
+
+        # At this point, admin API does not require auth and service_user_id is not a superuser
+        # Both calls should succeed
+        request_revoke_oidc_sessions(with_auth=False)
+        request_revoke_oidc_sessions(with_auth=True)
+
+        # Require Auth for Admin
+        self.redpanda.set_cluster_config({"admin_api_require_auth": True})
+
+        with expect_exception(
+            ConnectError,
+            lambda e: e.code == ConnectErrorCode.PERMISSION_DENIED,
+        ):
+            request_revoke_oidc_sessions(with_auth=False)
+
+        with expect_exception(
+            ConnectError,
+            lambda e: e.code == ConnectErrorCode.PERMISSION_DENIED,
+        ):
+            request_revoke_oidc_sessions(with_auth=True)
+
+        # Add service_user_id as a superuser
+        self.redpanda.set_cluster_config(
+            {
+                "superusers": [
+                    self.redpanda.SUPERUSER_CREDENTIALS.username,
+                    service_user_id,
+                ]
+            }
+        )
+
+        self.rpk.create_topic(EXAMPLE_TOPIC)
+        expected_topics = set([EXAMPLE_TOPIC])
+        wait_until(
+            lambda: set(self.rpk.list_topics()) == expected_topics,
+            timeout_sec=10,
+            err_msg=f"Expected topics: {expected_topics}, got: {self.rpk.list_topics()}",
+        )
+
+        cfg = self.keycloak.generate_oauth_config(kc_node, client_id)
+        k_client = PythonLibrdkafka(
+            self.redpanda,
+            algorithm="OAUTHBEARER",
+            oauth_config=cfg,
+            tls_cert=self.client_cert,
+        )
+
+        consumer = k_client.get_consumer(extra_config={"group.id": GROUP_ID})
+        producer = k_client.get_producer()
+
+        self.redpanda.logger.debug("starting producer")
+        producer.poll(1.0)
+        wait_until(
+            lambda: set(producer.list_topics(timeout=10).topics.keys())
+            == expected_topics,
+            timeout_sec=5,
+            err_msg=f"Producer topics do not match expected topics: {expected_topics}",
+        )
+
+        def consume_one():
+            self.redpanda.logger.debug("starting consumer")
+            rec = consumer.poll(FETCH_TIMEOUT_SEC)
+            self.redpanda.logger.debug(f"consumed: {rec}")
+            return rec
+
+        def has_group():
+            groups = self.rpk.group_describe(group=GROUP_ID, summary=True)
+            return groups.members == 1 and groups.state == "Stable"
+
+        self.redpanda.logger.debug("starting consumer.subscribe")
+        consumer.subscribe([EXAMPLE_TOPIC])
+        self.redpanda.logger.debug("consumer.subscribed")
+        rec = consumer.poll(1.0)
+        assert rec is None, f"Expected no record, got: {rec}"
+
+        wait_until(
+            has_group,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Consumer group did not reach expected state",
+        )
+
+        t1 = threading.Thread(target=consume_one)
+        t1.start()
+
+        revoked_total = self.get_sasl_session_revoked_total()
+
+        time.sleep(5)
+
+        self.redpanda.logger.debug("starting final revoke")
+        request_revoke_oidc_sessions(with_auth=True)
+
+        self.redpanda.logger.debug("starting producer")
+        producer.produce(topic=EXAMPLE_TOPIC, key="bar", value="23")
+        producer.flush(timeout=5)
+        self.redpanda.logger.debug("produced 1")
+
+        self.redpanda.logger.debug("joining consumer thread")
+        t1.join()
+        self.redpanda.logger.debug("joined consumer thread")
+
+        wait_until(
+            lambda: revoked_total < self.get_sasl_session_revoked_total(),
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Expected sasl_session_revoked_total to increase after OIDC sessions revoke",
         )
 
         consumer.close()

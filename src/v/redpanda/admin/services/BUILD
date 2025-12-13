@@ -59,6 +59,7 @@ redpanda_cc_library(
     deps = [
         "//proto/redpanda/core/admin/v2:security_redpanda_proto",
         "//src/v/cluster",
+        "//src/v/kafka/server",
         "//src/v/redpanda/admin/proxy:client",
         "//src/v/serde/protobuf:rpc",
         "@seastar",
