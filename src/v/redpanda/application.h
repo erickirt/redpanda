@@ -245,6 +245,7 @@ private:
     // having constructed the subsystems via the corresponding `wire_up` calls.
     void start_runtime_services(cluster::cluster_discovery&, ::stop_signal&);
     void start_kafka(const model::node_id&, ::stop_signal&);
+    void add_runtime_rpc_services(rpc::rpc_server&, bool start_raft_rpc_early);
 
     // All methods are calleds from Seastar thread
     ss::app_template::config setup_app_config();

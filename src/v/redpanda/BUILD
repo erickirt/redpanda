@@ -5,6 +5,13 @@ redpanda_cc_library(
     name = "application",
     srcs = [
         "application.cc",
+        "application_admin.cc",
+        "application_bootstrap.cc",
+        "application_config.cc",
+        "application_rpc.cc",
+        "application_runtime.cc",
+        "application_services.cc",
+        "application_start.cc",
         "monitor_unsafe.cc",
     ],
     hdrs = [

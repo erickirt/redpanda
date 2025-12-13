@@ -50,6 +50,7 @@
 #include "random/generators.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
+#include "resource_mgmt/memory_groups.h"
 #include "security/acl.h"
 #include "security/sasl_authentication.h"
 #include "security/scram_algorithm.h"
