@@ -163,6 +163,7 @@ redpanda_test_cc_library(
         "//src/v/test_utils:gtest",
         "//src/v/test_utils:runfiles",
         "@googletest//:gtest",
+        "@openssl",
     ],
 )
 
