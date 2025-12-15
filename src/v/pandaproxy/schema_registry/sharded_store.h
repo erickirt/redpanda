@@ -205,7 +205,7 @@ public:
     ss::future<compatibility_result> is_compatible(
       schema_version version, subject_schema new_schema, verbose is_verbose);
 
-    ss::future<bool> has_version(const subject&, schema_id, include_deleted);
+    ss::future<bool> has_version(subject, schema_id, include_deleted);
 
     //// \brief Throw if the store is not mutable
     void check_mode_mutability(force f) const;

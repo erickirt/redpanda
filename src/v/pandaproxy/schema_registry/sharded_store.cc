@@ -868,11 +868,11 @@ void sharded_store::check_mode_mutability(force f) const {
     _store.local().check_mode_mutability(f).value();
 }
 
-ss::future<bool> sharded_store::has_version(
-  const subject& sub, schema_id id, include_deleted i) {
+ss::future<bool>
+sharded_store::has_version(subject sub, schema_id id, include_deleted i) {
     auto sub_shard{shard_for(sub)};
     auto has_id = co_await _store.invoke_on(
-      sub_shard, _smp_opts, [id, sub, i](class store& s) mutable {
+      sub_shard, _smp_opts, [id, sub{std::move(sub)}, i](class store& s) {
           return s.has_version(sub, id, i);
       });
     co_return has_id.has_value() && has_id.assume_value();
