@@ -222,12 +222,6 @@ private:
     upsert_schema(schema_id id, schema_definition def, bool mark_schema);
     ss::future<> delete_schema(schema_id id);
 
-    struct insert_subject_result {
-        schema_version version;
-        bool inserted;
-    };
-    ss::future<insert_subject_result> insert_subject(subject sub, schema_id id);
-
     ss::future<bool> upsert_subject(
       seq_marker marker,
       subject sub,

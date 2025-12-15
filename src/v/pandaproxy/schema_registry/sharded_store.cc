@@ -666,16 +666,6 @@ ss::future<bool> sharded_store::upsert_schema(
       });
 }
 
-ss::future<sharded_store::insert_subject_result>
-sharded_store::insert_subject(subject sub, schema_id id) {
-    auto sub_shard{shard_for(sub)};
-    auto [version, inserted] = co_await _store.invoke_on(
-      sub_shard, _smp_opts, [sub{std::move(sub)}, id](store& s) mutable {
-          return s.insert_subject(sub, id);
-      });
-    co_return insert_subject_result{version, inserted};
-}
-
 ss::future<bool> sharded_store::upsert_subject(
   seq_marker marker,
   subject sub,
