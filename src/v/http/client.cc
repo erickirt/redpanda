@@ -44,6 +44,20 @@
 
 namespace http {
 
+namespace {
+
+ss::sstring port_display_string(uint16_t port, bool has_tls) {
+    static constexpr uint16_t https_default_port = 443;
+    static constexpr uint16_t http_default_port = 80;
+
+    return (has_tls && port == https_default_port)
+               || (!has_tls && port == http_default_port)
+             ? ss::sstring{}
+             : ss::sstring{fmt::format(":{}", port)};
+};
+
+} // namespace
+
 constexpr std::chrono::seconds tcp_keepalive_idle = 360s;
 constexpr std::chrono::seconds tcp_keepalive_interval = 120s;
 constexpr unsigned int tcp_keepalive_probes = 10;
@@ -85,6 +99,7 @@ client::client(
   ss::shared_ptr<client_probe> probe,
   ss::lowres_clock::duration max_idle_time)
   : net::base_transport(cfg, &http_log)
+  , _ctxlog(http_log, "")
   , _host_with_port(
       fmt::format("{}:{}", cfg.server_addr.host(), cfg.server_addr.port()))
   , _connect_gate()
@@ -120,11 +135,20 @@ ss::future<client::request_response_t> client::make_request(
     auto verb = header.method();
     auto target = header.target();
     ss::sstring target_str(target.data(), target.size());
-    prefix_logger ctxlog(http_log, ssx::sformat("[{}]", target_str));
-    vlog(ctxlog.trace, "client.make_request {}", header);
+
+    _ctxlog = prefix_logger{
+      http_log,
+      ssx::sformat(
+        "{} {}{}{}{}",
+        verb,
+        has_tls() ? "https://" : "http://",
+        server_address().host(),
+        port_display_string(server_address().port(), has_tls()),
+        target_str)};
+    vlog(_ctxlog.trace, "client.make_request {}", header);
 
     auto req = ss::make_shared<request_stream>(this, std::move(header));
-    auto res = ss::make_shared<response_stream>(this, verb, target_str);
+    auto res = ss::make_shared<response_stream>(this, verb);
 
     auto now = ss::lowres_clock::now();
     auto age = _last_response == ss::lowres_clock::time_point::min()
@@ -134,7 +158,7 @@ ss::future<client::request_response_t> client::make_request(
         if (age < _max_idle_time) {
             // Reuse connection
             vlog(
-              ctxlog.debug,
+              _ctxlog.debug,
               "reusing connection, age {}, max idle time {}",
               age.count(),
               _max_idle_time.count());
@@ -142,7 +166,7 @@ ss::future<client::request_response_t> client::make_request(
               std::make_tuple(req, res));
         } else {
             vlog(
-              ctxlog.debug,
+              _ctxlog.debug,
               "shutdown connection, age {}, max idle time {}",
               age.count(),
               _max_idle_time.count());
@@ -152,11 +176,11 @@ ss::future<client::request_response_t> client::make_request(
             shutdown();
         }
     }
-    return get_connected(timeout, ctxlog)
-      .then([this, req, res, target, ctxlog](reconnect_result_t r) {
+    return get_connected(timeout, _ctxlog)
+      .then([this, req, res, target](reconnect_result_t r) {
           if (r == reconnect_result_t::timed_out) {
               vlog(
-                ctxlog.warn,
+                _ctxlog.warn,
                 "make_request timed-out connection attempt {}",
                 target);
               ss::timed_out_error err;
@@ -174,8 +198,8 @@ ss::future<client::request_response_t> client::make_request(
           return ss::make_ready_future<request_response_t>(
             std::make_tuple(req, res));
       })
-      .handle_exception_type([this, ctxlog](ss::tls::verification_error err) {
-          vlog(ctxlog.warn, "make_request tls verification error {}", err);
+      .handle_exception_type([this](ss::tls::verification_error err) {
+          vlog(_ctxlog.warn, "make_request tls verification error {}", err);
           shutdown();
           return ss::make_exception_future<client::request_response_t>(err);
       });
@@ -307,9 +331,9 @@ static client_probe::verb convert_to_pverb(client::response_stream::verb v) {
 }
 
 client::response_stream::response_stream(
-  client* client, client::response_stream::verb v, ss::sstring target)
+  client* client, client::response_stream::verb v)
   : _client(client)
-  , _ctxlog(http_log, ssx::sformat("{} {}", v, std::move(target)))
+  , _ctxlog(client->_ctxlog)
   , _parser()
   , _buffer()
   , _sprobe(client->_probe->create_request_subprobe(convert_to_pverb(v))) {
@@ -509,7 +533,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
 
 client::request_stream::request_stream(client* client, request_header&& hdr)
   : _client(client)
-  , _ctxlog(http_log, ssx::sformat("{}", hdr.target()))
+  , _ctxlog(client->_ctxlog)
   , _request(std::move(hdr))
   , _serializer{_request}
   , _chunk_encode(true, max_chunk_size) {

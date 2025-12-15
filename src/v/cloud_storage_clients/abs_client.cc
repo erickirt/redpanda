@@ -11,7 +11,6 @@
 #include "cloud_storage_clients/abs_client.h"
 
 #include "base/vlog.h"
-#include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage_clients/abs_error.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -72,6 +71,34 @@ bool is_error_retryable(
              err.http_code())
            != retryable_http_codes.end();
 }
+
+net::base_transport::configuration make_adls_transport_configuration(
+  const cloud_storage_clients::abs_configuration& conf,
+  net::base_transport::configuration transport_conf) {
+    constexpr uint16_t default_port = 443;
+
+    const auto endpoint_uri = [&]() -> ss::sstring {
+        auto adls_endpoint_override
+          = config::shard_local_cfg().cloud_storage_azure_adls_endpoint.value();
+        if (adls_endpoint_override.has_value()) {
+            return adls_endpoint_override.value();
+        }
+        return ssx::sformat(
+          "{}.dfs.core.windows.net", conf.storage_account_name());
+    }();
+
+    transport_conf.tls_sni_hostname = endpoint_uri;
+    // conf.uri = access_point_uri{endpoint_uri};
+
+    auto adls_port_override
+      = config::shard_local_cfg().cloud_storage_azure_adls_port();
+    transport_conf.server_addr = net::unresolved_address{
+      endpoint_uri,
+      adls_port_override.has_value() ? *adls_port_override : default_port};
+
+    return transport_conf;
+}
+
 } // namespace
 
 namespace cloud_storage_clients {
@@ -418,37 +445,45 @@ abs_request_creator::make_delete_file_request(
 abs_client::abs_client(
   ss::weak_ptr<client_pool> pool_ptr,
   const abs_configuration& conf,
+  const net::base_transport::configuration& transport_conf,
+  ss::shared_ptr<client_probe> probe,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : client(std::move(pool_ptr))
   , _data_lake_v2_client_config(
-      conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
-                          : std::nullopt)
+      conf.is_hns_enabled
+        ? std::make_optional(
+            make_adls_transport_configuration(conf, transport_conf))
+        : std::nullopt)
   , _is_oauth(apply_credentials->is_oauth())
   , _requestor(conf, std::move(apply_credentials))
-  , _client(conf)
+  , _client(transport_conf, nullptr, probe)
   , _adls_client(
       conf.is_hns_enabled ? std::make_optional(*_data_lake_v2_client_config)
                           : std::nullopt)
-  , _probe(conf._probe) {
+  , _probe(std::move(probe)) {
     vlog(abs_log.trace, "Created client with config:{}", conf);
 }
 
 abs_client::abs_client(
   ss::weak_ptr<client_pool> pool_ptr,
   const abs_configuration& conf,
+  const net::base_transport::configuration& transport_conf,
+  ss::shared_ptr<client_probe> probe,
   const ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
   : client(std::move(pool_ptr))
   , _data_lake_v2_client_config(
-      conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
-                          : std::nullopt)
+      conf.is_hns_enabled
+        ? std::make_optional(
+            make_adls_transport_configuration(conf, transport_conf))
+        : std::nullopt)
   , _is_oauth(apply_credentials->is_oauth())
   , _requestor(conf, std::move(apply_credentials))
-  , _client(conf, &as, conf._probe, conf.max_idle_time)
+  , _client(transport_conf, &as, probe, conf.max_idle_time)
   , _adls_client(
       conf.is_hns_enabled ? std::make_optional(*_data_lake_v2_client_config)
                           : std::nullopt)
-  , _probe(conf._probe) {
+  , _probe(std::move(probe)) {
     vlog(abs_log.trace, "Created client with config:{}", conf);
 }
 
@@ -1026,7 +1061,9 @@ ss::future<> abs_client::do_delete_file(
       "Attempt to use ADLSv2 endpoint without having created a client");
 
     auto header = _requestor.make_delete_file_request(
-      _data_lake_v2_client_config->uri, name, path);
+      access_point_uri{_data_lake_v2_client_config->server_addr.host()},
+      name,
+      path);
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());

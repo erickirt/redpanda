@@ -154,7 +154,7 @@ public:
     public:
         using verb = boost::beast::http::verb;
         /// C-tor can only be called by http_request
-        explicit response_stream(client* client, verb v, ss::sstring target);
+        explicit response_stream(client* client, verb v);
         ~response_stream() override;
 
         response_stream(response_stream&&) = delete;
@@ -194,7 +194,7 @@ public:
 
     private:
         client* _client;
-        prefix_logger _ctxlog;
+        prefix_logger& _ctxlog;
         response_parser _parser;
         iobuf _buffer; /// store incomplete tail elements
         iobuf _prefetch;
@@ -234,7 +234,7 @@ public:
 
     private:
         client* _client;
-        prefix_logger _ctxlog;
+        prefix_logger& _ctxlog;
         http_request _request;
         http_serializer _serializer;
         chunked_encoder _chunk_encode;
@@ -314,6 +314,7 @@ private:
     /// Throw exception if _as is aborted
     void check() const;
 
+    prefix_logger _ctxlog;
     bool _stopped{false};
     bool _shutdown_now{false};
     std::string _host_with_port;
