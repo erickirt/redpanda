@@ -36,7 +36,6 @@
 #include <seastar/http/routes.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
-#include <seastar/net/tcp.hh>
 #include <seastar/net/tls.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/util/defer.hh>

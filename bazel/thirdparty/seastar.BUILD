@@ -595,6 +595,10 @@ cc_library(
             "SEASTAR_BUILD_SHARED_LIBS",
         ],
     }),
+    implementation_deps = [
+        "@c-ares",
+        "@openssl",
+    ],
     includes = [
         "include",
         "src",
@@ -644,11 +648,9 @@ cc_library(
         "@boost//:lockfree",
         "@boost//:program_options",
         "@boost//:thread",
-        "@c-ares",
         "@fmt",
         "@lksctp",
         "@lz4",
-        "@openssl",
         "@protobuf",
         "@yaml-cpp",
     ] + select({
