@@ -199,6 +199,7 @@ ss::future<> client_pool::stop() {
     }
     _cvar.broken();
     _self_config_barrier.broken();
+    _pool_ready_barrier.broken();
     _credentials_var.broken();
     // Wait for all background operations to complete.
     co_await _bg_gate.close();
@@ -230,6 +231,7 @@ void client_pool::shutdown_connections() {
     _as.request_abort();
     _cvar.broken();
     _self_config_barrier.broken();
+    _pool_ready_barrier.broken();
     _credentials_var.broken();
 
     for (auto& it : _leased) {
