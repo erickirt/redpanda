@@ -413,8 +413,8 @@ ss::future<> partition_balancer_backend::do_tick() {
         .min_partition_size_threshold = get_min_partition_size_threshold(),
         .node_responsiveness_timeout = node_responsiveness_timeout,
         .topic_aware = _topic_aware(),
-        .space_management_enabled = space_management_enabled,
-      },
+        .node_autodecommission_timeout = _autodecommission_timeout(),
+        .space_management_enabled = space_management_enabled},
       _state,
       _partition_allocator);
 
@@ -451,8 +451,8 @@ ss::future<> partition_balancer_backend::do_tick() {
           "violations: unavailable nodes: {}, full nodes: {}; "
           "nodes to rebalance count: {}; on demand rebalance requested: {}; "
           "updates in progress: {}; "
-          "action counts: reassignments: {}, cancellations: {}, nodes to "
-          "decommission: {}, failed: {}; "
+          "action counts: reassignments: {}, cancellations: {}, node to "
+          "auto decommission: {}, failed: {}; "
           "counts rebalancing finished: {}, force refresh health report: {}",
           _cur_term->last_status,
           _cur_term->last_violations.unavailable_nodes.size(),
@@ -462,7 +462,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
-          plan_data.decommissions.size(),
+          plan_data.maybe_node_to_autodecommission,
           plan_data.failed_actions_count,
           plan_data.counts_rebalancing_finished,
           _cur_term->_force_health_report_refresh);
@@ -555,20 +555,21 @@ ss::future<> partition_balancer_backend::do_tick() {
                                                + plan_data.cancellations.size()
                                                + plan_data.reassignments.size();
 
-    for (auto node_to_decommission : plan_data.decommissions) {
+    if (plan_data.maybe_node_to_autodecommission.has_value()) {
+        const auto& node_to_decom = *plan_data.maybe_node_to_autodecommission;
         vlog(
           clusterlog.info,
           "submitting decommission on unresponsive node: {}",
-          node_to_decommission);
+          node_to_decom);
 
         auto decom_error = co_await _members_frontend.decommission_node(
-          node_to_decommission);
+          node_to_decom);
 
         if (decom_error) {
             vlog(
               clusterlog.warn,
               "node: {}, failed to decommission with error: {}",
-              node_to_decommission,
+              node_to_decom,
               decom_error);
         }
     }

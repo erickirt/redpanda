@@ -533,8 +533,7 @@ private:
             .segment_fallocation_step = 16_MiB,
             .node_responsiveness_timeout = node_responsiveness_timeout,
             .topic_aware = true,
-            .node_autodecommission_timeout = {},
-          },
+            .node_autodecommission_timeout = {}},
           _workers.state.local(),
           _workers.allocator.local());
     }
