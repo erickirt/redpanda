@@ -77,12 +77,6 @@ struct options {
     constexpr static size_t default_level_one_compaction_trigger = 4;
     size_t level_one_compaction_trigger = default_level_one_compaction_trigger;
 
-    // Write up to this amount of bytes to a file before switching to a new one.
-    // Increasing this provides better file system efficiency with larger files,
-    // but the downside of increasing this is longer compactions and longer
-    // latency/performance hiccups.
-    size_t max_file_size = 2_GiB;
-
     // The approximate max number of SST files that should be opened at one
     // time.
     constexpr static uint32_t default_max_open_files = 1000;
