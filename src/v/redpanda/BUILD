@@ -78,6 +78,7 @@ redpanda_cc_library(
         "//src/v/redpanda/admin/proxy:client",
         "//src/v/redpanda/admin/proxy:service",
         "//src/v/redpanda/admin/services:cluster",
+        "//src/v/redpanda/admin/services:security",
         "//src/v/redpanda/admin/services/datalake",
         "//src/v/redpanda/admin/services/internal:breakglass",
         "//src/v/redpanda/admin/services/internal:debug",
