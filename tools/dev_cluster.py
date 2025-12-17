@@ -33,6 +33,20 @@ import yaml
 BOOTSTRAP_YAML = ".bootstrap.yaml"
 
 
+def pathlib_path_representer(dumper, path):
+    return dumper.represent_scalar("!Path", str(path))
+
+
+def get_config_dumper():
+    d = yaml.SafeDumper
+    d.add_representer(pathlib.PosixPath, pathlib_path_representer)
+    return d
+
+
+def yaml_dump(*args, **kwards):
+    yaml.dump(*args, **kwards, Dumper=get_config_dumper())
+
+
 @dataclasses.dataclass
 class NetworkAddress:
     address: str
@@ -331,6 +345,32 @@ class Grafana:
                 yaml.dump(datasource_config, f)
             print(f"Configured Prometheus datasource at {self.prometheus_url}")
 
+            redpanda_root = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+            if redpanda_root:
+                dashboards_dir = pathlib.Path(redpanda_root) / "tools" / "dashboards"
+                provisioning_dir = grafana_home / "conf" / "provisioning" / "dashboards"
+                provisioning_dir.mkdir(parents=True, exist_ok=True)
+
+                dashboards_config = {
+                    "apiVersion": 1,
+                    "providers": [
+                        {
+                            "name": "Imported Dashboards",
+                            "folder": "Dashboards",
+                            "type": "file",
+                            "editable": True,
+                            "disableDeletion": False,
+                            "options": {
+                                "path": dashboards_dir,
+                            },
+                        }
+                    ],
+                }
+
+                dashboards_file = provisioning_dir / "dashboards.yml"
+                with open(dashboards_file, "w") as f:
+                    yaml_dump(dashboards_config, f)
+
         env = os.environ.copy()
         env["GF_SERVER_HTTP_ADDR"] = "0.0.0.0"
         env["GF_SERVER_HTTP_PORT"] = str(self.port)
@@ -604,14 +644,6 @@ async def main():
             config_dict=dataclasses.asdict(node_conf),
         )
 
-    def pathlib_path_representer(dumper, path):
-        return dumper.represent_scalar("!Path", str(path))
-
-    def get_config_dumper():
-        d = yaml.SafeDumper
-        d.add_representer(pathlib.PosixPath, pathlib_path_representer)
-        return d
-
     def prepare_node(i, rack):
         node_dir = args.directory / f"node{i}"
         data_dir = node_dir / "data"
@@ -635,7 +667,7 @@ async def main():
                 raise ValueError(f"Invalid JSON in config overrides: {e}")
 
         with open(conf_file, "w") as f:
-            yaml.dump(config_dict, f, indent=2, Dumper=get_config_dumper())
+            yaml_dump(config_dict, f, indent=2)
 
         # If there is a bootstrap file in pwd, propagate it to each node's
         # directory so that they'll load it on first start
