@@ -70,7 +70,6 @@ class CloudStorageInventoryTest(PreallocNodesTest):
                 self.si_settings.cloud_storage_bucket,
                 "report.gz",
                 base64.decodebytes(self.compressed_report.encode()),
-                is_bytes=True,
             )
             self.cloud_storage_client.put_object(
                 self.si_settings.cloud_storage_bucket,
