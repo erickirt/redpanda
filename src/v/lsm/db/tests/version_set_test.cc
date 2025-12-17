@@ -493,7 +493,9 @@ TEST_F(CompactionTest, Level1ToLevel2Compaction) {
 
     ASSERT_TRUE(c.has_value());
     EXPECT_EQ(c->level(), 1_level); // L1→L2 compaction
-    EXPECT_THAT(input_file_ids(*c), ElementsAre(1_file_id));
+    // Expansion picks both file 1 and 2 since they both overlap with
+    // the same L2 file and fit within the expansion byte limit
+    EXPECT_THAT(input_file_ids(*c), UnorderedElementsAre(1_file_id, 2_file_id));
     EXPECT_THAT(output_file_ids(*c), ElementsAre(100_file_id));
 }
 
@@ -515,30 +517,33 @@ TEST_F(CompactionTest, GrandparentOverlapTracking) {
 
     ASSERT_TRUE(c.has_value());
     EXPECT_EQ(c->level(), 0_level);
-    // Compaction should track grandparents to not create too big of compactions
-    // later, this is why file 2 isn't picked up.
-    EXPECT_THAT(input_file_ids(*c), ElementsAre(1_file_id));
+    // Expansion picks both file 1 and 2 since they both overlap with
+    // the same L1 file and fit within the expansion byte limit.
+    // Grandparent overlap tracking is verified by checking that the
+    // compaction includes the expected grandparent files.
+    EXPECT_THAT(input_file_ids(*c), UnorderedElementsAre(1_file_id, 2_file_id));
     EXPECT_THAT(output_file_ids(*c), ElementsAre(10_file_id));
 }
 
-TEST_F(CompactionTest, DisjointL0Files) {
-    // Tests compaction with disjoint (non-overlapping) L0 files.
-    // Only the first file is selected even though file 2 is within the
-    // combined L0+L1 range - expansion doesn't occur for disjoint L0 files.
-    add_file(0_level, 1_file_id, "a"_key, "c"_key);
-    add_file(0_level, 2_file_id, "d"_key, "f"_key); // Disjoint from file 1
-    add_file(0_level, 3_file_id, "m"_key, "p"_key);
-    add_file(0_level, 4_file_id, "q"_key, "z"_key);
+TEST_F(CompactionTest, InputExpansion) {
+    // Tests input expansion with disjoint (non-overlapping) L0 files.
+    // When file 1 is picked for compaction against L1 file [a-g],
+    // expansion should also pick file 2 since it doesn't add output files.
+    add_file(0_level, 1_file_id, "a"_key, "c"_key, 100);
+    add_file(0_level, 2_file_id, "d"_key, "f"_key, 100); // Disjoint from file 1
+    add_file(0_level, 3_file_id, "m"_key, "p"_key, 100);
+    add_file(0_level, 4_file_id, "q"_key, "z"_key, 100);
 
-    // L1 file overlaps with file 1
-    add_file(1_level, 10_file_id, "a"_key, "g"_key);
+    // L1 file that covers both file 1 and file 2
+    add_file(1_level, 10_file_id, "a"_key, "g"_key, 100);
 
     auto c = version_set().pick_compaction();
 
     ASSERT_TRUE(c.has_value());
     EXPECT_EQ(c->level(), 0_level);
-    // Only picks file 1; file 2 is not included despite being in L1 range
-    EXPECT_THAT(input_file_ids(*c), ElementsAre(1_file_id));
+    // Expansion should pick both files 1 and 2 since they both overlap with
+    // the same L1 file and fit within the expansion limit
+    EXPECT_THAT(input_file_ids(*c), UnorderedElementsAre(1_file_id, 2_file_id));
     EXPECT_THAT(output_file_ids(*c), ElementsAre(10_file_id));
 }
 

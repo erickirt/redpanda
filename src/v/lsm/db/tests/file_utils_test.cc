@@ -22,6 +22,7 @@
 namespace {
 
 using namespace lsm;
+using lsm::internal::operator""_key;
 using lsm::internal::operator""_seqno;
 using ::testing::ElementsAre;
 
@@ -307,6 +308,76 @@ TEST_F(AddBoundaryInputsTest, TestDisjointFilePointers) {
     compaction_files.push_back(f1);
     db::add_boundary_inputs(level_files, &compaction_files);
     ASSERT_THAT(compaction_files, ElementsAre(f1, f4, f3));
+}
+
+class GetRangeTest : public testing::Test {
+public:
+    ss::lw_shared_ptr<db::file_meta_data>
+    create_file(uint64_t id, internal::key smallest, internal::key largest) {
+        auto meta_data = ss::make_lw_shared<db::file_meta_data>();
+        meta_data->handle = {.id = internal::file_id{id}};
+        meta_data->file_size = 100;
+        meta_data->smallest = smallest;
+        meta_data->largest = largest;
+        return meta_data;
+    }
+};
+
+TEST_F(GetRangeTest, SingleFile) {
+    chunked_vector<ss::lw_shared_ptr<db::file_meta_data>> files;
+    files.push_back(create_file(1, "a@100"_key, "c@100"_key));
+
+    auto [smallest, largest] = db::get_range(files);
+    EXPECT_EQ(smallest, "a@100"_key);
+    EXPECT_EQ(largest, "c@100"_key);
+}
+
+TEST_F(GetRangeTest, DisjointFiles) {
+    // Regression test for bug where get_key_range() was incorrectly updating
+    // smallest instead of largest when file->largest > largest
+    chunked_vector<ss::lw_shared_ptr<db::file_meta_data>> files;
+    files.push_back(create_file(1, "a@100"_key, "c@100"_key));
+    files.push_back(create_file(2, "d@100"_key, "f@100"_key));
+
+    auto [smallest, largest] = db::get_range(files);
+    EXPECT_EQ(smallest, "a@100"_key);
+    EXPECT_EQ(largest, "f@100"_key);
+}
+
+TEST_F(GetRangeTest, OverlappingFiles) {
+    chunked_vector<ss::lw_shared_ptr<db::file_meta_data>> files;
+    files.push_back(create_file(1, "a@100"_key, "e@100"_key));
+    files.push_back(create_file(2, "c@100"_key, "g@100"_key));
+
+    auto [smallest, largest] = db::get_range(files);
+    EXPECT_EQ(smallest, "a@100"_key);
+    EXPECT_EQ(largest, "g@100"_key);
+}
+
+TEST_F(GetRangeTest, MultipleFiles) {
+    chunked_vector<ss::lw_shared_ptr<db::file_meta_data>> files;
+    files.push_back(create_file(1, "c@100"_key, "e@100"_key));
+    files.push_back(create_file(2, "a@100"_key, "d@100"_key));
+    files.push_back(create_file(3, "f@100"_key, "h@100"_key));
+    files.push_back(create_file(4, "b@100"_key, "g@100"_key));
+
+    auto [smallest, largest] = db::get_range(files);
+    EXPECT_EQ(smallest, "a@100"_key);
+    EXPECT_EQ(largest, "h@100"_key);
+}
+
+TEST_F(GetRangeTest, TwoInputs) {
+    chunked_vector<ss::lw_shared_ptr<db::file_meta_data>> inputs1;
+    chunked_vector<ss::lw_shared_ptr<db::file_meta_data>> inputs2;
+
+    inputs1.push_back(create_file(1, "a@100"_key, "c@100"_key));
+    inputs1.push_back(create_file(2, "d@100"_key, "f@100"_key));
+    inputs2.push_back(create_file(10, "b@100"_key, "e@100"_key));
+    inputs2.push_back(create_file(11, "g@100"_key, "j@100"_key));
+
+    auto [smallest, largest] = db::get_range(inputs1, inputs2);
+    EXPECT_EQ(smallest, "a@100"_key);
+    EXPECT_EQ(largest, "j@100"_key);
 }
 
 } // namespace

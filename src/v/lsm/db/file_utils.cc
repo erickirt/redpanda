@@ -157,8 +157,8 @@ std::pair<internal::key, internal::key> get_key_range(const Range& r) {
         if (file->smallest < smallest) {
             smallest = file->smallest;
         }
-        if (file->largest < largest) {
-            smallest = file->largest;
+        if (file->largest > largest) {
+            largest = file->largest;
         }
     }
     return std::make_pair(std::move(smallest), std::move(largest));
