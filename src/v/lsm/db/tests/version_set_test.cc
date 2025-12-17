@@ -547,6 +547,30 @@ TEST_F(CompactionTest, InputExpansion) {
     EXPECT_THAT(output_file_ids(*c), ElementsAre(10_file_id));
 }
 
+TEST_F(CompactionTest, NoExpansionWhenOutputLevelGrows) {
+    // Tests that expansion is rejected when it would add more output level
+    // files. Initial compaction picks file 1, but expanding to include file 2
+    // would require an additional L1 file, so expansion should not happen.
+    add_file(0_level, 1_file_id, "a"_key, "c"_key, 100);
+    add_file(0_level, 2_file_id, "d"_key, "f"_key, 100);
+    add_file(0_level, 3_file_id, "m"_key, "p"_key, 100);
+    add_file(0_level, 4_file_id, "q"_key, "z"_key, 100);
+
+    // L1 files: file 1 overlaps with L1 file 10, but file 2 would require
+    // adding L1 file 11, so expansion should be rejected
+    add_file(1_level, 10_file_id, "a"_key, "c"_key, 100);
+    add_file(1_level, 11_file_id, "d"_key, "f"_key, 100);
+
+    auto c = version_set().pick_compaction();
+
+    ASSERT_TRUE(c.has_value());
+    EXPECT_EQ(c->level(), 0_level);
+    // Only file 1 should be selected; expansion would add file 2 but also
+    // require adding L1 file 11, so it's rejected
+    EXPECT_THAT(input_file_ids(*c), ElementsAre(1_file_id));
+    EXPECT_THAT(output_file_ids(*c), ElementsAre(10_file_id));
+}
+
 TEST_F(CompactionTest, BoundaryKeyHandling) {
     // Add files with exact boundary matches to test add_boundary_inputs
     add_file(0_level, 1_file_id, "a"_key, "d"_key);
@@ -579,4 +603,41 @@ TEST_F(CompactionTest, NoCompactionBelowThreshold) {
 
     // No compaction should be triggered
     EXPECT_FALSE(c.has_value());
+}
+
+TEST_F(CompactionTest, CompactionPointerRespected) {
+    // Tests that the compaction pointer is respected during compaction
+    // selection. Files before the pointer should not be selected.
+
+    // Set up L1 with multiple files to trigger size-based compaction
+    add_file(1_level, 1_file_id, "a"_key, "b"_key, 1000);
+    add_file(1_level, 2_file_id, "c"_key, "d"_key, 1000);
+    add_file(1_level, 3_file_id, "e"_key, "f"_key, 1000);
+    add_file(1_level, 4_file_id, "g"_key, "h"_key, 1000);
+    add_file(1_level, 5_file_id, "i"_key, "j"_key, 1000);
+    add_file(1_level, 6_file_id, "k"_key, "l"_key, 1000);
+    add_file(1_level, 7_file_id, "m"_key, "n"_key, 1000);
+    add_file(1_level, 8_file_id, "o"_key, "p"_key, 1000);
+    add_file(1_level, 9_file_id, "q"_key, "r"_key, 1000);
+    add_file(1_level, 10_file_id, "s"_key, "t"_key, 1000);
+    add_file(1_level, 11_file_id, "u"_key, "v"_key, 1000);
+    add_file(1_level, 12_file_id, "w"_key, "x"_key, 1000);
+
+    // Add L2 files
+    add_file(2_level, 100_file_id, "c"_key, "d"_key, 100);
+    add_file(2_level, 101_file_id, "e"_key, "f"_key, 100);
+
+    // Set the compaction pointer to after file 2, so next compaction should
+    // start from file 3
+    lsm::db::version_edit edit(options());
+    edit.set_compact_pointer(1_level, "d"_key);
+    version_set().log_and_apply(std::move(edit)).get();
+
+    // Next compaction should pick file 3 or later, not file 1 or 2
+    auto c = version_set().pick_compaction();
+    ASSERT_TRUE(c.has_value());
+    EXPECT_EQ(c->level(), 1_level);
+    // Should pick file 3 (first file after the compact pointer at "d")
+    EXPECT_THAT(input_file_ids(*c), ElementsAre(3_file_id));
+    EXPECT_THAT(output_file_ids(*c), ElementsAre(101_file_id));
 }

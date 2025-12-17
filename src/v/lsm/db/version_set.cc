@@ -729,6 +729,10 @@ std::optional<compaction> version_set::pick_compaction() {
         c->_grandparents = _current->get_overlapping_inputs(
           level + 2_level, all_smallest, all_largest);
     }
+    // Update the place where we will do the next compaction for this level.
+    // We update this immediately instead of waiting for the version_edit
+    // to be applied so that if the compaction fails, we will try a different
+    // key range next time.
     _compact_pointer[level] = largest;
     c->_edit.set_compact_pointer(level, largest);
     return c;
