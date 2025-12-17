@@ -30,6 +30,7 @@ public:
       const chunked_vector<offset_interval_set::interval>&,
       const offset_interval_set&,
       metastore::extent_metadata_vec,
+      kafka::offset,
       compaction::key_offset_map*,
       std::chrono::milliseconds,
       metastore*,
@@ -70,6 +71,9 @@ private:
     metastore::extent_metadata_vec _extents;
     metastore::extent_metadata_vec::const_iterator _extents_it;
     metastore::extent_metadata_vec::const_iterator _extents_end_it;
+
+    // The start offset of the CTP.
+    [[maybe_unused]] kafka::offset _start_offset;
 
     // The key-offset map for this run of compaction. Built up from existing
     // data during `map_building_iteration()` by iterating over `_dirty_ranges`

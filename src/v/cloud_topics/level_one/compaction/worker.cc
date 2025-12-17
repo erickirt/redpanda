@@ -170,6 +170,7 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
       = log->info_and_ts->info.offsets_response.removable_tombstone_ranges,
       .extents = log->info_and_ts->info.offsets_response.extents.copy()};
     auto expected_compaction_epoch = log->info_and_ts->info.compaction_epoch;
+    auto start_offset = log->info_and_ts->info.start_offset;
 
     // Lazy initialization of offset map.
     if (!_map) {
@@ -202,6 +203,7 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
       dirty_range_intervals,
       compaction_offsets.removable_tombstone_ranges,
       std::move(compaction_offsets.extents),
+      start_offset,
       _map.get(),
       min_lag_ms,
       _metastore,
@@ -213,6 +215,7 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
       dirty_range_intervals,
       compaction_offsets.removable_tombstone_ranges,
       expected_compaction_epoch,
+      start_offset,
       _io,
       _committer);
     auto reducer = compaction::sliding_window_reducer(

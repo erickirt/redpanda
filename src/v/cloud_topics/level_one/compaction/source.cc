@@ -146,6 +146,7 @@ compaction_source::compaction_source(
   const chunked_vector<offset_interval_set::interval>& dirty_range_intervals,
   const offset_interval_set& removable_tombstone_ranges,
   metastore::extent_metadata_vec extents,
+  kafka::offset start_offset,
   compaction::key_offset_map* map,
   std::chrono::milliseconds min_compaction_lag_ms,
   metastore* metastore,
@@ -157,6 +158,7 @@ compaction_source::compaction_source(
   , _dirty_range_intervals(dirty_range_intervals)
   , _removable_tombstone_ranges(removable_tombstone_ranges)
   , _extents(std::move(extents))
+  , _start_offset(start_offset)
   , _map(map)
   , _min_compaction_lag_ms(min_compaction_lag_ms)
   , _metastore(metastore)

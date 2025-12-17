@@ -94,6 +94,7 @@ ss::future<> do_compact(
   model::ntp ntp,
   l1::metastore::compaction_offsets_response offsets_response,
   l1::metastore::compaction_epoch expected_compaction_epoch,
+  kafka::offset start_offset,
   l1::compaction_committer& committer,
   l1::metastore* metastore,
   l1::io* io,
@@ -109,6 +110,7 @@ ss::future<> do_compact(
       dirty_range_intervals,
       offsets_response.removable_tombstone_ranges,
       std::move(offsets_response.extents),
+      start_offset,
       &map,
       min_compaction_lag_ms,
       metastore,
@@ -120,6 +122,7 @@ ss::future<> do_compact(
       dirty_range_intervals,
       offsets_response.removable_tombstone_ranges,
       expected_compaction_epoch,
+      start_offset,
       io,
       &committer);
     auto reducer = compaction::sliding_window_reducer(
@@ -258,6 +261,7 @@ TEST_F(ReducerTestFixture, LinearKeyValueReducer) {
       ntp,
       std::move(compaction_info->offsets_response),
       compaction_info->compaction_epoch,
+      compaction_info->start_offset,
       committer,
       &_metastore,
       &_io)
@@ -328,6 +332,7 @@ TEST_F(ReducerTestFixture, LinearKeyValueReducerSetStartOffset) {
       ntp,
       std::move(compaction_info->offsets_response),
       compaction_info->compaction_epoch,
+      compaction_info->start_offset,
       committer,
       &_metastore,
       &_io)
@@ -392,6 +397,7 @@ TEST_F(ReducerTestFixture, TombstoneReducer) {
           ntp,
           std::move(compaction_info->offsets_response),
           compaction_info->compaction_epoch,
+          compaction_info->start_offset,
           committer,
           &_metastore,
           &_io)
@@ -419,6 +425,7 @@ TEST_F(ReducerTestFixture, TombstoneReducer) {
           ntp,
           std::move(compaction_info->offsets_response),
           compaction_info->compaction_epoch,
+          compaction_info->start_offset,
           committer,
           &_metastore,
           &_io)
@@ -512,6 +519,7 @@ TEST_F(ReducerTestFixture, MinCompactionLagMsReducerIncreasingTimestamps) {
           ntp,
           std::move(compaction_info->offsets_response),
           compaction_info->compaction_epoch,
+          compaction_info->start_offset,
           committer,
           &_metastore,
           &_io,
@@ -629,6 +637,7 @@ TEST_F(ReducerTestFixture, MinCompactionLagMsReducerDecreasingTimestamps) {
           ntp,
           std::move(compaction_info->offsets_response),
           compaction_info->compaction_epoch,
+          compaction_info->start_offset,
           committer,
           &_metastore,
           &_io,
@@ -759,6 +768,7 @@ TEST_F(ReducerTestFixture, MinCompactionLagMsReducerInterleavedTimestamps) {
           ntp,
           std::move(compaction_info->offsets_response),
           compaction_info->compaction_epoch,
+          compaction_info->start_offset,
           committer,
           &_metastore,
           &_io,
