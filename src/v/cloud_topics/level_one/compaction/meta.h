@@ -102,14 +102,6 @@ using log_set_t = chunked_hash_set<
 using log_list_t
   = intrusive_list<log_compaction_meta, &log_compaction_meta::link>;
 
-// Represents the output from a compaction job over a cloud topic partition.
-// Highly subject to change in the future.
-struct object_output_t {
-    metastore::object_metadata::ntp_metadata ntp_md;
-    object_builder::object_info info;
-    std::unique_ptr<staging_file> staging_file;
-};
-
 using cmp_t = std::function<bool(
   const log_compaction_meta_ptr&, const log_compaction_meta_ptr&)>;
 using log_compaction_queue = std::priority_queue<
@@ -142,6 +134,19 @@ inline std::ostream& operator<<(std::ostream& o, compaction_job_state s) {
     case compaction_job_state::hard_stop:
         return o << "hard_stop";
     }
+}
+
+struct file_and_md_info {
+    std::unique_ptr<staging_file> staging_file;
+    object_builder::object_info info;
+    metastore::object_metadata::ntp_metadata ntp_md;
+};
+
+// An object ID is a unique identifier for a cloud topic compaction job.
+using compaction_job_id = named_type<uuid_t, struct l1_compaction_job_id_tag>;
+
+inline compaction_job_id create_compaction_job_id() {
+    return compaction_job_id{uuid_t::create()};
 }
 
 } // namespace cloud_topics::l1
