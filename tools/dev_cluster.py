@@ -756,9 +756,13 @@ async def main():
 
     asyncio.get_event_loop().add_signal_handler(signal.SIGINT, stop)
 
+    def failed_exit_code(rc: int):
+        # ignore -2/SIGINT, natural way to stop the dev cluster.
+        return rc not in [0, -2]
+
     failed = False
     return_codes = await asyncio.gather(*all_coros)
-    if any(rc != 0 for rc in return_codes):
+    if any(failed_exit_code(rc) for rc in return_codes):
         print(f"Redpanda nodes exited with non-zero return codes: {return_codes}")
         failed = True
 
@@ -767,19 +771,19 @@ async def main():
     if minio_task and minio:
         minio.stop()
         minio_ret_code = await minio_task
-        if minio_ret_code != 0:
+        if failed_exit_code(minio_ret_code):
             print(f"Minio exited with non-zero return code: {minio_ret_code}")
             failed = True
     if prometheus_task and prometheus:
         prometheus.stop()
         prom_ret_code = await prometheus_task
-        if prom_ret_code != 0:
+        if failed_exit_code(prom_ret_code):
             print(f"Prometheus exited with non-zero return code: {prom_ret_code}")
             failed = True
     if grafana_task and grafana:
         grafana.stop()
         grafana_ret_code = await grafana_task
-        if grafana_ret_code != 0:
+        if failed_exit_code(grafana_ret_code):
             print(f"Grafana exited with non-zero return code: {grafana_ret_code}")
             failed = True
 
