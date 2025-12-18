@@ -1,5 +1,6 @@
 #include "net/transport.h"
 
+#include "base/compiler_utils.h"
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "net/dns.h"
@@ -53,12 +54,15 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
           resolved_address, timeout, _log);
 
         if (_creds) {
+            // CORE-14958
+            REDPANDA_BEGIN_IGNORE_DEPRECATIONS
             fd = co_await ss::tls::wrap_client(
               _creds,
               std::move(fd),
               ss::tls::tls_options{
                 .wait_for_eof_on_shutdown = _wait_for_tls_server_eof,
                 .server_name = _tls_sni_hostname.value_or("")});
+            REDPANDA_END_IGNORE_DEPRECATIONS
         }
         _fd = std::make_unique<ss::connected_socket>(std::move(fd));
         if (auto* p = _probe.value_or(nullptr); p != nullptr) {
@@ -68,7 +72,9 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
 
         // Never implicitly destroy a live output stream here: output streams
         // are only safe to destroy after/during stop()
-        vassert(!_out.is_valid(), "destroyed output_stream without stopping");
+        vassert(
+          !_out.has_value() || !_out->is_valid(),
+          "destroyed output_stream without stopping");
         _out = net::batched_output_stream(_fd->output());
     } catch (...) {
         auto e = std::current_exception();
@@ -119,7 +125,9 @@ ss::future<> base_transport::stop() {
     // close(), and this class may be destroyed after stop() is called.
 
     try {
-        co_await _out.stop();
+        if (_out.has_value()) {
+            co_await _out->stop();
+        }
     } catch (...) {
         // Closing the output stream can throw bad pipe if
         // it had unflushed bytes, as we already closed FD.
@@ -128,10 +136,15 @@ ss::future<> base_transport::stop() {
           "Exception while stopping transport: {}",
           std::current_exception());
     }
-    // Invalidate _out here, so that do_connect can assert that
+
+    // Set _out to nullopt here, so that do_connect can assert that
     // it isn't dropping an un-stopped output stream when it
-    // assigns to _out
-    _out = {};
+    // assigns to _out. Note that this happens even if _out->stop()
+    // above throws: because the most common case is that the flush
+    // implied by stop(), but close() still closes the stream in that
+    // case using a finally. So though we don't *know* if stop() closed
+    // the underlying stream, we *hope* it did.
+    _out = std::nullopt;
 
     if (_in.has_value()) {
         co_await _in->close();
