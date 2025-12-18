@@ -183,6 +183,9 @@ def combine_profiles(
 
     assert len(profiles) > 0, f"No profiles found in {base_profile_dir}"
 
+    for profile in profiles:
+        print(f"Profile: {profile} size: {os.path.getsize(profile)} bytes")
+
     llvm_profdata_cmd: list[str] = [
         args.llvm_profdata_bin,
         "merge",
