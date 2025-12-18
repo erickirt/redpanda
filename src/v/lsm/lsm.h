@@ -13,7 +13,7 @@
 
 #include "base/seastarx.h"
 #include "lsm/io/persistence.h"
-#include "model/fundamental.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/future.hh>
 
@@ -31,6 +31,7 @@ namespace internal {
 class iterator;
 } // namespace internal
 
+using sequence_number = named_type<uint64_t, struct seqno_tag>;
 class iterator;
 class snapshot;
 
@@ -155,11 +156,11 @@ public:
     ss::future<> close();
 
     // The maximum offset that has been persisted to durable storage.
-    std::optional<model::offset> max_persisted_offset() const;
+    std::optional<sequence_number> max_persisted_seqno() const;
 
     // The maximum offset that has been applied to the database (persisted or
     // not).
-    std::optional<model::offset> max_applied_offset() const;
+    std::optional<sequence_number> max_applied_seqno() const;
 
     // Flush existing buffered data such that that `max_persisted_offset()`
     // becomes >= the current `max_applied_offset()`.
@@ -263,12 +264,12 @@ public:
     // Set the key in the database with the given value for this offset.
     //
     // REQUIRES: offsets must be monotonically increasing as added to the batch.
-    void put(std::string_view key, iobuf value, model::offset offset);
+    void put(std::string_view key, iobuf value, sequence_number seqno);
 
     // Remove the key in the database at this offset.
     //
     // REQUIRES: offsets must be monotonically increasing as added to the batch.
-    void remove(std::string_view key, model::offset);
+    void remove(std::string_view key, sequence_number seqno);
 
     // Lookup a value in the database as if the current write batch was applied.
     //
