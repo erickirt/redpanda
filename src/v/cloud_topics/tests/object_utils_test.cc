@@ -61,3 +61,35 @@ TEST(ObjectPathFactory, LevelZeroParseEpoch) {
       "L0 object name has invalid epoch: "
       "level_zero/data/00000X0000000010042/asdfasdf");
 }
+
+TEST(ObjectPathFactory, LevelZeroParsePrefix) {
+    EXPECT_EQ(
+      cloud_topics::object_path_factory::level_zero_path_to_prefix(
+        "level_zero/data/123/"),
+      123);
+
+    EXPECT_EQ(
+      cloud_topics::object_path_factory::level_zero_path_to_prefix(
+        "level_zero/data/123/000000000000010042/"),
+      123);
+
+    EXPECT_EQ(
+      cloud_topics::object_path_factory::level_zero_path_to_prefix(
+        "level_asdf_zero/data/000/000000000000010042/asdfasdf")
+        .error(),
+      "L0 object name missing prefix: "
+      "level_asdf_zero/data/000/000000000000010042/asdfasdf");
+
+    EXPECT_EQ(
+      cloud_topics::object_path_factory::level_zero_path_to_prefix(
+        "level_zero/data/00/")
+        .error(),
+      "L0 object name is too short: level_zero/data/00/");
+
+    EXPECT_EQ(
+      cloud_topics::object_path_factory::level_zero_path_to_prefix(
+        "level_zero/data/0X0/0000000000000010042/asdfasdf")
+        .error(),
+      "L0 object name has invalid prefix: "
+      "level_zero/data/0X0/0000000000000010042/asdfasdf");
+}
