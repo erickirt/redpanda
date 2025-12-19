@@ -258,6 +258,8 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
           config::shard_local_cfg()
             .cloud_topics_produce_batching_size_threshold());
 
+        bool complete = list.complete;
+
         // We can spawn the work in the background without worrying about memory
         // usage because the pipeline tracks the memory usage for us and will
         // stop accepting new write requests if we go over the limit.
@@ -278,6 +280,12 @@ ss::future<> batcher<Clock>::bg_controller_loop() {
                   }
               });
         });
+
+        // The work is spawned in the background so we can grab data for the
+        // next L0 object. If complete==true, all pending requests were pulled,
+        // so wait for more. If complete==false, there are more pending
+        // requests.
+        more_work = !complete;
     }
 }
 
