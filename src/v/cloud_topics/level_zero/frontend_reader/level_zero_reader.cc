@@ -207,7 +207,7 @@ ss::future<> level_zero_log_reader_impl::fetch_metadata(
 
         // Convert L0 meta batches to extent_meta structures.
         while (auto maybe_batch = co_await batches()) {
-            auto batch = std::move(maybe_batch).value();
+            auto batch = std::move(maybe_batch->get());
             auto& header = batch.header();
             if (header.type == model::record_batch_type::raft_data) {
                 local_log_batch local_batch{.header = header};

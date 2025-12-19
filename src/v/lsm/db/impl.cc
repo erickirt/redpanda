@@ -532,15 +532,16 @@ ss::future<> impl::flush_memtable() {
 ss::future<> impl::remove_obsolete_files() {
     chunked_hash_set<internal::file_handle> files = _versions->get_live_files();
     auto gen = _persistence.data->list_files();
-    while (auto file_handle = co_await gen()) {
-        if (files.contains(*file_handle)) {
+    while (auto file_handle_opt = co_await gen()) {
+        auto& file_handle = file_handle_opt->get();
+        if (files.contains(file_handle)) {
             continue;
         }
-        if (file_handle->epoch > _opts->database_epoch) {
+        if (file_handle.epoch > _opts->database_epoch) {
             continue;
         }
-        co_await _table_cache->evict(*file_handle);
-        co_await _persistence.data->remove_file(*file_handle);
+        co_await _table_cache->evict(file_handle);
+        co_await _persistence.data->remove_file(file_handle);
     }
 }
 

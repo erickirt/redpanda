@@ -92,16 +92,17 @@ public:
         auto latest_filename = fmt::format("{:020}.MANIFEST", epoch);
         std::string filename;
         auto generator = list_all_files();
-        while (auto entry = co_await generator()) {
-            if (!entry->name.ends_with(".MANIFEST")) {
+        while (auto entry_opt = co_await generator()) {
+            auto& entry = entry_opt->get();
+            if (!entry.name.ends_with(".MANIFEST")) {
                 continue;
             }
             // Skip newer files
-            if (entry->name > latest_filename) {
+            if (entry.name > latest_filename) {
                 continue;
             }
-            if (entry->name > filename) {
-                filename = entry->name;
+            if (entry.name > filename) {
+                filename = entry.name;
             }
         }
         if (filename.empty()) {
@@ -142,14 +143,15 @@ public:
         }
         // Clean up old manifest files
         auto generator = list_all_files();
-        while (auto entry = co_await generator()) {
-            if (!entry->name.ends_with(".MANIFEST")) {
+        while (auto entry_opt = co_await generator()) {
+            auto& entry = entry_opt->get();
+            if (!entry.name.ends_with(".MANIFEST")) {
                 continue;
             }
             // They are lexicographically ordered, so we can check
             // if it's older via string compare.
-            if (entry->name < filename) {
-                co_await remove_any_file(entry->name);
+            if (entry.name < filename) {
+                co_await remove_any_file(entry.name);
             }
         }
     }
@@ -162,7 +164,7 @@ public:
     list_files() override {
         auto generator = list_all_files();
         while (auto entry = co_await generator()) {
-            auto maybe_id = internal::parse_sst_file_name(entry->name);
+            auto maybe_id = internal::parse_sst_file_name(entry->get().name);
             if (maybe_id) {
                 co_yield *maybe_id;
             }
@@ -220,9 +222,10 @@ private:
 
 ss::future<> cleanup_staging_files(ss::file& dir) {
     auto generator = dir.experimental_list_directory();
-    while (auto entry = co_await generator()) {
-        if (entry->name.ends_with(".lsm-staging")) {
-            co_await ss::remove_file(entry->name);
+    while (auto entry_opt = co_await generator()) {
+        auto& entry = *entry_opt;
+        if (entry.name.ends_with(".lsm-staging")) {
+            co_await ss::remove_file(entry.name);
         }
     }
 }
