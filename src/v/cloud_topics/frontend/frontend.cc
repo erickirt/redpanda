@@ -542,11 +542,16 @@ ss::future<> bg_upload_and_replicate(
   bool cache_enabled) {
     vassert(api != nullptr, "cloud topics api is not initialized");
 
+    auto ticket = op->ctp_stm_api->producer_queue().reserve(
+      op->batch_id.pid.get_id());
+    // Now that we've acquired our ticket and determined our ordering, we can
+    // say that the request is enqueued and get more produce requests.
+    op->request_enqueued.set_value();
+
     auto fallback = ss::defer([op] {
         // This guarantees that the promises are set.
         // The error code used here does not represent the
         // actual error.
-        op->request_enqueued.set_value();
         op->replicate_finished.set_value(raft::errc::timeout);
     });
 
@@ -568,6 +573,7 @@ ss::future<> bg_upload_and_replicate(
     if (cache_enabled) {
         rb_copy = clone_batches(op->batches);
     }
+
     auto timeout = op->timeout == 0ms ? L0_upload_default_timeout : op->timeout;
     auto res = co_await api->write_and_debounce(
       op->ntp,
@@ -620,19 +626,23 @@ ss::future<> bg_upload_and_replicate(
       placeholders.batches.size() == 1,
       "Expected single batch, got {}",
       placeholders.batches.size());
-
-    // Replicate
+    // Wait for all previous requests from this producer to be processed
+    co_await ticket.redeem();
+    // Replicate now that our ticket is redeemed
     op->opts = update_replicate_options(op->opts, fence.term);
     auto replicate_stages = partition->replicate_in_stages(
       op->batch_id, std::move(placeholders.batches.front()), op->opts);
 
     fallback.cancel();
 
-    // Forward future result to the 'op'. The expectation is that at this point
-    // the target promises (inside 'op') are used to generate futures and these
-    // futures are awaited.
-    replicate_stages.request_enqueued.forward_to(
-      std::move(op->request_enqueued));
+    // Once the request is enqueued in raft and our order is guaranteed we can
+    // release our ticket and further requests can be enqueued into the raft
+    // layer.
+    ssx::background = replicate_stages.request_enqueued.then_wrapped(
+      [t = std::move(ticket)](ss::future<> fut) mutable {
+          t.release();
+          fut.ignore_ready_future();
+      });
 
     auto replicate_fut
       = std::move(replicate_stages.replicate_finished)
