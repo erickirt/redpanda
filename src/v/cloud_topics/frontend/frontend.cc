@@ -15,6 +15,7 @@
 #include "cloud_topics/level_one/frontend_reader/level_one_reader.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
 #include "cloud_topics/level_zero/common/extent_meta.h"
+#include "cloud_topics/level_zero/common/producer_queue.h"
 #include "cloud_topics/level_zero/frontend_reader/level_zero_reader.h"
 #include "cloud_topics/level_zero/stm/ctp_stm.h"
 #include "cloud_topics/level_zero/stm/placeholder.h"
@@ -529,32 +530,17 @@ struct upload_and_replicate_stages {
       , batch_id(batch_id)
       , opts(opts)
       , timeout(timeout) {}
-
-    ss::promise<> request_enqueued;
-    ss::promise<result<raft::replicate_result>> replicate_finished;
 };
 
-ss::future<> bg_upload_and_replicate(
+ss::future<result<raft::replicate_result>> do_upload_and_replicate(
   data_plane_api* api,
   ss::lw_shared_ptr<cluster::partition> partition,
+  l0::producer_ticket ticket,
   model::record_batch_header header,
   ss::lw_shared_ptr<upload_and_replicate_stages> op,
   bool cache_enabled) {
-    vassert(api != nullptr, "cloud topics api is not initialized");
-
-    auto ticket = op->ctp_stm_api->producer_queue().reserve(
-      op->batch_id.pid.get_id());
-    // Now that we've acquired our ticket and determined our ordering, we can
-    // say that the request is enqueued and get more produce requests.
-    op->request_enqueued.set_value();
-
-    auto fallback = ss::defer([op] {
-        // This guarantees that the promises are set.
-        // The error code used here does not represent the
-        // actual error.
-        op->replicate_finished.set_value(raft::errc::timeout);
-    });
-
+    // The default errc that will cause the client to retry to operation
+    constexpr auto default_errc = raft::errc::timeout;
     /*
      * L0 GC relies on a minimum epoch associated with each NTP for calculating
      * the name of an L0 object. The minimum is based on the topic revision, but
@@ -568,59 +554,66 @@ ss::future<> bg_upload_and_replicate(
       "Unexpected invalid min epoch {} for {}",
       min_epoch,
       op->ntp);
-
     chunked_vector<model::record_batch> rb_copy;
     if (cache_enabled) {
         rb_copy = clone_batches(op->batches);
     }
 
     auto timeout = op->timeout == 0ms ? L0_upload_default_timeout : op->timeout;
-    auto res = co_await api->write_and_debounce(
+    auto upload_fut = co_await ss::coroutine::as_future(api->write_and_debounce(
       op->ntp,
       min_epoch,
       std::move(op->batches),
-      model::timeout_clock::now() + timeout);
+      model::timeout_clock::now() + timeout));
 
-    if (res.has_error()) {
-        vlog(
-          cd_log.debug,
-          "LO object upload has failed: {}",
-          res.error().message());
-        co_return;
+    if (upload_fut.failed()) {
+        auto ex = upload_fut.get_exception();
+        vlog(cd_log.debug, "LO object upload has failed: {}", ex);
+        co_return default_errc;
     }
 
-    if (res.value().empty()) {
+    auto upload_res = upload_fut.get();
+
+    if (upload_res.has_error()) {
+        vlog(
+          cd_log.debug,
+          "LO object upload has errored: {}",
+          upload_res.error().message());
+        co_return default_errc;
+    }
+    if (upload_res.value().empty()) {
         vlog(
           cd_log.warn,
           "LO object upload returned empty result, nothing to replicate");
-        co_return;
+        co_return default_errc;
     }
 
     auto fence_fut = co_await ss::coroutine::as_future(
-      op->ctp_stm_api->fence_epoch(res.value().front().id.epoch));
+      op->ctp_stm_api->fence_epoch(upload_res.value().front().id.epoch));
     if (fence_fut.failed()) {
         auto e = fence_fut.get_exception();
         vlog(
           cd_log.warn,
           "Failed to fence epoch {} for ntp {}, error: {}",
-          res.value().front().id.epoch,
+          upload_res.value().front().id.epoch,
           op->ntp,
           e);
-        co_return;
+        co_return default_errc;
     }
     auto fence = std::move(fence_fut.get());
     if (!fence.unit.has_value()) {
         vlog(
           cd_log.warn,
           "Failed to fence epoch {} for ntp {}, fence unit is empty",
-          res.value().front().id.epoch,
+          upload_res.value().front().id.epoch,
           op->ntp);
-        co_return;
+        co_return default_errc;
     }
 
     chunked_vector<model::record_batch_header> headers;
     headers.push_back(header);
-    auto placeholders = co_await convert_to_placeholders(res.value(), headers);
+    auto placeholders = co_await convert_to_placeholders(
+      upload_res.value(), headers);
 
     vassert(
       placeholders.batches.size() == 1,
@@ -632,66 +625,61 @@ ss::future<> bg_upload_and_replicate(
     op->opts = update_replicate_options(op->opts, fence.term);
     auto replicate_stages = partition->replicate_in_stages(
       op->batch_id, std::move(placeholders.batches.front()), op->opts);
-
-    fallback.cancel();
-
     // Once the request is enqueued in raft and our order is guaranteed we can
     // release our ticket and further requests can be enqueued into the raft
     // layer.
-    ssx::background = replicate_stages.request_enqueued.then_wrapped(
-      [t = std::move(ticket)](ss::future<> fut) mutable {
-          t.release();
-          fut.ignore_ready_future();
-      });
+    auto enqueued_fut = co_await ss::coroutine::as_future(
+      std::move(replicate_stages.request_enqueued));
 
-    auto replicate_fut
-      = std::move(replicate_stages.replicate_finished)
-          .then(
-            [api,
-             cache_enabled,
-             inp = std::move(rb_copy),
-             ntp = partition->ntp(),
-             fence_unit = std::move(fence.unit)](
-              result<cluster::kafka_result> res) mutable
-              -> result<raft::replicate_result> {
-                if (res.has_error()) {
-                    return res.error();
-                }
-                if (cache_enabled) {
-                    // The term_id is not guaranteed to be set if the request
-                    // was served from the list of finished requests. This might
-                    // happen if the request is coming from the snapshot (in
-                    // which case it's not stored) or from the log replay. The
-                    // simplest solution in this case is to skip caching.
-                    if (res.value().last_term >= model::term_id{0}) {
-                        update_batches(
-                          inp,
-                          kafka::offset_cast(res.value().last_offset),
-                          res.value().last_term);
-                        for (const auto& b : inp) {
-                            vlog(
-                              cd_log.trace,
-                              "Putting batch to cache: {}, term: {}",
-                              b.base_offset(),
-                              b.term());
-                            api->cache_put(ntp, b);
-                        }
-                    } else {
-                        vlog(
-                          cd_log.debug,
-                          "Skipping cache put for ntp {} at offset {} with "
-                          "unset term",
-                          ntp,
-                          res.value().last_offset);
-                    }
-                }
-                return raft::replicate_result{
-                  .last_offset = kafka::offset_cast(res.value().last_offset),
-                  .last_term = res.value().last_term,
-                };
-            });
+    ticket.release(); // always release the ticket
 
-    replicate_fut.forward_to(std::move(op->replicate_finished));
+    if (enqueued_fut.failed()) {
+        auto ex = enqueued_fut.get_exception();
+        vlog(
+          cd_log.trace,
+          "failed to enqueue replicate request into raft ({}): {}",
+          op->ntp,
+          ex);
+        // fallthrough - we expect the finish command to throw if this one did
+        // and we don't want to abandon the replicate_finished future
+    }
+
+    auto res = co_await std::move(replicate_stages.replicate_finished);
+    if (res.has_error()) {
+        co_return res.error();
+    }
+    if (cache_enabled) {
+        // The term_id is not guaranteed to be set if the request
+        // was served from the list of finished requests. This might
+        // happen if the request is coming from the snapshot (in
+        // which case it's not stored) or from the log replay. The
+        // simplest solution in this case is to skip caching.
+        if (res.value().last_term >= model::term_id{0}) {
+            update_batches(
+              rb_copy,
+              kafka::offset_cast(res.value().last_offset),
+              res.value().last_term);
+            for (const auto& b : rb_copy) {
+                vlog(
+                  cd_log.trace,
+                  "Putting batch to cache: {}, term: {}",
+                  b.base_offset(),
+                  b.term());
+                api->cache_put(op->ntp, b);
+            }
+        } else {
+            vlog(
+              cd_log.debug,
+              "Skipping cache put for ntp {} at offset {} with "
+              "unset term",
+              op->ntp,
+              res.value().last_offset);
+        }
+    }
+    co_return raft::replicate_result{
+      .last_offset = kafka::offset_cast(res.value().last_offset),
+      .last_term = res.value().last_term,
+    };
 }
 } // namespace
 
@@ -805,10 +793,18 @@ raft::replicate_stages frontend::replicate(
       opts.timeout.value_or(L0_replicate_default_timeout));
 
     raft::replicate_stages out(raft::errc::success);
-    out.request_enqueued = op_state->request_enqueued.get_future();
-    out.replicate_finished = op_state->replicate_finished.get_future();
-    ssx::background = bg_upload_and_replicate(
-      _data_plane, _partition, header, op_state, cache_enabled());
+    auto ticket = op_state->ctp_stm_api->producer_queue().reserve(
+      batch_id.pid.get_id());
+    // Now that we've acquired our ticket and determined our ordering, we can
+    // say that the request is enqueued and get more produce requests.
+    out.request_enqueued = ss::now();
+    out.replicate_finished = do_upload_and_replicate(
+      _data_plane,
+      _partition,
+      std::move(ticket),
+      header,
+      op_state,
+      cache_enabled());
     return out;
 }
 
