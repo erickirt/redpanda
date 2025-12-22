@@ -138,7 +138,8 @@ public:
         // Essentially a call to `metastore->replace_objects()`. Used when we
         // were unable to put all the compaction updates in object storage, or
         // when the formed compaction update was rejected.
-        ss::future<> compact_objects_without_update();
+        ss::future<>
+          compact_objects_without_update(metastore::compaction_epoch);
 
         // Finalizes the compaction job through a request to
         // `metastore->compact_objects()`, using the provided cleaned ranges and
