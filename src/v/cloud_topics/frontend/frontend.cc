@@ -508,38 +508,18 @@ raft::replicate_options update_replicate_options(
     return opts;
 }
 
-struct upload_and_replicate_stages {
-    model::ntp ntp;
-    ss::lw_shared_ptr<cluster::partition> partition;
-    ss::lw_shared_ptr<cloud_topics::ctp_stm_api> ctp_stm_api;
-    chunked_vector<model::record_batch> batches;
-    model::batch_identity batch_id;
-    raft::replicate_options opts;
-    std::chrono::milliseconds timeout;
-
-    upload_and_replicate_stages(
-      ss::lw_shared_ptr<cluster::partition> partition,
-      chunked_vector<model::record_batch> batches,
-      model::batch_identity batch_id,
-      raft::replicate_options opts,
-      std::chrono::milliseconds timeout)
-      : ntp(partition->ntp())
-      , partition(std::move(partition))
-      , ctp_stm_api(make_ctp_stm_api(this->partition))
-      , batches(std::move(batches))
-      , batch_id(batch_id)
-      , opts(opts)
-      , timeout(timeout) {}
-};
-
 ss::future<result<raft::replicate_result>> do_upload_and_replicate(
   data_plane_api* api,
   ss::lw_shared_ptr<cluster::partition> partition,
+  ss::lw_shared_ptr<cloud_topics::ctp_stm_api> ctp_stm_api,
   l0::producer_ticket ticket,
+  model::batch_identity batch_id,
   model::record_batch_header header,
-  ss::lw_shared_ptr<upload_and_replicate_stages> op,
-  bool cache_enabled) {
-    // The default errc that will cause the client to retry to operation
+  staged_write staged,
+  chunked_vector<model::record_batch> cache_batches,
+  raft::replicate_options opts) {
+    const auto& ntp = partition->ntp();
+    // The default errc that will cause the client to retry the operation
     constexpr auto default_errc = raft::errc::timeout;
     /*
      * L0 GC relies on a minimum epoch associated with each NTP for calculating
@@ -553,17 +533,16 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
       min_epoch() > 0L,
       "Unexpected invalid min epoch {} for {}",
       min_epoch,
-      op->ntp);
-    chunked_vector<model::record_batch> rb_copy;
-    if (cache_enabled) {
-        rb_copy = clone_batches(op->batches);
-    }
+      ntp);
 
-    auto timeout = op->timeout == 0ms ? L0_upload_default_timeout : op->timeout;
-    auto upload_fut = co_await ss::coroutine::as_future(api->write_and_debounce(
-      op->ntp,
+    auto timeout = opts.timeout.value_or(0ms);
+    if (timeout == 0ms) {
+        timeout = L0_upload_default_timeout;
+    }
+    auto upload_fut = co_await ss::coroutine::as_future(api->execute_write(
+      ntp,
       min_epoch,
-      std::move(op->batches),
+      std::move(staged),
       model::timeout_clock::now() + timeout));
 
     if (upload_fut.failed()) {
@@ -574,7 +553,7 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
 
     auto upload_res = upload_fut.get();
 
-    if (upload_res.has_error()) {
+    if (!upload_res.has_value()) {
         vlog(
           cd_log.debug,
           "LO object upload has errored: {}",
@@ -589,14 +568,14 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
     }
 
     auto fence_fut = co_await ss::coroutine::as_future(
-      op->ctp_stm_api->fence_epoch(upload_res.value().front().id.epoch));
+      ctp_stm_api->fence_epoch(upload_res.value().front().id.epoch));
     if (fence_fut.failed()) {
         auto e = fence_fut.get_exception();
         vlog(
           cd_log.warn,
           "Failed to fence epoch {} for ntp {}, error: {}",
           upload_res.value().front().id.epoch,
-          op->ntp,
+          ntp,
           e);
         co_return default_errc;
     }
@@ -606,7 +585,7 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
           cd_log.warn,
           "Failed to fence epoch {} for ntp {}, fence unit is empty",
           upload_res.value().front().id.epoch,
-          op->ntp);
+          ntp);
         co_return default_errc;
     }
 
@@ -622,9 +601,9 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
     // Wait for all previous requests from this producer to be processed
     co_await ticket.redeem();
     // Replicate now that our ticket is redeemed
-    op->opts = update_replicate_options(op->opts, fence.term);
+    opts = update_replicate_options(opts, fence.term);
     auto replicate_stages = partition->replicate_in_stages(
-      op->batch_id, std::move(placeholders.batches.front()), op->opts);
+      batch_id, std::move(placeholders.batches.front()), opts);
     // Once the request is enqueued in raft and our order is guaranteed we can
     // release our ticket and further requests can be enqueued into the raft
     // layer.
@@ -638,7 +617,7 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
         vlog(
           cd_log.trace,
           "failed to enqueue replicate request into raft ({}): {}",
-          op->ntp,
+          ntp,
           ex);
         // fallthrough - we expect the finish command to throw if this one did
         // and we don't want to abandon the replicate_finished future
@@ -648,7 +627,7 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
     if (res.has_error()) {
         co_return res.error();
     }
-    if (cache_enabled) {
+    if (!cache_batches.empty()) {
         // The term_id is not guaranteed to be set if the request
         // was served from the list of finished requests. This might
         // happen if the request is coming from the snapshot (in
@@ -656,23 +635,23 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
         // simplest solution in this case is to skip caching.
         if (res.value().last_term >= model::term_id{0}) {
             update_batches(
-              rb_copy,
+              cache_batches,
               kafka::offset_cast(res.value().last_offset),
               res.value().last_term);
-            for (const auto& b : rb_copy) {
+            for (const auto& b : cache_batches) {
                 vlog(
                   cd_log.trace,
                   "Putting batch to cache: {}, term: {}",
                   b.base_offset(),
                   b.term());
-                api->cache_put(op->ntp, b);
+                api->cache_put(ntp, b);
             }
         } else {
             vlog(
               cd_log.debug,
               "Skipping cache put for ntp {} at offset {} with "
               "unset term",
-              op->ntp,
+              ntp,
               res.value().last_offset);
         }
     }
@@ -710,15 +689,18 @@ ss::future<std::expected<kafka::offset, std::error_code>> frontend::replicate(
       min_epoch,
       ntp());
 
-    // Dataplane.
-    auto res = co_await _data_plane->write_and_debounce(
+    auto staged = co_await _data_plane->stage_write(std::move(batches));
+    if (!staged.has_value()) {
+        co_return std::unexpected(staged.error());
+    }
+    auto res = co_await _data_plane->execute_write(
       ntp(),
       min_epoch,
-      std::move(batches),
+      std::move(staged.value()),
       model::timeout_clock::now()
         + opts.timeout.value_or(L0_replicate_default_timeout));
 
-    if (res.has_error()) {
+    if (!res.has_value()) {
         co_return std::unexpected(res.error());
     }
 
@@ -782,29 +764,48 @@ raft::replicate_stages frontend::replicate(
   model::batch_identity batch_id,
   model::record_batch batch,
   raft::replicate_options opts) {
+    auto ctp_stm_api = make_ctp_stm_api(_partition);
     auto header = batch.header();
-    chunked_vector<model::record_batch> batch_vec;
+    chunked_vector<model::record_batch> batch_vec, to_cache;
     batch_vec.push_back(std::move(batch));
-    auto op_state = ss::make_lw_shared<upload_and_replicate_stages>(
-      _partition,
-      std::move(batch_vec),
-      batch_id,
-      opts,
-      opts.timeout.value_or(L0_replicate_default_timeout));
-
+    if (cache_enabled()) {
+        to_cache = clone_batches(batch_vec);
+    }
     raft::replicate_stages out(raft::errc::success);
-    auto ticket = op_state->ctp_stm_api->producer_queue().reserve(
-      batch_id.pid.get_id());
-    // Now that we've acquired our ticket and determined our ordering, we can
-    // say that the request is enqueued and get more produce requests.
-    out.request_enqueued = ss::now();
-    out.replicate_finished = do_upload_and_replicate(
-      _data_plane,
-      _partition,
-      std::move(ticket),
-      header,
-      op_state,
-      cache_enabled());
+    ss::promise<result<raft::replicate_result>> result;
+    out.replicate_finished = result.get_future();
+    out.request_enqueued = _data_plane->stage_write(std::move(batch_vec))
+                             .then_wrapped([this,
+                                            p = std::move(result),
+                                            cloned = std::move(to_cache),
+                                            batch_id,
+                                            header,
+                                            opts](auto fut) mutable {
+                                 if (fut.failed()) {
+                                     p.set_exception(fut.get_exception());
+                                     return;
+                                 }
+                                 auto reserve_result = std::move(fut.get());
+                                 if (!reserve_result.has_value()) {
+                                     p.set_value(raft::errc::timeout);
+                                     return;
+                                 }
+                                 auto ctp_stm = make_ctp_stm_api(_partition);
+                                 auto ticket
+                                   = ctp_stm->producer_queue().reserve(
+                                     batch_id.pid.get_id());
+                                 do_upload_and_replicate(
+                                   _data_plane,
+                                   _partition,
+                                   ctp_stm,
+                                   std::move(ticket),
+                                   batch_id,
+                                   header,
+                                   std::move(reserve_result.value()),
+                                   std::move(cloned),
+                                   opts)
+                                   .forward_to(std::move(p));
+                             });
     return out;
 }
 
