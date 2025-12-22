@@ -459,7 +459,7 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                   // In the background return the client to the connection pool
                   // of the source shard. The lifetime is guaranteed by the gate
                   // guard.
-                  ssx::spawn_with_gate(pool->_bg_gate, [&pool, source_sid] {
+                  ssx::spawn_with_gate(pool->_bg_gate, [pool, source_sid] {
                       return pool->container().invoke_on(
                         source_sid.value(),
                         [my_sid = ss::this_shard_id()](client_pool& other) {
