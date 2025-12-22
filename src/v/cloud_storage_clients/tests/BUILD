@@ -136,6 +136,7 @@ redpanda_cc_btest(
         ":client_pool_builder",
         "//src/v/base",
         "//src/v/cloud_storage_clients",
+        "//src/v/random:generators",
         "//src/v/test_utils:seastar_boost",
         "@boost//:range",
         "@boost//:test",

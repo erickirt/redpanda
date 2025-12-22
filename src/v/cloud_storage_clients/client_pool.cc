@@ -388,7 +388,9 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                     // need to wait in such case.
                     if (_pool.empty()) {
                         co_await ssx::with_timeout_abortable(
-                          _cvar.wait(), model::no_timeout, as);
+                          _cvar.wait(),
+                          deadline.value_or(model::no_timeout),
+                          as);
                         vlog(
                           pool_log.debug,
                           "cvar triggered, pool size: {}",
