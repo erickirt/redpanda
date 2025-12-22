@@ -165,7 +165,10 @@ public:
     /// \brief Get number of connections
     size_t size() const noexcept;
 
-    size_t max_size() const noexcept;
+    /// \brief Configured capacity of the pool. Does not take into account
+    /// connections that may be borrowed from other shards, i.e. when
+    /// `client_pool_overdraft_policy::borrow_if_empty` is used.
+    size_t capacity() const noexcept;
 
     bool has_background_operations() const noexcept {
         return _bg_gate.get_count() > 0;

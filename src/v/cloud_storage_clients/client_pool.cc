@@ -568,7 +568,7 @@ void client_pool::return_one(unsigned other) {
 
 size_t client_pool::size() const noexcept { return _pool.size(); }
 
-size_t client_pool::max_size() const noexcept { return _capacity; }
+size_t client_pool::capacity() const noexcept { return _capacity; }
 
 void client_pool::populate_client_pool() {
     vlog(pool_log.info, "Populating client pool with {} clients", _capacity);
