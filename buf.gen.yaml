@@ -2,11 +2,11 @@ version: v2
 managed:
   enabled: false
 inputs:
-  - directory: .
+  - module: buf.build/redpandadata/core:19149a4a2435
     paths:
-      - proto/redpanda/core/admin/v2/shadow_link.proto
-      - proto/redpanda/core/common/v1/acl.proto
-      - proto/redpanda/core/common/v1/tls.proto
+      - redpanda/core/admin/v2/shadow_link.proto
+      - redpanda/core/common/v1/acl.proto
+      - redpanda/core/common/v1/tls.proto
 plugins:
   # Custom comment extraction plugin - we ONLY generate comments related files,
   # The rest comes from buf.build/gen/go/redpandadata/core/protocolbuffers/go
@@ -14,6 +14,6 @@ plugins:
     out: .
     opt:
       - paths=import
-      - Mproto/redpanda/core/admin/v2/shadow_link.proto=github.com/redpanda-data/redpanda/src/go/rpk/gen/protocomments/admin/v2
-      - Mproto/redpanda/core/common/v1/acl.proto=github.com/redpanda-data/redpanda/src/go/rpk/gen/protocomments/common/v1
-      - Mproto/redpanda/core/common/v1/tls.proto=github.com/redpanda-data/redpanda/src/go/rpk/gen/protocomments/common/v1
+      - Mredpanda/core/admin/v2/shadow_link.proto=github.com/redpanda-data/redpanda/src/go/rpk/gen/protocomments/admin/v2
+      - Mredpanda/core/common/v1/acl.proto=github.com/redpanda-data/redpanda/src/go/rpk/gen/protocomments/common/v1
+      - Mredpanda/core/common/v1/tls.proto=github.com/redpanda-data/redpanda/src/go/rpk/gen/protocomments/common/v1
