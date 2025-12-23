@@ -425,9 +425,9 @@ redpanda_cc_btest(
     ],
     deps = [
         "//src/v/raft",
+        "//src/v/ssx:mutex",
         "//src/v/ssx:sformat",
         "//src/v/test_utils:seastar_boost",
-        "//src/v/utils:mutex",
         "@boost//:test",
         "@fmt",
         "@seastar",

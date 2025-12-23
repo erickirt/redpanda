@@ -23,8 +23,8 @@
 #include "fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "ssx/mutex.h"
 #include "ssx/semaphore.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -443,7 +443,7 @@ private:
 
     ss::gate _gate;
     ssx::semaphore _sem{0, "c/data-migration-be"};
-    mutex _mutex{"c/data-migration-be::lock"};
+    ssx::mutex _mutex{"c/data-migration-be::lock"};
     ss::timer<ss::lowres_clock> _timer{[this]() { wakeup(); }};
 
     std::optional<model::term_id> _raft0_leader_term;

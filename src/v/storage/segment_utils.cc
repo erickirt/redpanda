@@ -1182,7 +1182,7 @@ ss::future<compaction_result> concatenate_and_rebuild_target_segment(
   storage::readers_cache& readers_cache,
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table,
-  mutex& segment_rewrite_lock) {
+  ssx::mutex& segment_rewrite_lock) {
     vassert(
       segment_rewrite_lock.is_held(), "Segment rewrite lock should be held.");
 

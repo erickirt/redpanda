@@ -2423,7 +2423,7 @@ TEST_F(storage_test_fixture, committed_offset_updates) {
           std::move(appender), model::no_timeout);
     };
 
-    mutex write_mutex{"e2e_test::write_mutex"};
+    ssx::mutex write_mutex{"e2e_test::write_mutex"};
     /**
      * Sequence of events is as follow:
      *
@@ -2837,7 +2837,7 @@ TEST_F(storage_test_fixture, read_write_truncate) {
 
     int cnt = 0;
     int max = 500;
-    mutex log_mutex{"e2e_test::log_mutex"};
+    ssx::mutex log_mutex{"e2e_test::log_mutex"};
     auto produce = ss::do_until(
       [&] { return cnt > max; },
       [&log, &cnt, &log_mutex] {
@@ -2959,7 +2959,7 @@ TEST_F(storage_test_fixture, write_truncate_compact) {
     int cnt = 0;
     int max = 50;
     bool done = false;
-    mutex log_mutex{"e2e_test::log_mutex"};
+    ssx::mutex log_mutex{"e2e_test::log_mutex"};
     auto produce
       = ss::do_until(
           [&] { return cnt > max || done; },
@@ -3971,7 +3971,7 @@ TEST_F(storage_test_fixture, issue_8091) {
 
     int cnt = 0;
     int max = 50; // NB: Reduced for GTest due to OOM; hopefully temporary.
-    mutex log_mutex{"e2e_test::log_mutex"};
+    ssx::mutex log_mutex{"e2e_test::log_mutex"};
     model::offset last_truncate;
 
     auto produce = ss::do_until(
@@ -7019,7 +7019,7 @@ TEST_F(storage_test_fixture, truncate_prefix_append_and_close) {
     }
 
     ss::abort_source as;
-    mutex log_mutex{"e2e_test::log_mutex"};
+    ssx::mutex log_mutex{"e2e_test::log_mutex"};
     auto random_sleep = [](int min, int max) {
         return ss::sleep(
           std::chrono::milliseconds(random_generators::get_int(min, max)));

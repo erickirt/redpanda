@@ -20,6 +20,7 @@
 #include "resource_mgmt/memory_groups.h"
 #include "ssx/async-clear.h"
 #include "ssx/future-util.h"
+#include "ssx/mutex.h"
 #include "ssx/watchdog.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
@@ -39,7 +40,6 @@
 #include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "utils/directory_walker.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
@@ -980,7 +980,7 @@ ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
     return ss::smp::submit_to(
              0,
              [dir = std::move(dir)]() mutable {
-                 static thread_local mutex fs_lock{
+                 static thread_local ssx::mutex fs_lock{
                    "dispatch_topic_dir_deletion"};
                  return fs_lock.with([dir = std::move(dir)] {
                      return ss::file_exists(dir).then([dir](bool exists) {

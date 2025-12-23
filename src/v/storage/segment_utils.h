@@ -117,7 +117,7 @@ ss::future<compaction_result> concatenate_and_rebuild_target_segment(
   storage::readers_cache& readers_cache,
   storage_resources& resources,
   ss::sharded<features::feature_table>& feature_table,
-  mutex& segment_rewrite_lock);
+  ssx::mutex& segment_rewrite_lock);
 
 ss::future<> write_concatenated_compacted_index(
   std::filesystem::path,
