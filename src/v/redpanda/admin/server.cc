@@ -2076,7 +2076,7 @@ void admin_server::register_cluster_config_routes() {
                     rs.unknown = s.second.unknown;
                 }
 
-                return ss::json::json_return_type(std::move(res));
+                return ss::json::json_return_type(res);
             });
       });
 
@@ -2310,7 +2310,7 @@ admin_server::patch_cluster_config_handler(
         // normal write.
         ss::httpd::cluster_config_json::cluster_config_write_result result;
         result.config_version = current_version;
-        co_return ss::json::json_return_type(std::move(result));
+        co_return ss::json::json_return_type(result);
     }
 
     if (
@@ -2327,7 +2327,7 @@ admin_server::patch_cluster_config_handler(
             [](cluster::config_manager& cm) { return cm.get_version(); });
         ss::httpd::cluster_config_json::cluster_config_write_result result;
         result.config_version = current_version;
-        co_return ss::json::json_return_type(std::move(result));
+        co_return ss::json::json_return_type(result);
     }
 
     vlog(
@@ -2355,7 +2355,7 @@ admin_server::patch_cluster_config_handler(
 
     ss::httpd::cluster_config_json::cluster_config_write_result result;
     result.config_version = patch_result.version;
-    co_return ss::json::json_return_type(std::move(result));
+    co_return ss::json::json_return_type(result);
 }
 
 ss::future<ss::json::json_return_type>
@@ -2839,7 +2839,7 @@ admin_server::get_broker_uuids_handler() {
           }
           return ret;
       });
-    co_return ss::json::json_return_type(std::move(mappings));
+    co_return ss::json::json_return_type(mappings);
 }
 
 ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
@@ -3056,9 +3056,9 @@ void admin_server::register_broker_routes() {
 
                 ss::httpd::broker_json::cluster_view ret;
                 ret.version = members_table.version();
-                ret.brokers = std::move(brokers);
+                ret.brokers = brokers;
 
-                return ss::json::json_return_type(std::move(ret));
+                return ss::json::json_return_type(ret);
             });
       });
 
@@ -3067,7 +3067,7 @@ void admin_server::register_broker_routes() {
       [this](std::unique_ptr<ss::http::request>) {
           return get_brokers(_controller)
             .then([](std::vector<ss::httpd::broker_json::broker> brokers) {
-                return ss::json::json_return_type(std::move(brokers));
+                return ss::json::json_return_type(brokers);
             });
       });
     register_route<user>(
@@ -3684,7 +3684,7 @@ admin_server::get_metrics_uuid(std::unique_ptr<ss::http::request>) {
       0, ([](cluster::controller_stm& s) {
           return s.get_metrics_reporter_cluster_info().uuid;
       }));
-    co_return ss::json::json_return_type(std::move(ret));
+    co_return ss::json::json_return_type(ret);
 }
 
 static json::validator make_post_cluster_partitions_validator() {
@@ -4124,7 +4124,7 @@ void admin_server::register_cluster_routes() {
           if (cluster_uuid) {
               ss::httpd::cluster_json::uuid ret;
               ret.cluster_uuid = ssx::sformat("{}", cluster_uuid.value());
-              return ss::json::json_return_type(std::move(ret));
+              return ss::json::json_return_type(ret);
           }
           return ss::json::json_return_type(ss::json::json_void());
       });
