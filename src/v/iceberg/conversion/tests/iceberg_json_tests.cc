@@ -291,7 +291,8 @@ TEST(JsonSchema, Empty) {
         auto result = to_iceberg_type(schema_str);
         ASSERT_TRUE(result.has_error());
         ASSERT_STREQ(
-          "Unsupported JSON conversion: missing type keyword",
+          "Type constraint is not sufficient for transforming. Types: [null, "
+          "boolean, object, array, number, integer, string]",
           result.error().what());
     }
 }
@@ -306,7 +307,7 @@ TEST(JsonSchema, NullType) {
         auto result = to_iceberg_type(schema_str);
         ASSERT_TRUE(result.has_error());
         ASSERT_STREQ(
-          "Unsupported JSON conversion: missing type keyword",
+          "Type constraint is not sufficient for transforming. Types: [null]",
           result.error().what());
     }
 }
@@ -478,7 +479,8 @@ TEST(JsonSchema, ObjectWithInvalidProperty) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
@@ -511,7 +513,8 @@ TEST(JsonSchema, ObjectWithBooleanProperty) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
@@ -538,7 +541,8 @@ TEST(JsonSchema, ListWithInvalidItems) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
@@ -552,7 +556,8 @@ TEST(JsonSchema, ListWithInvalidItemsList) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
@@ -703,7 +708,8 @@ TEST(JsonSchema, ListWithItemAndInvalidAdditionalItems) {
     auto result = to_iceberg_type(schema);
     ASSERT_TRUE(result.has_error());
     ASSERT_STREQ(
-      "Unsupported JSON conversion: missing type keyword",
+      "Type constraint is not sufficient for transforming. Types: [null, "
+      "boolean, object, array, number, integer, string]",
       result.error().what());
 }
 
