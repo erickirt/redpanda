@@ -106,6 +106,7 @@ redpanda_cc_library(
         "//src/v/serde:uuid",
         "//src/v/serde:vector",
         "//src/v/ssx:future_util",
+        "//src/v/ssx:watchdog",
         "//src/v/storage",
     ],
     visibility = ["//visibility:public"],
