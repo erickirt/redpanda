@@ -146,15 +146,26 @@ build:fastbuild --build
 build:dev --config=dev-base --config=dbgsym-lines
 
 # =================================
+# Debugger
+# =================================
+# A mode optimized for running in a debugger, i.e., with no optimization
+# and full symbols. This uses -O0, so Redpanda will run very slowly, which
+# may be unsuitable for some uses. In that case, you might prefer --config=debug.
+# Note that --config=debug is based on this config, so changes to this config
+# will flow through to --config=debug as well.
+build:debugger --compilation_mode=dbg
+build:debugger --config=san-all
+build:debugger --config=dbgsym-all
+
+# =================================
 # Debug
 # =================================
 # Debug mode used in the "debug" CI builds and includes all sanitizers,
-# and full symbols.
-build:debug --compilation_mode=dbg
-build:debug --config=san-all
-build:debug --config=dbgsym-all
+# and full symbols. Runs with -O1 so is faster than --config=debugger,
+# but debugger use more difficult due to optimizations (i.e., many symbols
+# will be missing, etc).
+build:debug --config=debugger
 build:debug --copt=-O1
-
 
 # =================================
 # ODR Finder
