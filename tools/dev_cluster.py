@@ -131,8 +131,9 @@ async def stream_until_eof(
             log_file.flush()
 
 
-def send_signal(proc: asyncio.subprocess.Process, sig: signal.Signals):
+def send_signal(proc: asyncio.subprocess.Process, sig: signal.Signals, name: str):
     try:
+        print(f"Sending signal {sig} to {name} (pid {proc.pid})")
         proc.send_signal(sig)
     except ProcessLookupError:
         # Process already exited
@@ -151,7 +152,7 @@ class Minio:
     def stop(self) -> None:
         if not self.stopped:
             self.stopped = True
-            send_signal(self.process, signal.SIGINT)
+            send_signal(self.process, signal.SIGINT, "minio")
 
     async def run(self) -> int:
         log_path = self.directory / "minio.log"
@@ -177,11 +178,9 @@ class Minio:
             f"{hostname}:{port}",
             str(data_dir),
         ]
-        args = " ".join(args)
-        cmd = f"{args}"
-        print(f"Running: {cmd}")
-        self.process = await asyncio.create_subprocess_shell(
-            cmd,
+        print(f"Running: {args}")
+        self.process = await asyncio.create_subprocess_exec(
+            *args,
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
@@ -211,7 +210,7 @@ class Prometheus:
     def stop(self):
         if not self.stopped:
             self.stopped = True
-            send_signal(self.process, signal.SIGINT)
+            send_signal(self.process, signal.SIGINT, "prometheus")
 
     async def run(self):
         log_path = self.directory / "prometheus.log"
@@ -268,13 +267,11 @@ class Prometheus:
             f"--storage.tsdb.path={data_dir}",
             f"--web.listen-address={self.listen_address}:{self.port}",
         ]
-        args = " ".join(args)
-        cmd = f"{args}"
-        print(f"Running: {cmd}")
+        print(f"Running: {' '.join(args)}")
         print(f"Prometheus UI available at: http://{self.listen_address}:{self.port}")
 
-        self.process = await asyncio.create_subprocess_shell(
-            cmd,
+        self.process = await asyncio.create_subprocess_exec(
+            *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
@@ -301,7 +298,7 @@ class Grafana:
     def stop(self):
         if not self.stopped:
             self.stopped = True
-            send_signal(self.process, signal.SIGINT)
+            send_signal(self.process, signal.SIGINT, "grafana")
 
     async def run(self):
         log_path = self.directory / "grafana.log"
@@ -382,13 +379,11 @@ class Grafana:
         env["GF_AUTH_ANONYMOUS_ORG_ROLE"] = "Admin"
 
         args = [str(grafana_binary), "server"]
-        args = " ".join(args)
-        cmd = f"{args}"
-        print(f"Running: {cmd}")
+        print(f"Running: {' '.join(args)}")
         print(f"Grafana UI available on port {self.port}")
 
-        self.process = await asyncio.create_subprocess_shell(
-            cmd,
+        self.process = await asyncio.create_subprocess_exec(
+            *args,
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
@@ -412,7 +407,7 @@ class Redpanda:
     def stop(self):
         print(f"node-{self.node_meta.index}: dev_cluster stop requested")
         assert self.process
-        send_signal(self.process, signal.SIGINT)
+        send_signal(self.process, signal.SIGINT, f"node-{self.node_meta.index}")
 
     async def run(self):
         log_path = (
@@ -766,26 +761,24 @@ async def main():
         print(f"Redpanda nodes exited with non-zero return codes: {return_codes}")
         failed = True
 
+    async def stop_and_wait(name: str, process: Any, task: asyncio.Task[int] | None):
+        """Stop a process and wait for its task to complete, checking exit code."""
+        nonlocal failed
+        if task and process:
+            print(f"Stopping {name}...")
+            process.stop()
+            ret_code = await task
+            if failed_exit_code(ret_code):
+                print(f"{name} exited with non-zero return code: {ret_code}")
+                failed = True
+            else:
+                print(f"{name} stopped.")
+
     # Cleanup: if redpanda shuts down but we didn't request the shutdown
     # then let's go ahead and tear down other services too so we exit
-    if minio_task and minio:
-        minio.stop()
-        minio_ret_code = await minio_task
-        if failed_exit_code(minio_ret_code):
-            print(f"Minio exited with non-zero return code: {minio_ret_code}")
-            failed = True
-    if prometheus_task and prometheus:
-        prometheus.stop()
-        prom_ret_code = await prometheus_task
-        if failed_exit_code(prom_ret_code):
-            print(f"Prometheus exited with non-zero return code: {prom_ret_code}")
-            failed = True
-    if grafana_task and grafana:
-        grafana.stop()
-        grafana_ret_code = await grafana_task
-        if failed_exit_code(grafana_ret_code):
-            print(f"Grafana exited with non-zero return code: {grafana_ret_code}")
-            failed = True
+    await stop_and_wait("minio", minio, minio_task)
+    await stop_and_wait("prometheus", prometheus, prometheus_task)
+    await stop_and_wait("grafana", grafana, grafana_task)
 
     if failed:
         exit(1)
