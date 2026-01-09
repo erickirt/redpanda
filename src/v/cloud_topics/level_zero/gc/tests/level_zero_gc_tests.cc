@@ -29,7 +29,7 @@ class object_storage_test_impl
   : public cloud_topics::level_zero_gc::object_storage {
 public:
     object_storage_test_impl(
-      std::vector<cloud_storage_clients::client::list_bucket_item>* listed,
+      chunked_vector<cloud_storage_clients::client::list_bucket_item>* listed,
       std::unordered_set<ss::sstring>* deleted,
       gc_test_config* cfg)
       : listed_(listed)
@@ -82,7 +82,7 @@ public:
     seastar::future<std::expected<void, cloud_io::upload_result>>
     delete_objects(
       seastar::abort_source* as,
-      std::vector<cloud_storage_clients::client::list_bucket_item> objects)
+      chunked_vector<cloud_storage_clients::client::list_bucket_item> objects)
       override {
         co_await seastar::sleep(cfg_->delete_cost);
         auto u = co_await delete_mtx_.get_units(*as);
@@ -92,7 +92,7 @@ public:
         co_return std::expected<void, cloud_io::upload_result>();
     }
 
-    std::vector<cloud_storage_clients::client::list_bucket_item>* listed_;
+    chunked_vector<cloud_storage_clients::client::list_bucket_item>* listed_;
     std::unordered_set<ss::sstring>* deleted_;
     gc_test_config* cfg_;
 
@@ -177,7 +177,7 @@ public:
         listed.push_back(item);
     }
 
-    std::vector<cloud_storage_clients::client::list_bucket_item> listed;
+    chunked_vector<cloud_storage_clients::client::list_bucket_item> listed;
     std::unordered_set<ss::sstring> deleted;
     std::optional<int64_t> max_epoch;
     cloud_topics::level_zero_gc gc;

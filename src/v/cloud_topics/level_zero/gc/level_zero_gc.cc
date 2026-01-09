@@ -94,7 +94,7 @@ public:
     }
 
     size_t delete_objects(
-      std::vector<cloud_storage_clients::client::list_bucket_item> objects,
+      chunked_vector<cloud_storage_clients::client::list_bucket_item> objects,
       size_t keys_total_bytes) {
         auto n_objects = objects.size();
         if (n_objects > 0) {
@@ -116,7 +116,7 @@ public:
     }
 
     seastar::future<> do_delete_objects(
-      std::vector<cloud_storage_clients::client::list_bucket_item>
+      chunked_vector<cloud_storage_clients::client::list_bucket_item>
         eligible_objects,
       ssx::semaphore_units page_u) noexcept {
         auto u_fut = co_await ss::coroutine::as_future(
@@ -213,14 +213,15 @@ public:
     seastar::future<std::expected<void, cloud_io::upload_result>>
     delete_objects(
       seastar::abort_source* asrc,
-      std::vector<cloud_storage_clients::client::list_bucket_item> objects)
+      chunked_vector<cloud_storage_clients::client::list_bucket_item> objects)
       override {
         retry_chain_node rtc(*asrc, timeout, backoff);
-        auto keys
-          = objects | std::views::transform([](auto& obj) { return obj.key; })
-            | std::ranges::to<std::vector<cloud_storage_clients::object_key>>();
+        auto keys = objects
+                    | std::views::transform([](auto& obj) { return obj.key; })
+                    | std::ranges::to<
+                      chunked_vector<cloud_storage_clients::object_key>>();
         auto res = co_await remote_->delete_objects(
-          bucket_, keys, rtc, [](auto) {});
+          bucket_, std::move(keys), rtc, [](auto) {});
         if (res == cloud_io::upload_result::success) {
             co_return std::expected<void, cloud_io::upload_result>();
         }
@@ -665,7 +666,7 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
       max_gc_birthday);
 
     // objects that can be safely deleted
-    std::vector<cloud_storage_clients::client::list_bucket_item>
+    chunked_vector<cloud_storage_clients::client::list_bucket_item>
       eligible_objects;
     // total size of eligible keys
     size_t object_keys_total_bytes = 0;

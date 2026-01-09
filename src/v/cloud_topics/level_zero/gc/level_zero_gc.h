@@ -170,7 +170,7 @@ public:
         virtual seastar::future<std::expected<void, cloud_io::upload_result>>
         delete_objects(
           seastar::abort_source*,
-          std::vector<cloud_storage_clients::client::list_bucket_item>)
+          chunked_vector<cloud_storage_clients::client::list_bucket_item>)
           = 0;
     };
 
