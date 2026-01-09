@@ -123,11 +123,13 @@ ss::future<> seq_writer::read_sync() {
     co_await _store.process_marked_schemas();
 }
 
-ss::future<> seq_writer::check_mutable(const std::optional<subject>& sub) {
-    auto mode = sub ? co_await _store.get_mode(*sub, default_to_global::yes)
-                    : co_await _store.get_mode(default_context);
+ss::future<> seq_writer::check_mutable(
+  const context& ctx, const std::optional<subject>& sub) {
+    auto mode = sub ? co_await _store.get_mode(
+                        {ctx, *sub}, default_to_global::yes)
+                    : co_await _store.get_mode(ctx);
     if (mode == mode::read_only) {
-        throw as_exception(mode_is_readonly(default_context, sub));
+        throw as_exception(mode_is_readonly(ctx, sub));
     }
     co_return;
 }
@@ -225,7 +227,7 @@ ss::future<std::optional<sharded_store::insert_result>>
 seq_writer::do_write_subject_version(
   stored_schema schema, model::offset write_at) {
     const auto& sub = schema.schema.sub();
-    co_await check_mutable(sub);
+    co_await check_mutable(default_context, sub);
 
     // Check if store already contains this data: if
     // so, we do no I/O and return the schema ID.
@@ -298,7 +300,7 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
       to_string_view(compat),
       write_at);
 
-    co_await check_mutable(sub);
+    co_await check_mutable(default_context, sub);
 
     try {
         // Check for no-op case
@@ -340,7 +342,7 @@ ss::future<bool> seq_writer::write_config(
 ss::future<std::optional<bool>> seq_writer::do_delete_config(subject sub) {
     vlog(srlog.debug, "delete config sub={}", sub);
 
-    co_await check_mutable(sub);
+    co_await check_mutable(default_context, sub);
 
     try {
         co_await _store.get_compatibility(sub, default_to_global::no);
@@ -475,7 +477,7 @@ ss::future<bool> seq_writer::delete_mode(subject sub) {
 /// Impermanent delete: update a version with is_deleted=true
 ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
   subject sub, schema_version version, model::offset write_at) {
-    co_await check_mutable(sub);
+    co_await check_mutable(default_context, sub);
 
     if (co_await _store.is_referenced(sub, version)) {
         throw as_exception(has_references(sub, version));
@@ -523,7 +525,7 @@ seq_writer::delete_subject_version(subject sub, schema_version version) {
 
 ss::future<std::optional<chunked_vector<schema_version>>>
 seq_writer::do_delete_subject_impermanent(subject sub, model::offset write_at) {
-    co_await check_mutable(sub);
+    co_await check_mutable(default_context, sub);
 
     // Grab the versions before they're gone.
     auto versions = co_await _store.get_versions(sub, include_deleted::no);
@@ -601,7 +603,7 @@ seq_writer::delete_subject_permanent_inner(
     /// within these store functions (will throw a 404-equivalent if so)
     vlog(srlog.debug, "delete_subject_permanent sub={}", sub);
 
-    co_await check_mutable(sub);
+    co_await check_mutable(default_context, sub);
 
     if (version.has_value()) {
         // Check version first to see if the version exists
