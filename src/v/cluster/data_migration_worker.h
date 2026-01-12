@@ -138,14 +138,12 @@ private:
       const model::ntp& ntp, mntp_state_t::running_t& running_work) noexcept;
     ss::future<errc> do_work(
       const model::ntp& ntp,
-      state sought_state,
-      const inbound_partition_work_info& pwi,
-      ss::abort_source& as);
+      mntp_state_t::running_t& running_work,
+      const inbound_partition_work_info& itwi);
     ss::future<errc> do_work(
       const model::ntp& ntp,
-      state sought_state,
-      const outbound_partition_work_info&,
-      ss::abort_source& as);
+      mntp_state_t::running_t& running_work,
+      const outbound_partition_work_info& otwi);
 
     ss::future<result<model::offset, errc>>
     block_partition(ss::lw_shared_ptr<partition> partition, bool block);
@@ -153,7 +151,8 @@ private:
     ss::future<result<model::offset, errc>> block_groups(
       const model::ntp& ntp,
       const chunked_vector<kafka::group_id>& groups,
-      bool block);
+      bool block,
+      model::revision_id revision_id);
 
     model::node_id _self;
     partition_leaders_table& _leaders_table;

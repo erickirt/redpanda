@@ -265,19 +265,16 @@ void worker::unmanage_ntp(
 
 ss::future<errc> worker::do_work(
   const model::ntp& ntp, mntp_state_t::running_t& running_work) noexcept {
-    auto migration_id = running_work.work->migration_id;
-    auto sought_state = running_work.work->sought_state;
-    auto& as = running_work.as;
     try {
         vlog(
           dm_log.trace,
           "starting work on migration {} ntp {} towards state {}",
-          migration_id,
+          running_work.work->migration_id,
           ntp,
-          sought_state);
+          running_work.work->sought_state);
         co_return co_await std::visit(
-          [this, &ntp, sought_state, &as](auto& info) {
-              return do_work(ntp, sought_state, info, as);
+          [this, &ntp, &running_work](auto& info) {
+              return do_work(ntp, running_work, info);
           },
           running_work.work->info);
     } catch (...) {
@@ -285,9 +282,9 @@ ss::future<errc> worker::do_work(
           dm_log.warn,
           "exception occured during partition work on migration {} ntp {} "
           "towards {} state: {}",
-          migration_id,
+          running_work.work->migration_id,
           ntp,
-          sought_state,
+          running_work.work->sought_state,
           std::current_exception());
         co_return errc::partition_operation_failed;
     }
@@ -295,34 +292,33 @@ ss::future<errc> worker::do_work(
 
 ss::future<errc> worker::do_work(
   const model::ntp& ntp,
-  state sought_state,
-  const inbound_partition_work_info&,
-  ss::abort_source&) {
+  mntp_state_t::running_t& running_work,
+  const inbound_partition_work_info&) {
     vassert(
       false,
       "inbound partition work requested on {} towards {} state",
       ntp,
-      sought_state);
+      running_work.work->sought_state);
     return ssx::now(errc::success);
 }
 
 ss::future<errc> worker::do_work(
   const model::ntp& ntp,
-  state sought_state,
-  const outbound_partition_work_info& otwi,
-  ss::abort_source& as) {
+  mntp_state_t::running_t& running_work,
+  const outbound_partition_work_info& otwi) {
     auto partition = _partition_manager.get(ntp);
     if (!partition) {
         co_return errc::partition_not_exists;
     }
 
-    switch (sought_state) {
+    switch (running_work.work->sought_state) {
     case state::prepared:
         vassert(otwi.groups.empty(), "nothing to do with groups in preparing");
         co_return co_await partition->flush_archiver();
     case state::executed:
         if (!otwi.groups.empty()) {
-            auto res = co_await block_groups(ntp, otwi.groups, true);
+            auto res = co_await block_groups(
+              ntp, otwi.groups, true, running_work.work->revision_id);
             co_return res.has_value() ? errc::success : res.error();
         } else {
             auto block_res = co_await block_partition(partition, true);
@@ -332,7 +328,8 @@ ss::future<errc> worker::do_work(
             auto block_offset = block_res.value();
 
             auto deadline = model::timeout_clock::now() + 5s;
-            co_return co_await partition->flush(block_offset, deadline, as);
+            co_return co_await partition->flush(
+              block_offset, deadline, running_work.as);
         }
     case state::finished: {
         vassert(
@@ -340,31 +337,36 @@ ss::future<errc> worker::do_work(
           "nothing to do with data partitions in cut_over, they are also being "
           "deleted by topic work");
         // todo: shift to a new "cleanup" stage?
-        auto block_res = co_await block_groups(ntp, otwi.groups, false);
-        if (!block_res.has_value()) {
-            co_return block_res.error();
-        }
         auto del_res = co_await _group_proxy.delete_groups(ntp, otwi.groups);
         if (del_res != std::error_code{}) {
             co_return map_update_interruption_error_code(del_res);
         }
+        auto block_res = co_await block_groups(
+          ntp, otwi.groups, false, running_work.work->revision_id);
+        if (!block_res.has_value()) {
+            co_return block_res.error();
+        }
         co_return errc::success;
     }
     case state::cancelled: {
-        if (!otwi.groups.empty()) {
-            auto res = co_await block_groups(ntp, otwi.groups, false);
-            co_return res.has_value() ? errc::success : res.error();
-        } else {
-            auto res = co_await block_partition(partition, false);
-            co_return res.has_value() ? errc::success : res.error();
-        }
+        auto res = co_await (
+          !otwi.groups.empty()
+            ? block_groups(
+                ntp, otwi.groups, false, running_work.work->revision_id)
+            : block_partition(partition, false));
+        // invalid_data_migration_state indicates partition/group already
+        // unblocked
+        co_return res.has_value()
+            || (res.error() == errc::invalid_data_migration_state)
+          ? errc::success
+          : res.error();
     }
     default:
         vassert(
           false,
           "outbound partition work requested on {} towards {} state",
           ntp,
-          sought_state);
+          running_work.work->sought_state);
     }
 }
 
@@ -382,7 +384,8 @@ worker::block_partition(ss::lw_shared_ptr<partition> partition, bool block) {
 ss::future<result<model::offset, errc>> worker::block_groups(
   const model::ntp& ntp,
   const chunked_vector<kafka::group_id>& groups,
-  bool block) {
+  bool block,
+  model::revision_id) {
     auto res = co_await _group_proxy.set_blocked_for_groups(ntp, groups, block);
     if (res.has_value()) {
         co_return res.value();
