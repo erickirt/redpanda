@@ -611,13 +611,13 @@ struct stored_schema {
 ///\brief A mapping of version and schema id for a subject.
 struct subject_version_entry {
     subject_version_entry(
-      schema_version version, context_schema_id id, is_deleted deleted)
+      schema_version version, schema_id id, is_deleted deleted)
       : version{version}
-      , id{std::move(id)}
+      , id{id}
       , deleted(deleted) {}
 
     schema_version version;
-    context_schema_id id;
+    schema_id id;
     is_deleted deleted{is_deleted::no};
 };
 

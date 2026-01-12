@@ -169,12 +169,13 @@ public:
         auto v_id = BOOST_OUTCOME_TRYX(
           get_subject_version_id(sub, version, inc_del));
 
-        auto def = BOOST_OUTCOME_TRYX(get_schema_definition(v_id.id));
+        auto def = BOOST_OUTCOME_TRYX(
+          get_schema_definition({sub.ctx, v_id.id}));
 
         return stored_schema{
           .schema = {sub, std::move(def)},
           .version = v_id.version,
-          .id = v_id.id.id,
+          .id = v_id.id,
           .deleted = v_id.deleted};
     }
 
@@ -437,8 +438,9 @@ public:
         schema_id_set has_ids;
         for (const auto& s : _subjects) {
             for (const auto& r : s.second.versions) {
-                if (!r.deleted && ids.contains(r.id)) {
-                    has_ids.insert(r.id);
+                auto ctx_id = context_schema_id{s.first.ctx, r.id};
+                if (!r.deleted && ids.contains(ctx_id)) {
+                    has_ids.insert(ctx_id);
                 }
             }
         }
