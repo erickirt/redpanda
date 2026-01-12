@@ -45,6 +45,21 @@ level_zero_log_reader_impl::level_zero_log_reader_impl(
 ss::future<model::record_batch_reader::storage_t>
 level_zero_log_reader_impl::do_load_slice(
   model::timeout_clock::time_point deadline) {
+    try {
+        return read_some(deadline);
+    } catch (...) {
+        vlog(
+          _log.error, "Reader caught exception: {}", std::current_exception());
+        _hydrated.clear();
+        _unhydrated.clear();
+        _current = state::end_of_stream_state;
+        throw;
+    }
+}
+
+ss::future<model::record_batch_reader::storage_t>
+level_zero_log_reader_impl::read_some(
+  model::timeout_clock::time_point deadline) {
     if (is_over_limit(0)) {
         _current = state::end_of_stream_state;
         co_return chunked_circular_buffer<model::record_batch>{};
@@ -144,7 +159,7 @@ level_zero_log_reader_impl::maybe_read_batches_from_cache() {
     return ret;
 }
 
-storage::local_log_reader_config level_zero_log_reader_impl::ctp_read_config() {
+storage::local_log_reader_config level_zero_log_reader_impl::ctp_read_config() const {
     /*
      * The requested offset range in the cloud topic reader configuration are
      * specified as offsets in the kafka address space and need to first be
@@ -195,13 +210,12 @@ storage::local_log_reader_config level_zero_log_reader_impl::ctp_read_config() {
 
 ss::future<chunked_circular_buffer<level_zero_log_reader_impl::local_log_batch>>
 level_zero_log_reader_impl::fetch_metadata(
-  model::timeout_clock::time_point deadline) {
+  model::timeout_clock::time_point deadline) const {
     vassert(
       _current == state::empty_state || _current == state::materialized_state,
       "Invalid state transition, unexpected current state: {}",
       std::to_underlying(_current));
     chunked_circular_buffer<local_log_batch> ret;
-    try {
         auto cfg = ctp_read_config();
         auto reader = co_await _ctp->make_local_reader(cfg);
         auto batches = std::move(reader).generator(deadline);
@@ -245,16 +259,6 @@ level_zero_log_reader_impl::fetch_metadata(
               cfg.start_offset,
               cfg.max_offset);
         }
-    } catch (...) {
-        vlog(
-          _log.info,
-          "Failed to fetch metadata from the underlying partition: {}",
-          std::current_exception());
-        _hydrated.clear();
-        _unhydrated.clear();
-        _current = state::end_of_stream_state;
-        throw;
-    }
     co_return ret;
 }
 

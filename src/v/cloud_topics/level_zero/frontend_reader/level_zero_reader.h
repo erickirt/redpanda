@@ -106,11 +106,14 @@ private:
 
     // Prepare a local log reader configuration for reading placeholder and
     // other metadata batches from the CTP.
-    storage::local_log_reader_config ctp_read_config();
+    storage::local_log_reader_config ctp_read_config() const;
+
+    ss::future<model::record_batch_reader::storage_t>
+      read_some(model::timeout_clock::time_point);
 
     ss::future<
       chunked_circular_buffer<level_zero_log_reader_impl::local_log_batch>>
-    fetch_metadata(model::timeout_clock::time_point deadline);
+    fetch_metadata(model::timeout_clock::time_point deadline) const;
     ss::future<> materialize_batches(model::timeout_clock::time_point deadline);
     void consume_materialized_batches(
       chunked_circular_buffer<model::record_batch>* dest);
