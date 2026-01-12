@@ -568,6 +568,18 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
         co_return default_errc;
     }
 
+    // Wait for all previous requests from this producer to be processed
+    if (opts.as) {
+        co_await ticket.redeem(opts.as->get());
+    } else {
+        co_await ticket.redeem();
+    }
+    // Now that our producer order is resolved, we can fence epochs
+    // we must resolve producer order first to prevent races where a
+    // request waits on a previous request in the producer queue, but
+    // that previous request is waiting on the other request to finish
+    // (because it needs to drain current requests as the epoch is being
+    // bumped).
     auto fence_fut = co_await ss::coroutine::as_future(
       ctp_stm_api->fence_epoch(upload_res.value().front().id.epoch));
     if (fence_fut.failed()) {
@@ -600,13 +612,6 @@ ss::future<result<raft::replicate_result>> do_upload_and_replicate(
       placeholders.batches.size() == 1,
       "Expected single batch, got {}",
       placeholders.batches.size());
-    // Wait for all previous requests from this producer to be processed
-    if (opts.as) {
-        co_await ticket.redeem(opts.as->get());
-    } else {
-        co_await ticket.redeem();
-    }
-    // Replicate now that our ticket is redeemed
     opts = update_replicate_options(opts, fence->term);
     auto replicate_stages = partition->replicate_in_stages(
       batch_id, std::move(placeholders.batches.front()), opts);
