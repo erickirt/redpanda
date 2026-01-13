@@ -24,6 +24,24 @@ namespace kafka {
 using cluster::client_quota::entity_key;
 using cluster::client_quota::entity_value;
 
+namespace {
+template<typename Match>
+std::optional<Match>
+get_part(const absl::flat_hash_set<entity_key::part_t>& parts) {
+    const auto it = std::ranges::find_if(parts, [](const auto& part) {
+        return std::holds_alternative<Match>(part.part);
+    });
+    if (it == parts.end()) {
+        return std::nullopt;
+    }
+    return std::make_optional(std::get<Match>(it->part));
+};
+
+template<typename K>
+tracker_key make_tracker_key(const std::string_view k_name) {
+    return tracker_key{std::in_place_type<K>, k_name};
+}
+} // namespace
 std::ostream& operator<<(std::ostream& os, const tracker_key& k) {
     ss::visit(
       k,
@@ -102,37 +120,40 @@ client_quota_value client_quota_translator::get_client_quota_value(
             return ev.controller_mutation_rate;
         }
     };
+    const auto get_quota =
+      [&accessor,
+       this](const entity_key& match_key) -> std::optional<uint64_t> {
+        auto match_quota = _quota_store.local().get_quota(match_key);
+        if (!match_quota.has_value()) {
+            return std::nullopt;
+        }
+        return accessor(*match_quota);
+    };
+
     return ss::visit(
       quota_id,
-      [this, &accessor](const k_client_id& k) -> client_quota_value {
-          auto exact_match_key = entity_key{entity_key::client_id_match{k}};
-          auto exact_match_quota = _quota_store.local().get_quota(
-            exact_match_key);
-          if (exact_match_quota && accessor(*exact_match_quota)) {
+      [&get_quota](const k_client_id& k) -> client_quota_value {
+          auto match_key = entity_key{entity_key::client_id_match{k}};
+          if (auto quota = get_quota(match_key); quota.has_value()) {
               return client_quota_value{
-                accessor(*exact_match_quota),
-                client_quota_rule::kafka_client_id};
+                quota, client_quota_rule::kafka_client_id};
           }
 
           static const auto default_client_key = entity_key{
             entity_key::client_id_default_match{}};
-          auto default_quota = _quota_store.local().get_quota(
-            default_client_key);
-          if (default_quota && accessor(*default_quota)) {
+          if (auto quota = get_quota((default_client_key)); quota.has_value()) {
               return client_quota_value{
-                accessor(*default_quota),
-                client_quota_rule::kafka_client_default};
+                quota, client_quota_rule::kafka_client_default};
           }
 
           return client_quota_value{
             std::nullopt, client_quota_rule::not_applicable};
       },
-      [this, &accessor](const k_group_name& k) -> client_quota_value {
-          auto group_key = entity_key{entity_key::client_id_prefix_match{k}};
-          auto group_quota = _quota_store.local().get_quota(group_key);
-          if (group_quota && accessor(*group_quota)) {
+      [&get_quota](const k_group_name& k) -> client_quota_value {
+          auto match_key = entity_key{entity_key::client_id_prefix_match{k}};
+          if (auto quota = get_quota(match_key); quota.has_value()) {
               return client_quota_value{
-                accessor(*group_quota), client_quota_rule::kafka_client_prefix};
+                quota, client_quota_rule::kafka_client_prefix};
           }
 
           return client_quota_value{
@@ -166,37 +187,43 @@ tracker_key client_quota_translator::find_quota_key(
     // shares a default quota. the anonymous group is keyed on empty string.
     std::string_view client_id = ctx.client_id.value_or("");
 
-    // Exact match quotas
-    auto exact_match_key = entity_key{entity_key::client_id_match{client_id}};
-    auto exact_match_quota = quota_store.get_quota(exact_match_key);
-    if (exact_match_quota && checker(*exact_match_quota)) {
-        return tracker_key{std::in_place_type<k_client_id>, client_id};
-    }
+    const auto has_quota = [&checker,
+                            quota_store](const entity_key& match_key) {
+        auto match_quota = quota_store.get_quota(match_key);
+        return match_quota && checker(*match_quota);
+    };
 
-    // Group quotas configured through the Kafka API
-    auto group_quotas = quota_store.range(
-      cluster::client_quota::store::prefix_group_filter(client_id));
-    for (auto& [gk, gv] : group_quotas) {
-        if (checker(gv)) {
-            for (auto& part : gk.parts) {
-                using client_id_prefix_match
-                  = entity_key::part::client_id_prefix_match;
-
-                if (std::holds_alternative<client_id_prefix_match>(part.part)) {
-                    auto& prefix_key_part = get<client_id_prefix_match>(
-                      part.part);
-                    return tracker_key{
-                      std::in_place_type<k_group_name>, prefix_key_part.value};
-                }
-            }
+    /// config/client-id/<client-id>
+    {
+        const entity_key key{entity_key::client_id_match{client_id}};
+        if (has_quota(key)) {
+            return make_tracker_key<k_client_id>(client_id);
         }
     }
 
-    // Default match quotas
-    auto default_match_key = entity_key{entity_key::client_id_default_match{}};
-    auto default_match_quota = quota_store.get_quota(default_match_key);
-    if (default_match_quota && checker(*default_match_quota)) {
-        return tracker_key{std::in_place_type<k_client_id>, client_id};
+    auto group_quotas = quota_store.range(
+      cluster::client_quota::store::prefix_group_filter(client_id));
+    // Group quotas configured through the Kafka API
+    /// config/client-id-prefix/<client-id-prefix>
+    for (auto& [gk, gv] : group_quotas) {
+        if (checker(gv)) {
+            auto client_prefix_match
+              = get_part<entity_key::part::client_id_prefix_match>(gk.parts);
+            if (!client_prefix_match.has_value()) {
+                continue;
+            }
+
+            return make_tracker_key<k_group_name>(client_prefix_match->value);
+        }
+    }
+
+    // Default quotas configured through the Kafka API
+    /// config/client-id/<default>
+    {
+        const entity_key key{entity_key::client_id_default_match{}};
+        if (has_quota(key)) {
+            return make_tracker_key<k_client_id>(client_id);
+        }
     }
 
     // No relevant quotas where found
