@@ -1701,6 +1701,34 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert result_raw.status_code == requests.codes.ok
             assert result_raw.json()["id"] == 1
 
+    @cluster(num_nodes=1)
+    def test_default_context(self):
+        schema_data = json.dumps({"schema": schema1_def})
+
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="default-ctx-subject", data=schema_data
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["id"], 1)
+
+    @cluster(num_nodes=1)
+    def test_context_isolation(self):
+        """Verify contexts are isolated: independent IDs."""
+
+        # Register in default context
+        result = self.sr_client.post_subjects_subject_versions(
+            subject="sub1", data=json.dumps({"schema": schema1_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["id"], 1)
+
+        # Register same schema in .ctx1 - should get id=1 (independent counter)
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=":.ctx1:sub1", data=json.dumps({"schema": schema2_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json()["id"], 1)
+
     @cluster(num_nodes=3)
     def test_post_subjects_subject_versions_null_metadata_ruleset(self):
         """

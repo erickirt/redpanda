@@ -584,14 +584,15 @@ ss::future<server::reply_t>
 post_subject_versions(server::request_t rq, server::reply_t rp) {
     parse_content_type_header(rq);
     parse_accept_header(rq, rp);
-    const auto sub = parse::request_param<subject>(*rq.req, "subject");
+    const auto ctx_sub = context_subject::from_string(
+      parse::request_param<ss::sstring>(*rq.req, "subject"));
     const auto norm{
       parse::query_param<std::optional<normalize>>(*rq.req, "normalize")
         .value_or(normalize::no)};
     vlog(
       srlog.debug,
       "post_subject_versions subject='{}', normalize='{}'",
-      sub,
+      ctx_sub,
       norm);
 
     auto& wr = rq.service().writer();
@@ -600,7 +601,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     co_await wr.read_sync();
 
     auto unparsed = co_await rjson_parse(
-      *rq.req, post_subject_versions_request_handler<>{sub});
+      *rq.req, post_subject_versions_request_handler<>{ctx_sub});
 
     // If presented with a non-positive integer for version, set it to
     // invalid_schema_version so that the version number can be projected
@@ -613,7 +614,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
         unparsed.id = invalid_schema_id;
     }
 
-    const auto mode = co_await st.get_mode(sub, default_to_global::yes);
+    const auto mode = co_await st.get_mode(ctx_sub, default_to_global::yes);
 
     stored_schema schema{
       .schema = co_await make_canonical_schema_with_metadata(
@@ -627,7 +628,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
 
     // Determine if the definition already exists
     auto s_id = co_await st.get_schema_id(
-      default_context, schema.schema.def().share());
+      ctx_sub.ctx, schema.schema.def().share());
 
     vlog(
       srlog.debug, "post_subject_versions: ID for schema definition: {}", s_id);
@@ -635,7 +636,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     // Determine if the subject already has a version that references this
     // schema, deleted versions are not seen.
     const auto undeleted_versions = co_await st.get_subject_versions(
-      sub, include_deleted::no);
+      ctx_sub, include_deleted::no);
 
     std::optional<schema_version> v_id;
     if (s_id.has_value()) {
@@ -666,19 +667,20 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
     if (!matched) {
         // Check if the request is appropriate for the mode
         if (mode == mode::read_only) {
-            throw as_exception(mode_is_readonly(sub));
+            throw as_exception(mode_is_readonly(ctx_sub));
         }
         if (schema.id >= 0 && mode != mode::import) {
-            throw as_exception(mode_not_import(schema.schema.sub()));
+            throw as_exception(mode_not_import(ctx_sub));
         }
         if (schema.id < 0 && mode != mode::read_write) {
-            throw as_exception(mode_not_readwrite(sub));
+            throw as_exception(mode_not_readwrite(ctx_sub));
         }
 
         // Determine if a provided schema id is appropriate
         if (
           schema.id != invalid_schema_id && s_id != schema.id
-          && co_await st.has_schema(schema.id)) {
+          && co_await st.has_schema(
+            context_schema_id{ctx_sub.ctx, schema.id})) {
             // The supplied id already exists, but the schema is different
             co_return ss::coroutine::return_exception(
               as_exception(overwrite_schema_with_id_not_permitted(schema.id)));
@@ -696,7 +698,7 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
                   fmt::format(
                     "Schema being registered is incompatible with an earlier "
                     "schema for subject \"{}\", details: [{}]",
-                    sub,
+                    ctx_sub,
                     fmt::join(compat.messages, ", ")));
             }
         }
