@@ -32,6 +32,9 @@ std::ostream& operator<<(std::ostream& os, const tracker_key& k) {
       },
       [&os](const k_group_name& g) mutable {
           fmt::print(os, "k_group_name{{{}}}", g());
+      },
+      [&os](const k_not_applicable&) mutable {
+          fmt::print(os, "k_not_applicable");
       });
     return os;
 }
@@ -134,6 +137,10 @@ client_quota_value client_quota_translator::get_client_quota_value(
 
           return client_quota_value{
             std::nullopt, client_quota_rule::not_applicable};
+      },
+      [](const k_not_applicable&) -> client_quota_value {
+          return client_quota_value{
+            std::nullopt, client_quota_rule::not_applicable};
       });
 }
 
@@ -142,7 +149,6 @@ client_quota_value client_quota_translator::get_client_quota_value(
 tracker_key client_quota_translator::find_quota_key(
   const client_quota_request_ctx& ctx) const {
     auto qt = ctx.q_type;
-    const auto& client_id = ctx.client_id;
     const auto& quota_store = _quota_store.local();
 
     const auto checker = [qt](const entity_value val) {
@@ -156,22 +162,20 @@ tracker_key client_quota_translator::find_quota_key(
         }
     };
 
-    if (!client_id) {
-        // requests without a client id are grouped into an anonymous group that
-        // shares a default quota. the anonymous group is keyed on empty string.
-        return tracker_key{std::in_place_type<k_client_id>, ""};
-    }
+    // requests without a client id are grouped into an anonymous group that
+    // shares a default quota. the anonymous group is keyed on empty string.
+    std::string_view client_id = ctx.client_id.value_or("");
 
     // Exact match quotas
-    auto exact_match_key = entity_key{entity_key::client_id_match{*client_id}};
+    auto exact_match_key = entity_key{entity_key::client_id_match{client_id}};
     auto exact_match_quota = quota_store.get_quota(exact_match_key);
     if (exact_match_quota && checker(*exact_match_quota)) {
-        return tracker_key{std::in_place_type<k_client_id>, *client_id};
+        return tracker_key{std::in_place_type<k_client_id>, client_id};
     }
 
     // Group quotas configured through the Kafka API
     auto group_quotas = quota_store.range(
-      cluster::client_quota::store::prefix_group_filter(*client_id));
+      cluster::client_quota::store::prefix_group_filter(client_id));
     for (auto& [gk, gv] : group_quotas) {
         if (checker(gv)) {
             for (auto& part : gk.parts) {
@@ -188,8 +192,15 @@ tracker_key client_quota_translator::find_quota_key(
         }
     }
 
-    // Default quotas configured through the Kafka API
-    return tracker_key{std::in_place_type<k_client_id>, *client_id};
+    // Default match quotas
+    auto default_match_key = entity_key{entity_key::client_id_default_match{}};
+    auto default_match_quota = quota_store.get_quota(default_match_key);
+    if (default_match_quota && checker(*default_match_quota)) {
+        return tracker_key{std::in_place_type<k_client_id>, client_id};
+    }
+
+    // No relevant quotas where found
+    return tracker_key{std::in_place_type<k_not_applicable>};
 }
 
 std::pair<tracker_key, client_quota_value>

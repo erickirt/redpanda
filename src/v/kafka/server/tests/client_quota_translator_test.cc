@@ -31,6 +31,7 @@ static const auto default_key = entity_key(
 
 const ss::sstring test_client_id = "franz-go";
 const tracker_key test_client_id_key = k_client_id{test_client_id};
+const tracker_key test_empty_key = k_not_applicable{};
 
 constexpr auto P_DEF = 1111;
 constexpr auto F_DEF = 2222;
@@ -64,7 +65,7 @@ SEASTAR_THREAD_TEST_CASE(quota_translator_default_test) {
     auto key = f.tr.find_quota_key(
       {client_quota_type::produce_quota, test_client_id});
     auto limits = f.tr.find_quota_value(key);
-    BOOST_CHECK_EQUAL(test_client_id_key, key);
+    BOOST_CHECK_EQUAL(test_empty_key, key);
     BOOST_CHECK_EQUAL(default_limits, limits);
     BOOST_CHECK(f.tr.is_empty());
 }

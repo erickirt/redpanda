@@ -24,6 +24,8 @@ namespace kafka {
 
 using k_client_id = named_type<ss::sstring, struct k_client_id_tag>;
 using k_group_name = named_type<ss::sstring, struct k_group_name_tag>;
+using k_not_applicable
+  = named_type<std::monostate, struct k_not_applicable_tag>;
 
 /// tracker_key is the we use to key into the client quotas map
 ///
@@ -40,7 +42,7 @@ using k_group_name = named_type<ss::sstring, struct k_group_name_tag>;
 /// the default client quota. In this case, we may have multiple independent
 /// rate trackers for each unique client with all of these rate tracking having
 /// the same shared quota limit
-using tracker_key = std::variant<k_client_id, k_group_name>;
+using tracker_key = std::variant<k_client_id, k_group_name, k_not_applicable>;
 
 std::ostream& operator<<(std::ostream&, const tracker_key&);
 
