@@ -1368,7 +1368,7 @@ ss::future<> backend::handle_raft0_leadership_update() {
         for (auto& [id, mrstate] : _migration_states) {
             for (auto& [nt, tstate] : mrstate.outstanding_topics) {
                 co_await reconcile_existing_topic(
-                  nt, tstate, id, mrstate.scope, false);
+                  nt, tstate, id, mrstate.scope, mrstate.revision_id, false);
             }
         }
         wakeup();
@@ -1423,7 +1423,10 @@ ss::future<> backend::handle_migration_update(id id) {
     // create new state if needed
     if (new_scope.sought_state) {
         vlog(dm_log.debug, "creating migration {} reconciliation state", id);
-        auto new_it = _migration_states.emplace_hint(old_it, id, new_scope);
+        auto new_it = _migration_states.emplace_hint(
+          old_it,
+          id,
+          migration_reconciliation_state{new_scope, new_metadata->revision_id});
         if (
           new_scope.topic_work_needed
           || new_scope.any_partition_work_needed()) {
@@ -1482,13 +1485,15 @@ ss::future<> backend::process_delta(cluster::topic_table_ntp_delta&& delta) {
         // We potentially re-enqueue an already coordinated partition here.
         // The first RPC reply will clear it.
         co_await reconcile_existing_topic(
-          nt, tstate, migration_id, mrstate.scope, false);
+          nt, tstate, migration_id, mrstate.scope, mrstate.revision_id, false);
 
         // local partition work
         if (has_local_replica(delta.ntp)) {
+            const auto& mrstate = _migration_states.at(migration_id);
             _local_work_states[nt][delta.ntp.tp.partition].try_emplace(
               migration_id,
-              *_migration_states.at(migration_id).scope.sought_state,
+              *mrstate.scope.sought_state,
+              mrstate.revision_id,
               migrated_replica_status::waiting_for_rpc);
         } else {
             // find an entry in the nested structure
@@ -1581,6 +1586,7 @@ backend::check_ntp_states_locally(check_ntp_states_request&& req) {
                .try_emplace(
                  ntp_req.migration,
                  ntp_req.state,
+                 std::nullopt,
                  migrated_replica_status::waiting_for_controller_update)
                .first;
 
@@ -1593,6 +1599,7 @@ backend::check_ntp_states_locally(check_ntp_states_request&& req) {
             }
             rwstate.second = {
               ntp_req.state,
+              std::nullopt,
               migrated_replica_status::waiting_for_controller_update};
         } else if (ntp_req.state < rwstate.second.sought_state) {
             vlog(
@@ -1726,6 +1733,7 @@ ss::future<> backend::reconcile_existing_topic(
   topic_reconciliation_state& tstate,
   id migration,
   work_scope scope,
+  model::revision_id revision_id,
   bool schedule_local_partition_work) {
     if (!schedule_local_partition_work && !_coordinator_term) {
         vlog(
@@ -1753,8 +1761,9 @@ ss::future<> backend::reconcile_existing_topic(
           [this,
            nt,
            &tstate,
-           scope,
            migration,
+           scope,
+           revision_id,
            now,
            schedule_local_partition_work](const auto& assignment) {
               model::ntp ntp{nt.ns, nt.tp, assignment.id};
@@ -1800,6 +1809,7 @@ ss::future<> backend::reconcile_existing_topic(
                         = _local_work_states[nt][assignment.id].try_emplace(
                           migration,
                           *scope.sought_state,
+                          revision_id,
                           migrated_replica_status::waiting_for_rpc);
                       auto& rwstate = it->second;
                       if (rwstate.sought_state < *scope.sought_state) {
@@ -1808,6 +1818,7 @@ ss::future<> backend::reconcile_existing_topic(
                           }
                           rwstate = {
                             *scope.sought_state,
+                            revision_id,
                             migrated_replica_status::waiting_for_rpc};
                       }
                       if (rwstate.sought_state == *scope.sought_state) {
@@ -1815,6 +1826,7 @@ ss::future<> backend::reconcile_existing_topic(
                           case migrated_replica_status::
                             waiting_for_controller_update:
                               rwstate.status = migrated_replica_status::can_run;
+                              rwstate.revision_id = revision_id;
                               [[fallthrough]];
                           case migrated_replica_status::can_run: {
                               auto new_shard = _shard_table.shard_for(ntp);
@@ -1918,7 +1930,7 @@ ss::future<> backend::reconcile_topic(
     tstate.idx_in_migration = idx_in_migration;
     _topic_migration_map[nt].insert(migration_id);
     co_return co_await reconcile_existing_topic(
-      nt, tstate, migration_id, mrstate.scope, true);
+      nt, tstate, migration_id, mrstate.scope, mrstate.revision_id, true);
 }
 
 std::optional<std::reference_wrapper<backend::partition_work_state_t>>
@@ -2038,6 +2050,7 @@ void backend::start_partition_work(
     partition_work work{
       .migration_id = rwstate.first,
       .sought_state = rwstate.second.sought_state,
+      .revision_id = rwstate.second.get_revision_id(),
       .info = get_partition_work_info(ntp, maybe_migration->get())};
 
     ssx::spawn_with_gate(

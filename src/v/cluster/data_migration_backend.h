@@ -108,10 +108,14 @@ private:
     using partition_consumer_group_map_t
       = chunked_hash_map<model::partition_id, chunked_vector<consumer_group>>;
     struct migration_reconciliation_state {
-        explicit migration_reconciliation_state(work_scope scope)
+        explicit migration_reconciliation_state(
+          work_scope scope, model::revision_id revision_id)
           : scope(scope)
+          , revision_id(revision_id)
           , entities_ready(!scope.needs_entity_state_update) {}
         work_scope scope;
+        // comes from the same raft0 record as `scope`
+        model::revision_id revision_id;
         topic_map_t outstanding_topics;
         bool entities_ready;
         // may not stay unfilled between scheduling points
@@ -127,10 +131,36 @@ private:
         // shard may only be assigned if replica_status is can_run
         std::optional<seastar::shard_id> shard;
         migrated_replica_status status;
+        // empty if status is `waiting_for_rpc`; otherwise it has a value
+        // which is in sync with `sought_state`, i.e. they come from the same
+        // raft0 record creating or updating the migration
+        std::optional<model::revision_id> revision_id;
 
-        replica_work_state(state sought_state, migrated_replica_status status)
+        replica_work_state(
+          state sought_state,
+          std::optional<model::revision_id> revision_id,
+          migrated_replica_status status)
           : sought_state(sought_state)
-          , status(status) {}
+          , status(status)
+          , revision_id(revision_id) {
+            vassert(
+              (status != migrated_replica_status::waiting_for_controller_update)
+                == this->revision_id.has_value(),
+              "Inconsistent replica work state: sought_state {}, status {}, "
+              "revision_id {}",
+              sought_state,
+              status,
+              this->revision_id);
+        }
+
+        model::revision_id get_revision_id() const {
+            vassert(
+              status == migrated_replica_status::can_run
+                && revision_id.has_value(),
+              "Cannot get revision_id for replica work state in status {}",
+              status);
+            return *revision_id;
+        }
     };
 
     friend std::ostream& operator<<(std::ostream&, const replica_work_state&);
@@ -324,6 +354,7 @@ private:
       topic_reconciliation_state& tstate,
       id migration,
       work_scope scope,
+      model::revision_id revision_id,
       bool schedule_local_partition_work);
 
     std::optional<std::reference_wrapper<partition_work_state_t>>
