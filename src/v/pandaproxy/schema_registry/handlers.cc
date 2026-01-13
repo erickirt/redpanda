@@ -765,7 +765,8 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version(
 ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
   ctx_server<service>::request_t rq, ctx_server<service>::reply_t rp) {
     parse_accept_header(rq, rp);
-    auto sub = parse::request_param<subject>(*rq.req, "subject");
+    auto ctx_sub = context_subject::from_string(
+      parse::request_param<ss::sstring>(*rq.req, "subject"));
     auto ver = parse::request_param<ss::sstring>(*rq.req, "version");
     auto inc_del{
       parse::query_param<std::optional<include_deleted>>(*rq.req, "deleted")
@@ -777,7 +778,7 @@ ss::future<ctx_server<service>::reply_t> get_subject_versions_version_schema(
     auto version = parse_schema_version(ver).value();
 
     auto get_res = co_await rq.service().schema_store().get_subject_schema(
-      sub, version, inc_del);
+      ctx_sub, version, inc_del);
 
     auto [_, def] = std::move(get_res.schema).destructure();
     auto formatted_schema = co_await rq.service().schema_store().format_schema(
