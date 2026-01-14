@@ -177,7 +177,7 @@ private:
     ss::sharded<config_frontend>& _config_frontend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<security::role_store>& _role_store;
-    [[maybe_unused]] ss::sharded<security::authorizer>& _authorizer;
+    ss::sharded<security::authorizer>& _authorizer;
     ss::sharded<plugin_table>* _plugin_table;
     ss::sharded<feature_manager>* _feature_manager;
     ss::sharded<storage::api>* _storage;
