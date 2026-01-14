@@ -38,6 +38,7 @@
 #include "net/tls_certificate_probe.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
+#include "security/authorizer.h"
 #include "security/role_store.h"
 #include "ssx/sformat.h"
 #include "utils/unresolved_address.h"
@@ -182,6 +183,7 @@ metrics_reporter::metrics_reporter(
   ss::sharded<config_frontend>& config_frontend,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<security::role_store>& role_store,
+  ss::sharded<security::authorizer>& authorizer,
   ss::sharded<plugin_table>* pt,
   ss::sharded<feature_manager>* fm,
   ss::sharded<storage::api>* storage,
@@ -196,6 +198,7 @@ metrics_reporter::metrics_reporter(
   , _config_frontend(config_frontend)
   , _feature_table(feature_table)
   , _role_store(role_store)
+  , _authorizer(authorizer)
   , _plugin_table(pt)
   , _feature_manager(fm)
   , _storage(storage)
