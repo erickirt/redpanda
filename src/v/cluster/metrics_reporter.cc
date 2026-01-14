@@ -692,6 +692,9 @@ void rjson_serialize(
     w.Key("rbac_role_count");
     w.Int64(snapshot.rbac_role_count);
 
+    w.Key("unique_group_count");
+    w.Uint(snapshot.unique_group_count);
+
     w.Key("data_transforms_count");
     w.Uint(snapshot.data_transforms_count);
 

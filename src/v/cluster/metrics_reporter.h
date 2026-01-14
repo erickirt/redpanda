@@ -114,6 +114,7 @@ public:
         bool has_kafka_gssapi{false};
         bool has_oidc{false};
         uint32_t rbac_role_count{0};
+        uint32_t unique_group_count{0};
         uint32_t data_transforms_count{0};
 
         static constexpr int64_t max_size_for_rp_env = 80;
