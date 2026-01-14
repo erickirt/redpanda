@@ -3,6 +3,17 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = ["//src/v/cloud_topics/level_one:__subpackages__"])
 
 redpanda_cc_library(
+    name = "domain_manager",
+    hdrs = [
+        "domain_manager.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_topics/level_one/metastore:rpc_types",
+    ],
+)
+
+redpanda_cc_library(
     name = "domain_supervisor",
     srcs = [
         "domain_supervisor.cc",
@@ -11,7 +22,7 @@ redpanda_cc_library(
         "domain_supervisor.h",
     ],
     implementation_deps = [
-        ":domain_manager",
+        ":simple_domain_manager",
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/level_one/common:abstract_io",
         "//src/v/cluster",
@@ -21,6 +32,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":domain_manager",
         "//src/v/base",
         "//src/v/model",
         "@seastar",
@@ -28,16 +40,17 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "domain_manager",
+    name = "simple_domain_manager",
     srcs = [
-        "domain_manager.cc",
+        "simple_domain_manager.cc",
     ],
     hdrs = [
-        "domain_manager.h",
+        "simple_domain_manager.h",
     ],
     implementation_deps = [
         "//src/v/cloud_topics:logger",
         "//src/v/cloud_topics/level_one/metastore:garbage_collector",
+        "//src/v/cloud_topics/level_one/metastore:rpc_types",
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/model:batch_builder",
@@ -46,7 +59,7 @@ redpanda_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//src/v/cloud_topics/level_one/metastore:rpc_types",
+        ":domain_manager",
         "//src/v/cloud_topics/level_one/metastore:simple",
         "//src/v/cloud_topics/level_one/metastore:simple_stm",
         "@seastar",

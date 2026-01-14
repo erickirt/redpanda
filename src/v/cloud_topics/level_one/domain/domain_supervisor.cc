@@ -11,7 +11,7 @@
 #include "cloud_topics/level_one/domain/domain_supervisor.h"
 
 #include "cloud_topics/level_one/common/abstract_io.h"
-#include "cloud_topics/level_one/domain/domain_manager.h"
+#include "cloud_topics/level_one/domain/simple_domain_manager.h"
 #include "cloud_topics/logger.h"
 #include "cluster/controller.h"
 #include "cluster/topics_frontend.h"
@@ -74,7 +74,7 @@ public:
         }
     }
 
-    ss::lw_shared_ptr<domain_manager> get(const model::ntp& ntp) const {
+    ss::shared_ptr<domain_manager> get(const model::ntp& ntp) const {
         auto it = _domains.find(ntp);
         if (it == _domains.end()) {
             return nullptr;
@@ -270,7 +270,7 @@ private:
         if (!partition) {
             co_return;
         }
-        auto domain_mgr = ss::make_lw_shared<domain_manager>(
+        auto domain_mgr = ss::make_shared<simple_domain_manager>(
           (*partition)->raft()->stm_manager()->get<simple_stm>(), _object_io);
         domain_mgr->start();
         _domains.emplace(dm_id, std::move(domain_mgr));
@@ -286,7 +286,7 @@ private:
     // Container for domain managers, one per leader of L1 metastore topic
     // partition.
     using domain_manager_id = model::ntp;
-    chunked_hash_map<domain_manager_id, ss::lw_shared_ptr<domain_manager>>
+    chunked_hash_map<domain_manager_id, ss::shared_ptr<domain_manager>>
       _domains;
 
     std::optional<ss::future<>> _loop;
@@ -302,7 +302,7 @@ ss::future<> domain_supervisor::start() { return _impl->start(); }
 
 ss::future<> domain_supervisor::stop() { return _impl->stop(); }
 
-ss::lw_shared_ptr<domain_manager>
+ss::shared_ptr<domain_manager>
 domain_supervisor::get(const model::ntp& ntp) const {
     return _impl->get(ntp);
 }
