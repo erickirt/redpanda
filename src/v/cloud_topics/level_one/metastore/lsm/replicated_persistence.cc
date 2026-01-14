@@ -66,7 +66,7 @@ public:
             // There is no persisted manifest.
             co_return std::nullopt;
         }
-        co_return _stm->state().persisted_manifest->buf.copy();
+        co_return _stm->mutable_state().persisted_manifest->buf.share();
     }
 
     ss::future<>

@@ -57,7 +57,7 @@ struct lsm_state
           volatile_buffer,
           persisted_manifest);
     }
-    lsm_state copy() const;
+    lsm_state share();
 
     // Conversion between Redpanda space and LSM DB space.
     model::term_id to_term(lsm::internal::database_epoch) const;
@@ -111,7 +111,7 @@ struct lsm_state
         friend bool
         operator==(const serialized_manifest&, const serialized_manifest&)
           = default;
-        serialized_manifest copy() const;
+        serialized_manifest share();
         lsm::sequence_number get_last_seqno() const { return last_seqno; }
         lsm::internal::database_epoch get_database_epoch() const {
             return database_epoch;

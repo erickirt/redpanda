@@ -188,7 +188,7 @@ replicated_database::write(chunked_vector<write_batch_row> rows) {
     builder.set_batch_type(model::record_batch_type::l1_stm);
     builder.add_record(
       {.key = serde::to_iobuf(lsm_update_key::apply_write_batch),
-       .value = serde::to_iobuf(update.value().copy())});
+       .value = serde::to_iobuf(update.value().share())});
     auto batch = co_await std::move(builder).build();
 
     auto replicate_result = co_await stm_->replicate_and_wait(

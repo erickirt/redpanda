@@ -198,9 +198,9 @@ ss::future<iobuf> stm::take_raft_snapshot() {
     co_return std::move(snapshot_buf);
 }
 
-ss::future<lsm_stm_snapshot> stm::make_snapshot() const {
+ss::future<lsm_stm_snapshot> stm::make_snapshot() {
     lsm_stm_snapshot snapshot;
-    snapshot.state = state_.copy();
+    snapshot.state = state_.share();
     co_return snapshot;
 }
 
