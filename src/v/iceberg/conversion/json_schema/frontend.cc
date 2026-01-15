@@ -11,9 +11,12 @@
 #include "iceberg/conversion/json_schema/frontend.h"
 
 #include "absl/container/btree_map.h"
+#include "container/chunked_hash_map.h"
 #include "container/chunked_vector.h"
+#include "http/utils.h"
 #include "iceberg/conversion/json_schema/details/string_switch_table.h"
 #include "iceberg/conversion/json_schema/ir.h"
+#include "json/pointer.h"
 #include "json/uri.h"
 
 #include <seastar/util/defer.hh>
@@ -123,12 +126,26 @@ public:
           const json::Uri& base_uri, dialect d, const json::Value& node)
           : base_uri_(base_uri)
           , dialect_(d)
+          , schema_(
+              ss::make_shared<schema_resource>(
+                json::Uri::Get(base_uri_), dialect_))
           , node_(&node) {}
+
+        resource_context(resource_context&&) = default;
+        resource_context& operator=(resource_context&&) = default;
+        resource_context(const resource_context&) = default;
+        resource_context& operator=(const resource_context&) = default;
+
+        ss::shared_ptr<schema_resource> schema() { return schema_; }
+        ss::shared_ptr<const schema_resource> schema() const { return schema_; }
+
+        const json::Value& node() const { return *node_; }
 
     private:
         json::Uri base_uri_;
         dialect dialect_;
-        [[maybe_unused]] const json::Value* node_;
+        ss::shared_ptr<schema_resource> schema_;
+        const json::Value* node_;
     };
 
 public:
@@ -170,6 +187,11 @@ public:
         return stack_.back();
     }
 
+    resource_context& top() {
+        vassert(!empty(), "Stack is empty");
+        return stack_.back();
+    }
+
     const json::Uri& base_uri() const {
         return empty() ? ctx_base_uri_ : top().base_uri_;
     }
@@ -191,9 +213,23 @@ public:
         stack_.pop_back();
     }
 
-    absl::btree_map<std::string, resource_context> ctx_by_id_;
+    const resource_context* find_resource_context(std::string_view id) const {
+        auto it = ctx_by_id_.find(id);
+        return it != ctx_by_id_.end() ? &it->second : nullptr;
+    }
+
+    const subschema* find_subschema(const json::Value* node) const {
+        auto it = json_to_subschema_.find(node);
+        return it != json_to_subschema_.end() ? it->second : nullptr;
+    }
+
+    void register_subschema(const json::Value* node, const subschema* sub) {
+        json_to_subschema_[node] = sub;
+    }
 
 private:
+    absl::btree_map<std::string, resource_context> ctx_by_id_;
+    chunked_hash_map<const json::Value*, const subschema*> json_to_subschema_;
     json::Uri ctx_base_uri_;
     std::optional<enum dialect> default_dialect_;
     chunked_vector<resource_context> stack_;
@@ -236,7 +272,7 @@ bool maybe_push_context(compile_context& ctx, const json::Value& node) {
     } else if (ctx.empty()) {
         // If the $id keyword is not present and the context is empty, we must
         // still push a new context with the base URI of the current context.
-        ctx.push(ctx.base_uri(), dialect_at_node, node);
+        ctx.push(json::Uri{ctx.base_uri()}, dialect_at_node, node);
         return true;
     } else {
         return false;
@@ -244,12 +280,11 @@ bool maybe_push_context(compile_context& ctx, const json::Value& node) {
 }
 
 constexpr auto banned_keywords = std::to_array({
-  // Do not allow $ref and $dynamicRef keywords as would change the semantics of
+  // Do not allow $dynamicRef keywords as would change the semantics of
   // the schema but we haven't implemented them yet.
   // Note for implementer: you'll also need to add encoding for fields when the
   // subschemas map is built. Make sure to add test cases with refs containing
   // characters that need escaping.
-  "$ref",
   "$dynamicRef",
 
   // Not implementing for now for simplicity and because I don't think anyone
@@ -286,6 +321,82 @@ class frontend::frontend_impl {
         }
     }
 
+    static const subschema* resolve_pointer(
+      const compile_context& ctx,
+      const json::Value& resource_root,
+      const json::Uri& resolved_uri,
+      std::string_view ref_value) {
+        const char* frag_cstr = resolved_uri.GetFragString();
+
+        if (frag_cstr == nullptr || frag_cstr[0] == '\0') {
+            auto* result = ctx.find_subschema(&resource_root);
+            if (!result) {
+                throw std::runtime_error(
+                  fmt::format(
+                    "$ref {} points to uncompiled keyword", ref_value));
+            }
+            return result;
+        }
+
+        // RapidJSON Pointer parsing fails if pointer is part of fragment
+        // (starts with #) but does not have reserved characters
+        // percent-encoded. To work around this, we decode the fragment first
+        // and parse the pointer without the leading '#'.
+        const auto ptr_str = http::uri_decode(
+          std::string_view{
+            frag_cstr + 1, resolved_uri.GetFragStringLength() - 1});
+
+        auto ptr = json::Pointer(ptr_str.data());
+        if (!ptr.IsValid()) {
+            throw std::runtime_error(
+              fmt::format("$ref {} is not a valid JSON Pointer", ref_value));
+        }
+
+        const json::Value* target = ptr.Get(resource_root);
+        if (!target) {
+            throw std::runtime_error(
+              fmt::format(
+                "$ref {} points to non-existent location", ref_value));
+        }
+
+        auto* result = ctx.find_subschema(target);
+        if (!result) {
+            throw std::runtime_error(
+              fmt::format(
+                "$ref {} points to uncompiled keyword (not supported)",
+                ref_value));
+        }
+        return result;
+    }
+
+    /// \pre fix_subschemas_base already applied.
+    static void resolve_refs(const compile_context& ctx, subschema& sub) {
+        if (sub.ref_value_.has_value()) {
+            json::Uri ref_uri{*sub.ref_value_};
+            const json::Uri base_uri{sub.base().id()};
+            const json::Uri resolved_uri = ref_uri.Resolve(base_uri);
+
+            const std::string resource_id = json::Uri::GetBase(resolved_uri);
+
+            const auto* rsc_ctx = ctx.find_resource_context(resource_id);
+            if (!rsc_ctx) {
+                throw std::runtime_error(
+                  fmt::format(
+                    "Unresolvable $ref: {}. Schema resource {} not available",
+                    *sub.ref_value_,
+                    resource_id));
+            }
+
+            const json::Value& resource_root = rsc_ctx->node();
+            sub.ref_ = resolve_pointer(
+              ctx, resource_root, resolved_uri, *sub.ref_value_);
+        }
+
+        for (const auto& [k, v] : sub.subschemas_) {
+            resolve_refs(ctx, *v);
+        }
+    }
+
 public:
     ss::shared_ptr<schema_resource> compile_document(
       const json::Document& doc,
@@ -301,6 +412,7 @@ public:
           "The root of the schema must be a schema resource");
 
         fix_subschemas_base(*subschema, schema_rsc.get());
+        resolve_refs(ctx, *subschema);
 
         return schema_rsc;
     }
@@ -326,14 +438,30 @@ public:
         if (node.IsBool()) {
             auto sub = ss::make_shared<subschema>();
             sub->boolean_subschema_ = node.GetBool();
+            ctx.register_subschema(&node, sub.get());
+            return sub;
+        }
+
+        if (
+          const auto ref_node = find_keyword(
+            node, "$ref", {json_value_type::string})) {
+            if (ctx.empty()) {
+                throw std::runtime_error(
+                  "$ref at the root of the schema in draft-07 is not allowed "
+                  "to avoid undefined behavior");
+            }
+
+            auto sub = ss::make_shared<subschema>();
+            sub->ref_value_ = ref_node->GetString();
+            ctx.register_subschema(&node, sub.get());
             return sub;
         }
 
         auto new_ctx = maybe_push_context(ctx, node);
 
-        auto sub = new_ctx ? ss::make_shared<schema_resource>(
-                               ctx.base_uri().GetString(), ctx.dialect())
-                           : ss::make_shared<subschema>();
+        auto sub = new_ctx
+                     ? ss::dynamic_pointer_cast<subschema>(ctx.top().schema())
+                     : ss::make_shared<subschema>();
 
         // Check for banned keywords.
         for (const auto& keyword : banned_keywords) {
@@ -417,6 +545,7 @@ public:
             ctx.pop();
         }
 
+        ctx.register_subschema(&node, sub.get());
         return sub;
     }
 

@@ -34,7 +34,9 @@ redpanda_cc_library(
         "frontend.h",
     ],
     implementation_deps = [
+        "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",
+        "//src/v/http:utils",
         "//src/v/iceberg/conversion/json_schema/details:string_switch_table",
         "@abseil-cpp//absl/container:btree",
     ],
