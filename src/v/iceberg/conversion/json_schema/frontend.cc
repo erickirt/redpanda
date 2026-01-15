@@ -126,7 +126,6 @@ public:
         json::Uri base_uri_;
         dialect dialect_;
         std::unordered_map<std::string, ss::shared_ptr<subschema>> subschemas_;
-        chunked_vector<std::string> path_stack_;
     };
 
 public:
