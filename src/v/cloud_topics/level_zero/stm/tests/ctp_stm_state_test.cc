@@ -110,24 +110,31 @@ TEST(ctp_stm_state_test, advance_lro_updates_min_epoch) {
     ct::ctp_stm_state state;
     ct::cluster_epoch epoch1(10);
     ct::cluster_epoch epoch2(20);
+    ct::cluster_epoch epoch3(30);
 
     // Initially min epoch is not set
     EXPECT_FALSE(state.estimate_min_epoch().has_value());
 
     state.advance_epoch(epoch1, model::offset(1));
-    EXPECT_TRUE(state.estimate_min_epoch().has_value());
-    EXPECT_EQ(state.estimate_min_epoch().value(), epoch1);
+    EXPECT_EQ(state.estimate_min_epoch(), epoch1);
 
     state.advance_epoch(epoch2, model::offset(5));
-    EXPECT_EQ(state.estimate_min_epoch().value(), epoch1);
+    EXPECT_EQ(state.estimate_min_epoch(), epoch1);
+
+    state.advance_epoch(epoch3, model::offset(10));
+    EXPECT_EQ(state.estimate_min_epoch(), epoch1);
 
     // Advance LRO past the offset of epoch1
     state.advance_last_reconciled_offset(kafka::offset(100), model::offset(2));
-    EXPECT_EQ(state.estimate_min_epoch().value(), epoch1);
+    EXPECT_EQ(state.estimate_min_epoch(), epoch1);
 
     // Advance LRO past the offset of epoch2
     state.advance_last_reconciled_offset(kafka::offset(200), model::offset(6));
-    EXPECT_EQ(state.estimate_min_epoch().value(), epoch2);
+    EXPECT_EQ(state.estimate_min_epoch(), epoch1);
+
+    // Advance LRO past the offset of epoch3
+    state.advance_last_reconciled_offset(kafka::offset(300), model::offset(11));
+    EXPECT_EQ(state.estimate_min_epoch(), epoch2);
 }
 
 TEST(ctp_stm_state_test, advance_start_offset) {
@@ -183,57 +190,62 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
     // Our start state, we can't GC anything and we have to
     // get the write lock before we can start our window
     EXPECT_EQ(estimate_inactive_epoch(), std::nullopt);
-    EXPECT_FALSE(state.epoch_in_window(0_epoch));
+    // Start our epochs at 2
+    EXPECT_FALSE(state.epoch_in_window(2_epoch));
 
     // Write lock grabbed, max epoch can be advanced!
-    state.advance_max_seen_epoch(0_epoch);
+    state.advance_max_seen_epoch(2_epoch);
 
     // Now epoch 0 is in the window
-    EXPECT_TRUE(state.epoch_in_window(0_epoch));
+    EXPECT_TRUE(state.epoch_in_window(2_epoch));
     // Epoch 1 is not in the window
     EXPECT_FALSE(state.epoch_in_window(1_epoch));
+    // Nor is 3
+    EXPECT_FALSE(state.epoch_in_window(3_epoch));
 
     // Now the batch that was replicated with offset 0
-    apply_replicated(0_epoch);
+    apply_replicated(2_epoch);
 
-    // Still not safe to GC
-    EXPECT_EQ(estimate_inactive_epoch(), std::nullopt);
+    // We can GC anything below our initial epoch, we enforce nothing is before
+    // it
+    EXPECT_EQ(estimate_inactive_epoch(), 1_epoch);
 
-    // Let's now add another batch at epoch 0
-    EXPECT_TRUE(state.epoch_in_window(0_epoch));
-    apply_replicated(0_epoch);
+    // Let's now add another batch at epoch 2
+    EXPECT_TRUE(state.epoch_in_window(2_epoch));
+    apply_replicated(2_epoch);
 
     // Reconciler now runs
     reconcile(hwm);
 
-    // Still not safe to GC
-    EXPECT_EQ(estimate_inactive_epoch(), std::nullopt);
+    // Our epoch window hasn't moved
+    EXPECT_EQ(estimate_inactive_epoch(), 1_epoch);
 
     EXPECT_FALSE(state.epoch_in_window(5_epoch));
 
-    // Epoch is bumped, our window should now be [0, 5]
+    // Epoch is bumped, our window should now be [2, 5]
     state.advance_max_seen_epoch(5_epoch);
 
     // This is our new epoch
     EXPECT_TRUE(state.epoch_in_window(5_epoch));
     // Our previous epoch is good still
-    EXPECT_TRUE(state.epoch_in_window(0_epoch));
+    EXPECT_TRUE(state.epoch_in_window(2_epoch));
     // And so is something in between (unlikely in real life, but just to show)
     EXPECT_TRUE(state.epoch_in_window(3_epoch));
+    // Something below is still bad
+    EXPECT_FALSE(state.epoch_in_window(1_epoch));
 
     // Still not safe to GC, we accept stuff at epoch 0
-    EXPECT_EQ(estimate_inactive_epoch(), std::nullopt);
+    EXPECT_EQ(estimate_inactive_epoch(), 1_epoch);
 
     apply_replicated(5_epoch);
 
-    // Still not safe to GC
-    EXPECT_EQ(estimate_inactive_epoch(), ct::cluster_epoch::min());
+    // GC window still the same
+    EXPECT_EQ(estimate_inactive_epoch(), 1_epoch);
 
-    // We can still replicate an epoch at 0
-    apply_replicated(0_epoch);
+    // We can still replicate an epoch at 2
+    apply_replicated(2_epoch);
 
-    // Still not safe to GC
-    EXPECT_EQ(estimate_inactive_epoch(), ct::cluster_epoch::min());
+    EXPECT_EQ(estimate_inactive_epoch(), 1_epoch);
 
     // Now we start to replicate to the epoch to 10 (write lock grabbed)
     state.advance_max_seen_epoch(10_epoch);
@@ -245,7 +257,7 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
 
     apply_replicated(10_epoch);
 
-    EXPECT_EQ(estimate_inactive_epoch(), ct::cluster_epoch::min());
+    EXPECT_EQ(estimate_inactive_epoch(), 1_epoch);
 
     // Reconcile
     reconcile(hwm);
@@ -260,8 +272,18 @@ TEST(ctp_stm_state_test, sliding_window_issue) {
     EXPECT_TRUE(state.epoch_in_window(12_epoch));
     EXPECT_FALSE(state.epoch_in_window(9_epoch));
 
-    // The min epoch CANNOT CHANGE YET! The reconciler has not run.
     EXPECT_EQ(estimate_inactive_epoch(), 4_epoch);
+
+    apply_replicated(15_epoch);
+
+    // reconciliation has not run, it's not save to bump the epoch yet.
+    // So we should keep the epoch at 4, even if the window advances
+    EXPECT_EQ(estimate_inactive_epoch(), 4_epoch);
+
+    reconcile(hwm);
+
+    // Now the inactive epoch can be advanced because we're reconciled up to it.
+    EXPECT_EQ(estimate_inactive_epoch(), 9_epoch);
 }
 
 } // anonymous namespace

@@ -16,7 +16,7 @@ namespace cloud_topics {
 
 void ctp_stm_state::advance_max_seen_epoch(cluster_epoch epoch) noexcept {
     if (epoch > _max_seen_epoch) {
-        _previous_seen_epoch = _max_seen_epoch;
+        _previous_seen_epoch = _max_seen_epoch.value_or(epoch);
         _max_seen_epoch = epoch;
     }
 }
@@ -38,7 +38,7 @@ ctp_stm_state::estimate_min_epoch() const noexcept {
 
 std::optional<cluster_epoch>
 ctp_stm_state::get_previous_epoch() const noexcept {
-    return _previous_epoch;
+    return _previous_applied_epoch;
 }
 
 bool ctp_stm_state::epoch_in_window(cluster_epoch epoch) const noexcept {
@@ -49,19 +49,14 @@ bool ctp_stm_state::epoch_in_window(cluster_epoch epoch) const noexcept {
     // to move it forward.
     auto end = _max_seen_epoch.value_or(
       _max_applied_epoch.value_or(cluster_epoch::min()));
-    auto begin = _previous_seen_epoch.value_or(_previous_epoch.value_or(end));
+    auto begin = _previous_seen_epoch.value_or(
+      _previous_applied_epoch.value_or(end));
     return epoch >= begin && epoch <= end;
 }
 
 std::optional<cluster_epoch>
 ctp_stm_state::estimate_inactive_epoch() const noexcept {
-    // NOTE: the inactive epoch shouldn't be estimated using the transient
-    // state (_previous_seen_epoch, _max_seen_epoch). It should only take
-    // into account committed state and ignore state that reflects in-flight
-    // requests.
-    auto estimate = estimate_min_epoch().transform(prev_cluster_epoch);
-    auto prev = _previous_epoch.transform(prev_cluster_epoch);
-    return std::min(estimate, prev); // returning nullopt here is safe
+    return estimate_min_epoch().transform(prev_cluster_epoch);
 }
 
 void ctp_stm_state::advance_epoch(cluster_epoch epoch, model::offset offset) {
@@ -72,16 +67,16 @@ void ctp_stm_state::advance_epoch(cluster_epoch epoch, model::offset offset) {
       _max_seen_epoch.value_or(cluster_epoch::min()), epoch);
     // Register new epoch
     if (_max_applied_epoch.value_or(cluster_epoch::min()) < epoch) {
-        // Record previous max applied epoch and offset.
-        // The condition above guarantees that the invariant of the
-        // _previous_epoch is respected.
-        _previous_epoch = _max_applied_epoch;
-        _max_applied_epoch = epoch;
-        _max_applied_epoch_offset = offset;
+        // A new max epoch requires the sliding window of epoch values in flight
+        // to be moved.
         if (!_min_epoch_lower_bound.has_value()) {
             // First epoch applied to the STM
-            _min_epoch_lower_bound = _max_applied_epoch;
+            _min_epoch_lower_bound = epoch;
         }
+        // Move the sliding window
+        _previous_applied_epoch = _max_applied_epoch.value_or(epoch);
+        _max_applied_epoch = epoch;
+        _current_epoch_window_offset = offset;
     }
 }
 
@@ -89,12 +84,12 @@ void ctp_stm_state::advance_last_reconciled_offset(
   kafka::offset new_last_reconciled_offset,
   model::offset new_last_reconciled_log_offset) noexcept {
     if (
-      _max_applied_epoch_offset.value_or(model::offset{})
+      _current_epoch_window_offset.value_or(model::offset{})
       <= new_last_reconciled_log_offset) {
         // We advanced LRO past the offset at which we saw the current
-        // max_applied_epoch value so we can use max_applied_epoch as
+        // epoch window value so we can use previous epoch as
         // the new min_applied_epoch
-        _min_epoch_lower_bound = _max_applied_epoch;
+        _min_epoch_lower_bound = _previous_applied_epoch;
     }
     _last_reconciled_offset = std::max(
       _last_reconciled_offset.value_or(kafka::offset{}),

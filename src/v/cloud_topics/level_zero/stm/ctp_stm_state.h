@@ -107,9 +107,9 @@ public:
           _max_applied_epoch,
           _last_reconciled_offset,
           _last_reconciled_log_offset,
-          _max_applied_epoch_offset,
+          _current_epoch_window_offset,
           _min_epoch_lower_bound,
-          _previous_epoch,
+          _previous_applied_epoch,
           _start_offset);
     }
 
@@ -134,31 +134,35 @@ private:
     /// that is lower than this value.
     std::optional<cluster_epoch> _max_seen_epoch;
 
+    /// The previous epoch after the current in flight requests are applied.
+    /// Requests with epochs below this value are fenced and not allowed to be
+    /// applied to the STM.
+    ///
+    /// Not persisted with the snapshot because it reflects the state of
+    /// in-flight requests.
+    std::optional<cluster_epoch> _previous_seen_epoch;
+
     /// The maximum epoch of applied batches to the STM.
     ///
     /// We enforce no epochs applied or replicated are less than this value.
     std::optional<cluster_epoch> _max_applied_epoch;
 
-    /// The offset at which the max_applied_epoch was recorded first.
-    std::optional<model::offset> _max_applied_epoch_offset;
+    /// The previous max epoch applied to the STM state.
+    /// Invariant:
+    /// - _previous_epoch < _max_applied_epoch
+    /// - _previous_epoch <= _previous_seen_epoch
+    std::optional<cluster_epoch> _previous_applied_epoch;
 
-    /// The epoch which is less or equal to the epoch referenced
+    /// The offset at which the current applied epoch window was transitioned
+    /// to.
+    std::optional<model::offset> _current_epoch_window_offset;
+
+    /// The epoch which is less or equal to the current epoch window referenced
     /// by the first record batch after the last reconciled offset.
     /// This epoch is not guaranteed to be "active" (from the point of
     /// view of the partition) but it's guaranteed that all epochs before
     /// this epoch are "inactive".
     std::optional<cluster_epoch> _min_epoch_lower_bound;
-
-    /// The previous epoch after the current in flight requests are applied.
-    /// Not persisted with the snapshot because it reflects the state of
-    /// in-flight requests.
-    std::optional<cluster_epoch> _previous_seen_epoch;
-
-    /// The previous epoch applied to the STM state.
-    /// Invariant:
-    /// - _previous_epoch < _max_applied_epoch
-    /// - _previous_epoch <= _previous_seen_epoch
-    std::optional<cluster_epoch> _previous_epoch;
 
     /// The last offset that was uploaded to L1. This value may lag behind
     /// the value stored in the L1 metastore, but should never be ahead of
