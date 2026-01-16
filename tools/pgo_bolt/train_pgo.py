@@ -45,7 +45,7 @@ async def setup_iceberg_schema_registry_and_topic(
     schema_path = tmpdir / "iceberg_schema.proto"
     schema_path.write_text(ICEBERG_SCHEMA)
     schema_create_args: list[str] = [
-        args.rpk_binary,
+        str(args.rpk_binary),
         "registry",
         "schema",
         "create",
@@ -61,7 +61,7 @@ async def setup_iceberg_schema_registry_and_topic(
     if proc.returncode != 0:
         raise RuntimeError("Failed to create iceberg schema in schema registry")
     topic_create_args: list[str] = [
-        args.rpk_binary,
+        str(args.rpk_binary),
         "topic",
         "create",
         ICEBERG_TOPIC_NAME,
@@ -103,22 +103,22 @@ async def continue_stream(proc: asyncio.subprocess.Process, tag: str):
         print(f"[{tag}] - {line}")
 
 
-async def start_dev_cluster(redpanda_bin: str, args: argparse.Namespace, tmpdir: str):
-    data_dir = os.path.join(tmpdir, "rp_data")
-    os.makedirs(data_dir, exist_ok=True)
+async def start_dev_cluster(redpanda_bin: Path, args: argparse.Namespace, tmpdir: Path):
+    data_dir = tmpdir / "rp_data"
+    data_dir.mkdir(parents=True, exist_ok=True)
     cmd: list[str] = [
         sys.executable,
-        args.dev_cluster_py,
+        str(args.dev_cluster_py),
         "--cores",
         "2",
         "-d",
-        data_dir,
+        str(data_dir),
         "--no-use-grafana",
         "--no-use-prometheus",
         "--minio_executable",
-        args.minio_binary,
+        str(args.minio_binary),
         "-e",
-        redpanda_bin,
+        str(redpanda_bin),
     ]
     print(f"Launching dev_cluster: {' '.join(cmd)}")
     proc = await asyncio.create_subprocess_exec(
@@ -179,16 +179,16 @@ def omb_workload_config(tmpdir: Path) -> str:
 
 @dataclass
 class OmbTarget:
-    results_path: str
+    results_path: Path
     total_messages: int
 
 
 async def start_omb(
-    tmpdir: str, omb_benchmark: str
+    tmpdir: Path, omb_benchmark: Path
 ) -> tuple[asyncio.subprocess.Process, OmbTarget]:
     tmp_dir = Path(tmpdir) / "omb"
     tmp_dir.mkdir()
-    results_path = os.path.join(tmpdir, "results.json")
+    results_path = tmpdir / "results.json"
 
     driver_config = omb_driver_config()
     driver_path = tmp_dir / "driver.yaml"
@@ -198,11 +198,11 @@ async def start_omb(
     workload_path.write_text(workload_config)
 
     bench_cmd: list[str] = [
-        omb_benchmark,
+        str(omb_benchmark),
         "--drivers",
         str(driver_path),
         "--output",
-        results_path,
+        str(results_path),
         "--service-version",
         "unknown_version",
         str(workload_path),
@@ -281,7 +281,7 @@ async def terminate(proc: asyncio.subprocess.Process, name: str) -> int:
     return await proc.wait()
 
 
-async def profile(args: argparse.Namespace, tmpdir: str, redpanda_bin: str):
+async def profile(args: argparse.Namespace, tmpdir: Path, redpanda_bin: Path):
     cluster_proc: asyncio.subprocess.Process | None = None
     omb_proc: asyncio.subprocess.Process | None = None
     cluster_task: asyncio.Task[None] | None = None
@@ -318,7 +318,7 @@ async def profile(args: argparse.Namespace, tmpdir: str, redpanda_bin: str):
 
 
 def combine_profiles(
-    args: argparse.Namespace, base_profile_dir: str, combined_profile_file: str
+    args: argparse.Namespace, base_profile_dir: Path, combined_profile_file: Path
 ):
     profiles = glob.glob(f"{base_profile_dir}/*.profraw")
 
@@ -328,19 +328,19 @@ def combine_profiles(
         print(f"Profile: {profile} size: {os.path.getsize(profile)} bytes")
 
     llvm_profdata_cmd: list[str] = [
-        args.llvm_profdata_bin,
+        str(args.llvm_profdata_bin),
         "merge",
         "-o",
-        combined_profile_file,
+        str(combined_profile_file),
         *profiles,
     ]
     print(f"Combining profiles: {' '.join(llvm_profdata_cmd)}")
     subprocess.check_call(llvm_profdata_cmd)
 
 
-def extra_rp_tar(rp_tar: str, temp_dir: str):
-    extract_path = os.path.join(temp_dir, "redpanda_extracted")
-    os.makedirs(extract_path)
+def extra_rp_tar(rp_tar: Path, temp_dir: Path):
+    extract_path = temp_dir / "redpanda_extracted"
+    extract_path.mkdir()
 
     with tarfile.open(rp_tar, "r") as tar:
         for member in tar.getmembers():
@@ -349,7 +349,7 @@ def extra_rp_tar(rp_tar: str, temp_dir: str):
     # Find the redpanda binary (to avoid hardcoding the a little bit brittle path)
     for root, _, files in os.walk(extract_path):
         if "redpanda" in files:
-            redpanda_bin = os.path.join(root, "redpanda")
+            redpanda_bin = Path(root) / "redpanda"
             return redpanda_bin
 
     raise FileNotFoundError("redpanda binary not found in the tarball")
@@ -359,13 +359,13 @@ def main(args: argparse.Namespace):
     with tempfile.TemporaryDirectory(
         prefix="redpanda_pgo_", dir="/dev/shm"
     ) as tmpdirname:
-        profile_dir = os.path.join(tmpdirname, "profile_dir")
+        tmpdir_path = Path(tmpdirname)
+        profile_dir = tmpdir_path / "profile_dir"
         os.makedirs(profile_dir)
         os.environ["LLVM_PROFILE_FILE"] = f"{profile_dir}/data-%p.profraw"
 
-        redpanda_bin = extra_rp_tar(args.redpanda_tar, tmpdirname)
-
-        asyncio.run(profile(args, tmpdirname, redpanda_bin))
+        redpanda_bin = extra_rp_tar(args.redpanda_tar, tmpdir_path)
+        asyncio.run(profile(args, tmpdir_path, redpanda_bin))
         combine_profiles(args, profile_dir, args.combined_profile_file)
 
 
@@ -380,37 +380,37 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dev-cluster-py",
-        type=str,
+        type=Path,
         help="path to dev_cluster.py",
     )
     parser.add_argument(
         "--llvm-profdata-bin",
-        type=str,
+        type=Path,
         help="path to llvm-profdata binary",
     )
     parser.add_argument(
         "--redpanda-tar",
-        type=str,
+        type=Path,
         help="path to redpanda tarball (bazel packaged with runfiles)",
     )
     parser.add_argument(
         "--omb-benchmark",
-        type=str,
+        type=Path,
         help="path to omb benchmark executable",
     )
     parser.add_argument(
         "--minio-binary",
-        type=str,
+        type=Path,
         help="path to minio binary",
     )
     parser.add_argument(
         "--rpk-binary",
-        type=str,
+        type=Path,
         help="path to rpk binary",
     )
     parser.add_argument(
         "--combined-profile-file",
-        type=str,
+        type=Path,
         help="output path for combined PGO profile file",
     )
     args = parser.parse_args()
