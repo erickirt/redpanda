@@ -4613,6 +4613,16 @@ configuration::configuration()
       "How often to trigger background compaction for cloud topics.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       30s)
+  , cloud_topics_compaction_key_map_memory(
+      *this,
+      "cloud_topics_compaction_key_map_memory",
+      "Maximum number of bytes that may be used on each shard by cloud topics "
+      "compaction key-offset maps.",
+      {.needs_restart = needs_restart::yes,
+       .example = "134217728",
+       .visibility = visibility::tunable},
+      128_MiB,
+      {.min = 16_MiB, .max = 100_GiB})
   , cloud_topics_long_term_garbage_collection_interval(
       *this,
       "cloud_topics_long_term_garbage_collection_interval",

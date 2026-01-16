@@ -20,6 +20,7 @@
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "resource_mgmt/memory_groups.h"
 #include "ssx/future-util.h"
 
 #include <seastar/coroutine/as_future.hh>
@@ -365,10 +366,8 @@ ss::future<> compaction_worker::initialize_map() {
         co_return;
     }
 
-    // TODO: use memory group reservation.
-    // auto compaction_mem_bytes = memory_groups().compaction_reserved_memory();
     auto compaction_mem_bytes
-      = config::shard_local_cfg().storage_compaction_key_map_memory();
+      = memory_groups().cloud_topics_compaction_reserved_memory();
     auto compaction_map = std::make_unique<compaction::hash_key_offset_map>();
     co_await compaction_map->initialize(compaction_mem_bytes);
     _map = std::move(compaction_map);
