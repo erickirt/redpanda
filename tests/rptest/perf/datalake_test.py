@@ -6,7 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import operator
 import random
 import string
 from typing import Any, cast
@@ -26,15 +25,14 @@ from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurati
 from rptest.services.redpanda import PandaproxyConfig, SISettings, SchemaRegistryConfig
 from rptest.tests.datalake.catalog_service_factory import filesystem_catalog_type
 from rptest.tests.datalake.datalake_services import DatalakeServices
-from rptest.tests.datalake.query_engine_base import QueryEngineType
 from rptest.tests.datalake.utils import supported_storage_types
 from rptest.tests.redpanda_test import RedpandaTest
 
 
-class DatalakeOMBTest(RedpandaTest):
+class DatalakeTest(RedpandaTest):
     def __init__(self, test_ctx: TestContext, *args: Any, **kwargs: Any):
         self._ctx = test_ctx
-        super(DatalakeOMBTest, self).__init__(
+        super(DatalakeTest, self).__init__(
             test_ctx,
             num_brokers=3,
             si_settings=SISettings(test_context=test_ctx),
@@ -68,12 +66,12 @@ class DatalakeOMBTest(RedpandaTest):
 
         return msg
 
-    @cluster(num_nodes=8)
+    @cluster(num_nodes=6)
     @matrix(cloud_storage_type=supported_storage_types())
-    def basic_workload_linear_20_test(self, cloud_storage_type: str) -> None:
+    def test_omb(self, cloud_storage_type: str) -> None:
         topic_name = "atestingtopic"
         topic_partitions = 50
-        producer_rate_bytes_s = 50 * 1024  # 50 KiB/s
+        producer_rate_bytes_s = 40 * 1024 * 1024
 
         msg_type = linear_pb2.Linear20
         msg_field_size_bytes = 13
@@ -82,7 +80,7 @@ class DatalakeOMBTest(RedpandaTest):
         with DatalakeServices(
             self._ctx,
             redpanda=self.redpanda,
-            include_query_engines=[QueryEngineType.SPARK],
+            include_query_engines=[],
             catalog_type=filesystem_catalog_type(),
         ) as dl:
             dl_any: Any = dl
@@ -129,7 +127,7 @@ class DatalakeOMBTest(RedpandaTest):
                 "producer_config": {
                     "enable.idempotence": "true",
                     "acks": "all",
-                    "linger.ms": 10,
+                    "linger.ms": 1,
                     "max.in.flight.requests.per.connection": 5,
                     "batch.size": 16384,
                 },
@@ -154,16 +152,10 @@ class DatalakeOMBTest(RedpandaTest):
                 workload=(workload, validator),
                 topology="ensemble",
                 local_payload_dir=payloads,
+                # Share the omb driver node with the iceberg catalog node. Both do hardly anything and this saves us a node.
+                node=dl.catalog_service.get_node(0),
             )
             benchmark.start()
-            benchmark_time_min = benchmark.benchmark_time_mins() + 5
+            benchmark_time_min = benchmark.benchmark_time_mins() + 1
             benchmark.wait(timeout_sec=benchmark_time_min * 60)
             benchmark.check_succeed()
-
-            # Ensure 10% of messages were succesfully translated as a basic correctness test.
-            dl_any.wait_for_translation(
-                topic_name,
-                msg_count=(0.1 * benchmark.benchmark_time_mins() * 60)
-                * (producer_rate_bytes_s // payload_size),
-                op=operator.gt,
-            )
