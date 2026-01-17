@@ -29,12 +29,15 @@ using namespace security;
 // choose something that will generally circumvent small string optimization
 constexpr size_t NAME_LEN = 32;
 
-std::vector<role_member> generate_members(size_t N) {
+std::vector<role_member> generate_members(
+  size_t N,
+  const std::vector<role_member_type>& types = {role_member_type::user}) {
+    vassert(!types.empty(), "Must specify at least one role_member_type");
     std::vector<role_member> mems;
     mems.reserve(N);
-    std::ranges::for_each(boost::irange(0ul, N), [&mems](auto) {
+    std::ranges::for_each(boost::irange(0ul, N), [&mems, &types](auto) {
         mems.emplace_back(
-          role_member_type::user,
+          random_generators::random_choice(types),
           random_generators::gen_alphanum_string(NAME_LEN));
     });
     return mems;
