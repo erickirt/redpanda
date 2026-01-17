@@ -29,6 +29,16 @@ using namespace security;
 // choose something that will generally circumvent small string optimization
 constexpr size_t NAME_LEN = 32;
 
+principal_type principal_type_for_member_type(role_member_type t) {
+    switch (t) {
+    case role_member_type::user:
+        return principal_type::user;
+    case role_member_type::group:
+        return principal_type::group;
+    }
+    __builtin_unreachable();
+}
+
 std::vector<role_member> generate_members(
   size_t N,
   const std::vector<role_member_type>& types = {role_member_type::user}) {
@@ -237,7 +247,8 @@ void run_authz(
     auth.add_bindings(bindings);
 
     const auto& m = members[random_generators::get_int(members.size() - 1)];
-    acl_principal p{principal_type::user, ss::sstring{m.name()}};
+    acl_principal p{
+      principal_type_for_member_type(m.type()), ss::sstring{m.name()}};
 
     perf_tests::start_measuring_time();
     auto result = auth.authorized(
