@@ -205,6 +205,12 @@ struct context_subject {
     /// context-wide mode/config) from subject-level operations.
     bool is_context_only() const { return sub().empty(); }
 
+    /// Retrurns true if this represents the default context with an empty
+    /// subject.
+    bool is_default_context() const {
+        return is_context_only() && ctx == default_context;
+    }
+
     context ctx;
     subject sub;
 };

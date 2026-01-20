@@ -1609,27 +1609,23 @@ struct consume_to_store {
               error_code::topic_parse_error,
               fmt::format("Unexpected magic: {}", key));
         }
+        auto make_marker = [&key]() {
+            return seq_marker{
+              .seq = key.seq,
+              .node = key.node,
+              .version{invalid_schema_version}, // Not applicable
+              .key_type = seq_marker_key_type::config};
+        };
         try {
             vlog(srlog.debug, "Applying: {}", key);
             if (key.sub.has_value() && !key.sub->is_context_only()) {
                 // Subject-level: non-empty subject name
                 if (!val.has_value()) {
                     co_await _store.clear_compatibility(
-                      seq_marker{
-                        .seq = key.seq,
-                        .node = key.node,
-                        .version{invalid_schema_version}, // Not applicable
-                        .key_type = seq_marker_key_type::config},
-                      *key.sub);
+                      make_marker(), *key.sub);
                 } else {
                     co_await _store.set_compatibility(
-                      seq_marker{
-                        .seq = key.seq,
-                        .node = key.node,
-                        .version{invalid_schema_version}, // Not applicable
-                        .key_type = seq_marker_key_type::config},
-                      *key.sub,
-                      val->compat);
+                      make_marker(), *key.sub, val->compat);
                 }
             } else {
                 // Context-level: context-only qualified subject or nullopt
@@ -1637,7 +1633,8 @@ struct consume_to_store {
                 auto ctx = key.sub.has_value() ? key.sub->ctx : default_context;
 
                 if (val.has_value()) {
-                    co_await _store.set_compatibility(ctx, val->compat);
+                    co_await _store.set_compatibility(
+                      make_marker(), ctx, val->compat);
                 } else {
                     co_await _store.clear_compatibility(ctx);
                 }
@@ -1667,29 +1664,23 @@ struct consume_to_store {
               error_code::topic_parse_error,
               fmt::format("Unexpected magic: {}", key));
         }
+        auto make_marker = [&key]() {
+            return seq_marker{
+              .seq = key.seq,
+              .node = key.node,
+              .version{invalid_schema_version}, // Not applicable
+              .key_type = seq_marker_key_type::mode};
+        };
         try {
             vlog(srlog.debug, "Applying: {}", key);
             if (key.sub.has_value() && !key.sub->is_context_only()) {
                 // Subject-level: non-empty subject name
                 if (!val.has_value()) {
                     co_await _store.clear_mode(
-                      seq_marker{
-                        .seq = key.seq,
-                        .node = key.node,
-                        .version{invalid_schema_version}, // Not applicable
-                        .key_type = seq_marker_key_type::mode},
-                      *key.sub,
-                      force::yes);
+                      make_marker(), *key.sub, force::yes);
                 } else {
                     co_await _store.set_mode(
-                      seq_marker{
-                        .seq = key.seq,
-                        .node = key.node,
-                        .version{invalid_schema_version}, // Not applicable
-                        .key_type = seq_marker_key_type::mode},
-                      *key.sub,
-                      val->mode,
-                      force::yes);
+                      make_marker(), *key.sub, val->mode, force::yes);
                 }
             } else {
                 // Context-level: context-only qualified subject or nullopt
@@ -1697,7 +1688,8 @@ struct consume_to_store {
                 auto ctx = key.sub.has_value() ? key.sub->ctx : default_context;
 
                 if (val.has_value()) {
-                    co_await _store.set_mode(ctx, val->mode, force::yes);
+                    co_await _store.set_mode(
+                      make_marker(), ctx, val->mode, force::yes);
                 } else {
                     co_await _store.clear_mode(ctx, force::yes);
                 }
