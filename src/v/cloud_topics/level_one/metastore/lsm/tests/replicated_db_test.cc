@@ -76,7 +76,12 @@ struct replicated_db_node {
     ss::future<std::expected<replicated_database*, replicated_database::errc>>
     open_db() {
         auto ret = co_await replicated_database::open(
-          stm_ptr.get(), staging_directory.get_path(), remote, bucket, as);
+          stm_ptr->raft()->confirmed_term(),
+          stm_ptr.get(),
+          staging_directory.get_path(),
+          remote,
+          bucket,
+          as);
         if (!ret.has_value()) {
             co_return std::unexpected(ret.error());
         }

@@ -54,6 +54,7 @@ public:
     // before any LSM state updates are replicated in this term.
     static ss::future<std::expected<std::unique_ptr<replicated_database>, errc>>
     open(
+      model::term_id expected_term,
       stm* s,
       const std::filesystem::path& staging_directory,
       cloud_io::remote* remote,

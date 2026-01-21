@@ -43,6 +43,7 @@ ss::future<std::expected<
   std::unique_ptr<replicated_database>,
   replicated_database::errc>>
 replicated_database::open(
+  model::term_id expected_term,
   stm* s,
   const std::filesystem::path& staging_directory,
   cloud_io::remote* remote,
@@ -53,6 +54,9 @@ replicated_database::open(
         co_return std::unexpected(map_stm_error(term_result.error()));
     }
     auto term = term_result.value();
+    if (term != expected_term) {
+        co_return std::unexpected(errc::not_leader);
+    }
     auto epoch = s->state().to_epoch(term);
 
     vlog(
