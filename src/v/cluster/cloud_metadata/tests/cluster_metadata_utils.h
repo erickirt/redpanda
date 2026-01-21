@@ -66,6 +66,8 @@ inline topic_properties uploadable_topic_properties() {
     props.recovery = false;
     props.read_replica = false;
     props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion;
+    // Set storage_mode to tiered, to match the shadow_indexing setting.
+    props.storage_mode = model::redpanda_storage_mode::tiered;
     return props;
 }
 
