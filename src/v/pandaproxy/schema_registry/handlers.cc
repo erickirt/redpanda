@@ -144,16 +144,6 @@ ss::future<subject_schema> make_canonical_schema_with_metadata(
     co_return schema;
 }
 
-chunked_vector<subject>
-to_non_context_subjects(chunked_vector<context_subject> subjects) {
-    // TODO: use context_subject's for authz later, for now, use this
-    // inefficient mapping to help with gradual source migration
-    return std::move(subjects) | std::views::as_rvalue
-           | std::ranges::views::transform(
-             [](context_subject&& ctx_sub) { return std::move(ctx_sub).sub; })
-           | std::ranges::to<chunked_vector<subject>>();
-}
-
 chunked_vector<schema_id>
 to_non_context_schema_ids(const chunked_vector<context_schema_id>& ids) {
     return ids
@@ -438,9 +428,8 @@ ss::future<server::reply_t> get_schemas_ids_id(
     const auto format = parse_output_format(*rq.req);
 
     co_await rq.service().writer().read_sync();
-    auto subjects = to_non_context_subjects(
-      co_await rq.service().schema_store().get_schema_subjects(
-        id, include_deleted::yes));
+    auto subjects = co_await rq.service().schema_store().get_schema_subjects(
+      id, include_deleted::yes);
 
     enterprise::handle_get_schemas_ids_id_authz(rq, auth_result, subjects);
 
@@ -495,10 +484,18 @@ ss::future<ctx_server<service>::reply_t> get_schemas_ids_id_subjects(
     // Force early 40403 if the schema id isn't found
     co_await rq.service().schema_store().get_schema_definition(id);
 
-    auto subjects = to_non_context_subjects(
-      co_await rq.service().schema_store().get_schema_subjects(id, incl_del));
+    auto ctx_subjects
+      = co_await rq.service().schema_store().get_schema_subjects(id, incl_del);
 
-    auto resp = ppj::rjson_serialize_iobuf(std::move(subjects));
+    // Convert context_subject to qualified string format for JSON response
+    auto subjects_str = std::move(ctx_subjects) | std::views::as_rvalue
+                        | std::ranges::views::transform(
+                          [](context_subject&& ctx_sub) {
+                              return subject{ctx_sub.to_string()};
+                          })
+                        | std::ranges::to<chunked_vector<subject>>();
+
+    auto resp = ppj::rjson_serialize_iobuf(std::move(subjects_str));
     log_response(*rq.req, resp);
     rp.rep->write_body("json", ppj::as_body_writer(std::move(resp)));
     co_return rp;
@@ -518,14 +515,21 @@ ss::future<server::reply_t> get_subjects(
     // List-type request: must ensure we see latest writes
     co_await rq.service().writer().read_sync();
 
-    auto res = to_non_context_subjects(
-      co_await rq.service().schema_store().get_subjects(
-        inc_del, subject_prefix));
+    auto res = co_await rq.service().schema_store().get_subjects(
+      inc_del, subject_prefix);
 
     // Handle AuthZ - Filters res for the subjects the user is allowed to see
     enterprise::handle_get_subjects_authz(rq, auth_result, res);
 
-    auto resp = ppj::rjson_serialize_iobuf(std::move(res));
+    // Convert context_subject to qualified string format for JSON response
+    auto subjects_str = std::move(res) | std::views::as_rvalue
+                        | std::ranges::views::transform(
+                          [](context_subject&& ctx_sub) {
+                              return subject{ctx_sub.to_string()};
+                          })
+                        | std::ranges::to<chunked_vector<subject>>();
+
+    auto resp = ppj::rjson_serialize_iobuf(std::move(subjects_str));
     log_response(*rq.req, resp);
     rp.rep->write_body("json", ppj::as_body_writer(std::move(resp)));
     co_return rp;

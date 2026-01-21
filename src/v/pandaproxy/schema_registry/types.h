@@ -200,6 +200,9 @@ struct context_subject {
         return to_string().starts_with(prefix);
     }
 
+    /// Returns the qualified subject string for ACL authorization.
+    ss::sstring operator()() const { return to_string(); }
+
     /// Returns true if this represents a context-only identifier (empty
     /// subject). Used to distinguish context-level operations (like setting
     /// context-wide mode/config) from subject-level operations.

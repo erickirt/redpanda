@@ -1263,6 +1263,11 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def assert_in(self, member, container, msg=None):
         assert member in container, msg or f"{member!r} not found in {container!r}"
 
+    def assert_not_in(self, member, container, msg=None):
+        assert member not in container, (
+            msg or f"{member!r} unexpectedly found in {container!r}"
+        )
+
     def _get_rpk_tools(self):
         return RpkTool(self.redpanda)
 
@@ -8469,6 +8474,77 @@ class SchemaRegistryAclAuthzTest(SchemaRegistryEndpoints):
         result = self.sr_client.get_subjects(auth=self.user_auth)
         self.assert_equal(result.status_code, 200)
         self.assert_equal(result.json(), [])
+
+    @cluster(num_nodes=1)
+    def test_context_acl_prefix_authorization(self):
+        """
+        Test that prefix-based ACLs can authorize access to all subjects
+        within a context. Verifies that ACL on ':.staging:' (prefix) grants
+        access to all subjects in the .staging context.
+        """
+        schema_data = json.dumps({"schema": schema1_def})
+
+        # Create subjects in different contexts
+        staging_subject_1 = ":.staging:topic-1"
+        staging_subject_2 = ":.staging:topic-2"
+        prod_subject = ":.prod:topic-1"
+        default_subject = "topic-1"
+
+        # Register schemas in contexts (using superuser)
+        for subject in [
+            staging_subject_1,
+            staging_subject_2,
+            prod_subject,
+            default_subject,
+        ]:
+            result = self.sr_client.post_subjects_subject_versions(
+                subject=subject, data=schema_data, auth=self.super_auth
+            )
+            self.assert_equal(result.status_code, 200)
+
+        # No ACLs - should deny access to all subjects
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=staging_subject_1, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+        # Grant prefix ACL on .staging context - should allow all .staging subjects
+        self._post_acl(self._create_acl(":.staging:", "SUBJECT", "PREFIXED", "READ"))
+
+        # Should allow access to .staging subjects
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=staging_subject_1, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json(), [1])
+
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=staging_subject_2, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 200)
+        self.assert_equal(result.json(), [1])
+
+        # Should deny access to .prod subjects
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=prod_subject, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+        # Should deny access to default context subjects
+        result = self.sr_client.get_subjects_subject_versions(
+            subject=default_subject, auth=self.user_auth
+        )
+        self.assert_equal(result.status_code, 403)
+
+        # GET /subjects should filter correctly by context ACL
+        result = self.sr_client.get_subjects(auth=self.user_auth)
+        self.assert_equal(result.status_code, 200)
+        # Should return qualified subjects for .staging context
+        result_subjects = set(result.json())
+        self.assert_in(":.staging:topic-1", result_subjects)
+        self.assert_in(":.staging:topic-2", result_subjects)
+        self.assert_not_in(":.prod:topic-1", result_subjects)
+        self.assert_not_in("topic-1", result_subjects)
 
     @cluster(num_nodes=3)
     def test_enterprise_sanctions(self):
