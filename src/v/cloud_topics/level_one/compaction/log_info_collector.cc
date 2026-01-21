@@ -283,12 +283,22 @@ void log_info_collector::populate_log_infos(
         auto& compaction_info = it->second;
 
         if (!compaction_info.has_value()) {
-            vlog(
-              compaction_log.warn,
+            // Minimize logging on benign `missing_ntp` errors in case
+            // the `metastore` does not yet have any reconciled data for the log
+            // in question.
+            auto err = compaction_info.error();
+            auto lvl = err == metastore::errc::missing_ntp
+                           && !log.has_seen_reconciled_data
+                         ? ss::log_level::debug
+                         : ss::log_level::warn;
+
+            vlogl(
+              compaction_log,
+              lvl,
               "Failed to collect compaction info for CTP {} during compaction: "
               "{}",
               log.ntp,
-              compaction_info.error());
+              err);
             continue;
         }
 
