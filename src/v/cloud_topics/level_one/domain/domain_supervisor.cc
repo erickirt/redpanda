@@ -47,9 +47,19 @@ public:
     void on_domain_leadership_change(
       const model::ntp& ntp,
       ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition) {
+        std::optional<model::term_id> term;
+        if (partition) {
+            auto raft = partition->get()->raft();
+            vassert(
+              raft->is_leader(),
+              "Expected to be leader of {} with `partition` set",
+              ntp);
+            term = raft->term();
+        }
         _queue.submit(
-          [this, ntp = ntp, partition = std::move(partition)]() mutable {
-              return reset_domain_manager(std::move(ntp), std::move(partition));
+          [this, ntp = ntp, partition = std::move(partition), term]() mutable {
+              return reset_domain_manager(
+                std::move(ntp), std::move(partition), term);
           });
     }
 
@@ -245,15 +255,15 @@ private:
 
     ss::future<> reset_domain_manager(
       model::ntp ntp,
-      ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition) {
+      ss::optimized_optional<ss::lw_shared_ptr<cluster::partition>> partition,
+      std::optional<model::term_id> expected_term) {
         auto dm_id = domain_manager_id{ntp};
         auto dm_it = _domains.find(dm_id);
-        auto dm_exists = dm_it != _domains.end();
-        if (dm_exists) {
-            if (partition) {
-                // We already have a domain manager, there is nothing to do.
-                co_return;
-            }
+
+        // Unconditionally remove the domain manager if it exists. If it
+        // exists, it belongs to an older term and we need to have one domain
+        // manager open at a time.
+        if (dm_it != _domains.end()) {
             auto dm = std::move(dm_it->second);
             _domains.erase(dm_it);
             auto stop_fut = co_await ss::coroutine::as_future(
@@ -268,6 +278,24 @@ private:
             }
         }
         if (!partition) {
+            co_return;
+        }
+        vassert(
+          expected_term.has_value(),
+          "Expected call must be set of partition is set");
+        auto raft = partition->get()->raft();
+        if (!raft->is_leader() || raft->term() != *expected_term) {
+            // Only open a new domain manager if we're still in the expected
+            // term. If not, exit early and rely on a later queued call to open
+            // the domain manager for it. This helps ensure exactly one domain
+            // manager is opened per term, since we're expecting exacly one
+            // reset_domain_manager() call per term.
+            vlog(
+              cd_log.trace,
+              "No longer leader of {} term {}, current term: {}, exiting early",
+              dm_id,
+              *expected_term,
+              raft->term());
             co_return;
         }
         auto domain_mgr = ss::make_shared<simple_domain_manager>(
