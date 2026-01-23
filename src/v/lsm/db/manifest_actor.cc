@@ -16,15 +16,18 @@
 
 namespace lsm::db {
 
+using internal::operator""_file_id;
+
 ss::future<> manifest_actor::process(manifest_update_message msg) {
     vlog(log.trace, "manifest_actor_process_start");
     co_await _versions->log_and_apply(std::move(msg.edit));
     // TODO: only call GC actor when we delete a file. This requires
     // the GC actor still doing cleanup when it is not called.
+    auto safe_highest = _versions->min_uncommitted_file_id() - 1_file_id;
     _gc_actor->tell(
       gc_message{
-        .highest_used_file_id = _versions->highest_used_file_id(),
         .live_files = _versions->get_live_files(),
+        .safe_highest_file_id = safe_highest,
       });
     _write_callback();
     vlog(log.trace, "manifest_actor_process_end");

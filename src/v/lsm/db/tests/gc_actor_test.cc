@@ -92,7 +92,7 @@ TEST_F(GcActorTest, LiveFilesNotDeleted) {
     start_gc();
 
     lsm::db::gc_message msg;
-    msg.highest_used_file_id = 3_file_id;
+    msg.safe_highest_file_id = 3_file_id;
     msg.live_files.insert(fh1);
     msg.live_files.insert(fh2);
     msg.live_files.insert(fh3);
@@ -113,7 +113,7 @@ TEST_F(GcActorTest, UnusedFilesDeletedImmediatelyWithZeroDelay) {
     start_gc();
 
     lsm::db::gc_message msg;
-    msg.highest_used_file_id = 3_file_id;
+    msg.safe_highest_file_id = 3_file_id;
     msg.live_files.insert(fh1);
     msg.live_files.insert(fh3);
     _gc->tell(std::move(msg));
@@ -134,7 +134,7 @@ TEST_F(GcActorTest, FutureEpochFilesNotDeleted) {
     start_gc();
 
     lsm::db::gc_message msg;
-    msg.highest_used_file_id = 2_file_id;
+    msg.safe_highest_file_id = 2_file_id;
     _gc->tell(std::move(msg));
     tests::drain_task_queue().get();
 
@@ -156,7 +156,7 @@ TEST_F(GcActorTest, StopTrackingExternalDeletes) {
     start_gc();
 
     lsm::db::gc_message msg;
-    msg.highest_used_file_id = 3_file_id;
+    msg.safe_highest_file_id = 3_file_id;
     msg.live_files.insert(fh_2);
     msg.live_files.insert(fh_3);
     _gc->tell(std::move(msg));
@@ -169,7 +169,7 @@ TEST_F(GcActorTest, StopTrackingExternalDeletes) {
     _persistence->remove_file(fh_1).get();
 
     msg = {};
-    msg.highest_used_file_id = 3_file_id;
+    msg.safe_highest_file_id = 3_file_id;
     msg.live_files.insert(fh_3);
     _gc->tell(std::move(msg));
     tests::drain_task_queue().get();
@@ -179,7 +179,7 @@ TEST_F(GcActorTest, StopTrackingExternalDeletes) {
     EXPECT_EQ(_gc->pending_delete_count(), 1);
 
     msg = {};
-    msg.highest_used_file_id = 3_file_id;
+    msg.safe_highest_file_id = 3_file_id;
     msg.live_files.insert(fh_3);
     _gc->tell(std::move(msg));
     tests::drain_task_queue().get();

@@ -25,7 +25,8 @@ using internal::operator""_level;
 ss::future<> flush_actor::process(flush_message msg) {
     auto _ = ss::defer([this] { _active = false; });
     auto v = _versions->current();
-    auto id = _versions->new_file_id();
+    auto guard = _versions->new_file_id();
+    auto id = guard.id();
     auto& imm = msg.immutable_memtable;
     auto level = imm->empty()
                    ? 0_level
@@ -68,6 +69,7 @@ ss::future<> flush_actor::process(flush_message msg) {
       .oldest_seqno = result->oldest_seqno,
       .newest_seqno = result->newest_seqno,
     });
+    guard.cancel(); // Transfer ownership to manifest actor
     co_await _manifest_actor->tell(
       manifest_update_message{
         .edit = std::move(edit),

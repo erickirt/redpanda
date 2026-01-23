@@ -29,6 +29,35 @@
 
 namespace lsm::db {
 
+uncommitted_file_guard::uncommitted_file_guard(
+  version_set* vs, internal::file_id id)
+  : _vs(vs)
+  , _id(id) {
+    _vs->mark_file_in_flight(_id);
+}
+
+uncommitted_file_guard::uncommitted_file_guard(
+  uncommitted_file_guard&& other) noexcept
+  : _vs(std::exchange(other._vs, nullptr))
+  , _id(std::exchange(other._id, internal::file_id::min())) {}
+
+uncommitted_file_guard&
+uncommitted_file_guard::operator=(uncommitted_file_guard&& other) noexcept {
+    if (this != &other) {
+        _vs = std::exchange(other._vs, nullptr);
+        _id = std::exchange(other._id, internal::file_id::min());
+    }
+    return *this;
+}
+
+uncommitted_file_guard::~uncommitted_file_guard() {
+    if (_vs) {
+        _vs->mark_file_not_in_flight(_id);
+    }
+}
+
+void uncommitted_file_guard::cancel() { _vs = nullptr; }
+
 namespace {
 
 using internal::operator""_level;
@@ -535,7 +564,16 @@ ss::future<> version_set::log_and_apply(version_edit edit) {
       .last_seqno = updated_seqno,
       .epoch = _options->database_epoch,
     };
-    co_await write_manifest(std::move(m));
+    auto fut = co_await ss::coroutine::as_future(write_manifest(std::move(m)));
+    // Mark all added files as committed (no longer in-flight)
+    for (const auto& mutation : edit._mutations_by_level) {
+        for (const auto& file : mutation.added_files) {
+            _in_flight_file_ids.erase(file->handle.id);
+        }
+    }
+    if (fut.failed()) {
+        std::rethrow_exception(fut.get_exception());
+    }
     // Now that the new version is persisted successfully, install the new
     // version
     set_current(std::move(v));
@@ -794,6 +832,13 @@ chunked_hash_set<internal::file_handle> version_set::get_live_files() {
         }
     }
     return all_files;
+}
+
+internal::file_id version_set::min_uncommitted_file_id() const {
+    if (_in_flight_file_ids.empty()) {
+        return _next_file_id;
+    }
+    return *_in_flight_file_ids.begin();
 }
 
 bool compaction::is_trivial_move() const {

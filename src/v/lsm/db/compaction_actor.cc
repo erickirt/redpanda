@@ -58,6 +58,8 @@ struct compaction_state {
     // sequence numbers < S.
     internal::sequence_number smallest_snapshot;
     std::optional<sst::builder> builder;
+    // RAII guards for in-flight file IDs
+    chunked_vector<uncommitted_file_guard> guards;
     uint64_t total_bytes = 0;
 };
 
@@ -164,8 +166,10 @@ ss::future<> compaction_actor::process(compaction compaction) {
             last_seqno_for_key = key_seqno;
             if (!drop) {
                 if (!state.builder) {
-                    auto id = _versions->new_file_id();
+                    auto guard = _versions->new_file_id(); // Returns RAII guard
+                    auto id = guard.id(); // Extract ID from guard
                     vlog(log.trace, "compaction_start_new_file file_id={}", id);
+                    state.guards.push_back(std::move(guard)); // Store guard
                     co_await state.open_current_builder(
                       {
                         .id = id,
@@ -213,6 +217,10 @@ ss::future<> compaction_actor::process(compaction compaction) {
           .oldest_seqno = output.oldest,
           .newest_seqno = output.newest,
         });
+    }
+    for (auto& guard : state.guards) {
+        // Transfer file IDs to manifest actor
+        guard.cancel();
     }
     co_await _manifest_actor->tell(
       manifest_update_message{.edit = std::move(*edit)});

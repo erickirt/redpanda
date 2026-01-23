@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "absl/container/btree_set.h"
 #include "absl/container/fixed_array.h"
 #include "base/format_to.h"
 #include "lsm/core/internal/files.h"
@@ -26,6 +27,30 @@ namespace lsm::db {
 
 class version_set;
 class compaction;
+
+// RAII guard for in-flight file IDs.
+//
+// We must track uncommitted file IDs for garbage collection, otherwise
+// GC could accidently delete files that are in the process of being created.
+class uncommitted_file_guard {
+public:
+    uncommitted_file_guard(version_set* vs, internal::file_id id);
+    uncommitted_file_guard(const uncommitted_file_guard&) = delete;
+    uncommitted_file_guard& operator=(const uncommitted_file_guard&) = delete;
+    uncommitted_file_guard(uncommitted_file_guard&& other) noexcept;
+    uncommitted_file_guard& operator=(uncommitted_file_guard&& other) noexcept;
+    ~uncommitted_file_guard();
+
+    // Access the file ID
+    internal::file_id id() const { return _id; }
+
+    // Called when transferring responsibility to manifest actor
+    void cancel();
+
+private:
+    version_set* _vs; // nullptr if cancelled
+    internal::file_id _id;
+};
 
 // A single immutable version of the database.
 class version : public weak_intrusive_list<version> {
@@ -141,14 +166,13 @@ public:
     // Return the current version of this set.
     ss::lw_shared_ptr<version> current() { return _current; }
 
-    // Allocate a new file ID
-    internal::file_id new_file_id() { return _next_file_id++; }
-
-    // The highest allocated file ID.
-    internal::file_id highest_used_file_id() {
-        auto fid = _next_file_id;
-        fid--;
-        return fid;
+    // Allocate a new file ID.
+    //
+    // The returned guard automatically tracks the file as in-flight
+    // and cleans up on destruction unless cancel() is called.
+    uncommitted_file_guard new_file_id() {
+        auto id = _next_file_id++;
+        return {this, id};
     }
 
     // Reuse a file ID (for example because a write failed or operation was
@@ -186,12 +210,24 @@ public:
     // Get all the files that are currently being used by any live version.
     chunked_hash_set<internal::file_handle> get_live_files();
 
+    // Return the minimum file ID that is not yet committed.
+    internal::file_id min_uncommitted_file_id() const;
+
 private:
     friend class version;
     friend class compaction;
+    friend class uncommitted_file_guard;
 
     void set_current(ss::lw_shared_ptr<version>);
     void finalize(version*);
+
+    void mark_file_in_flight(internal::file_id id) {
+        _in_flight_file_ids.insert(id);
+    }
+
+    void mark_file_not_in_flight(internal::file_id id) {
+        _in_flight_file_ids.erase(id);
+    }
 
     struct manifest {
         ss::lw_shared_ptr<version> version;
@@ -211,6 +247,8 @@ private:
     internal::file_id _current_manifest_id;
     std::optional<internal::sequence_number> _last_seqno;
     absl::FixedArray<std::optional<internal::key>> _compact_pointer;
+    // Track in-flight file IDs. Uses btree_set for O(1) min() access.
+    absl::btree_set<internal::file_id> _in_flight_file_ids;
 };
 
 // Encapulate information about a compaction event.
