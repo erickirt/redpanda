@@ -52,7 +52,7 @@ public:
       : _mutations_by_level(options.levels.size()) {}
 
     version_edit(const version_edit&) = delete;
-    version_edit(version_edit&&) = default;
+    version_edit(version_edit&&) noexcept = default;
     version_edit& operator=(const version_edit&) = delete;
     version_edit& operator=(version_edit&& o) noexcept {
         if (this != &o) {

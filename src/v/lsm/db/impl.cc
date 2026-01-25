@@ -18,6 +18,8 @@
 #include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/logger.h"
 #include "lsm/core/internal/merging_iterator.h"
+#include "lsm/db/compaction_task.h"
+#include "lsm/db/flush_task.h"
 #include "lsm/db/iter.h"
 #include "lsm/io/persistence.h"
 #include "lsm/sst/block_cache.h"
@@ -34,6 +36,7 @@
 namespace lsm::db {
 
 using internal::operator""_level;
+using internal::operator""_file_id;
 
 impl::impl(ctor, io::persistence p, ss::lw_shared_ptr<internal::options> o)
   : _persistence(std::move(p))
@@ -49,15 +52,7 @@ impl::impl(ctor, io::persistence p, ss::lw_shared_ptr<internal::options> o)
       std::make_unique<version_set>(
         _persistence.metadata.get(), _table_cache.get(), _opts))
   , _gc_actor(_persistence.data.get(), _opts, _table_cache.get())
-  , _manifest_actor(_versions.get(), &_gc_actor, [this] { on_new_manifest(); })
-  , _flush_actor(
-      _opts, _persistence.data.get(), _versions.get(), &_manifest_actor)
-  , _compaction_actor(
-      _persistence.data.get(),
-      &_snapshots,
-      &_manifest_actor,
-      _versions.get(),
-      _opts) {}
+  , _manifest_write_mu("lsm::db::impl::manifest_write_mu") {}
 
 ss::future<std::unique_ptr<impl>> impl::open(
   ss::lw_shared_ptr<internal::options> opts, io::persistence persistence) {
@@ -76,9 +71,6 @@ ss::future<std::unique_ptr<impl>> impl::open(
         co_return db;
     }
     co_await db->_gc_actor.start();
-    co_await db->_flush_actor.start();
-    co_await db->_compaction_actor.start();
-    co_await db->_manifest_actor.start();
     vlog(log.trace, "open_end readonly=false");
     co_return db;
 }
@@ -249,9 +241,8 @@ ss::future<> impl::close() {
     vlog(log.trace, "close_start");
     _as.request_abort_ex(abort_requested_exception("database closing"));
     co_await _gc_actor.stop();
-    co_await _compaction_actor.stop();
-    co_await _flush_actor.stop();
-    co_await _manifest_actor.stop();
+    co_await std::exchange(_compaction_task, std::nullopt).value_or(ss::now());
+    co_await std::exchange(_flush_task, std::nullopt).value_or(ss::now());
     co_await _table_cache->close();
     co_await _persistence.data->close();
     co_await _persistence.metadata->close();
@@ -283,34 +274,110 @@ ss::future<> impl::recover() {
 }
 
 void impl::maybe_schedule_compaction() {
-    if (_flush_actor.is_idle() && _imm) {
-        _flush_actor.tell(flush_message{.immutable_memtable = *_imm});
+    if (_as.abort_requested()) {
+        return;
     }
-    if (_compaction_actor.is_idle() && _versions->needs_compaction()) {
-        _compaction_actor.tell(_versions->pick_compaction().value());
+    if (!_flush_task && _imm) {
+        vlog(log.trace, "flush_task_start");
+        auto task = do_flush().then_wrapped([this](ss::future<> f) {
+            if (f.failed()) {
+                auto ex = f.get_exception();
+                vlog(log.warn, "flush_task_end error=\"{}\"", ex);
+            } else {
+                // Notify all waiters that work has been finished.
+                _background_work_finished_signal.broadcast();
+                vlog(log.trace, "flush_task_end");
+            }
+            // Check and see if the new manifest we wrote requires compaction
+            // due to number files in L0 (or retry if there was an error).
+            _flush_task = std::nullopt;
+            maybe_schedule_compaction();
+        });
+        // It is possible in release mode tests that the above closure has
+        // executed already (because it's using in0memory IO). In this case we
+        // don't want to assign the flush task otherwise nothing would be able
+        // to remove it.
+        if (!task.available()) {
+            _flush_task = std::move(task);
+        }
+    }
+    if (!_compaction_task && _versions->needs_compaction()) {
+        vlog(log.trace, "compaction_task_start");
+        auto task = do_compaction().then_wrapped([this](ss::future<> f) {
+            if (f.failed()) {
+                auto ex = f.get_exception();
+                vlog(log.warn, "compaction_task_end error=\"{}\"", ex);
+            } else {
+                // Notify all waiters that work has been finished.
+                _background_work_finished_signal.broadcast();
+                vlog(log.trace, "compaction_task_end");
+            }
+            // Check and see if the new manifest we wrote requires compaction
+            // due to level size limits (or retry if there was an error).
+            _compaction_task = std::nullopt;
+            maybe_schedule_compaction();
+        });
+        if (!task.available()) {
+            _compaction_task = std::move(task);
+        }
     }
 }
 
-void impl::on_new_manifest() {
-    vlog(
-      log.trace,
-      "new_manifest_applied seqno={}",
-      max_persisted_seqno().value());
-    // Wait for the memtable to be applied
-    if (_imm && max_persisted_seqno() >= (*_imm)->last_seqno()) {
-        // Now that the new version has been applied, it's safe to remove the
-        // immutable memtable, as readers will pick up the new file instead.
-        //
-        // Note that it's possible for a reader to pick up both the memtable
-        // and the new version with the file. This is OK because all iterators
-        // deduplicate already.
-        _imm = std::nullopt;
+ss::future<> impl::apply_edits(version_edit edit) {
+    auto units = co_await _manifest_write_mu.get_units();
+    vlog(log.trace, "apply_edits_start");
+    auto fut = co_await ss::coroutine::as_future(
+      _versions->log_and_apply(std::move(edit)));
+    if (fut.failed()) {
+        auto ex = fut.get_exception();
+        vlog(log.warn, "apply_edits_end error=\"{}\"", ex);
+        std::rethrow_exception(ex);
     }
-    // Notify all waiters that work has been finished.
-    _background_work_finished_signal.broadcast();
-    // Check and see if the new manifest we wrote requires compaction due to
-    // level size limits.
-    maybe_schedule_compaction();
+    vlog(
+      log.trace, "apply_edits_end seqno={}", _versions->last_seqno().value());
+}
+
+ss::future<> impl::do_flush() {
+    if (!_imm) {
+        co_return;
+    }
+    auto edit = co_await run_flush_task(
+      _opts, _persistence.data.get(), _versions.get(), *_imm, &_as);
+    if (!edit) {
+        _imm = std::nullopt;
+        co_return;
+    }
+    co_await apply_edits(std::move(edit.value()));
+    // Now that the new version has been applied, it's safe to remove the
+    // immutable memtable, as readers will pick up the new file instead.
+    //
+    // Note that it's possible for a reader to pick up both the memtable
+    // and the new version with the file. This is OK because all iterators
+    // deduplicate already.
+    _imm = std::nullopt;
+}
+
+ss::future<> impl::do_compaction() {
+    auto compact = _versions->pick_compaction();
+    if (!compact) {
+        co_return;
+    }
+    auto edit = co_await run_compaction_task(
+      _persistence.data.get(),
+      &_snapshots,
+      _versions.get(),
+      _opts,
+      std::move(compact.value()),
+      &_as);
+    co_await apply_edits(std::move(edit));
+    // TODO: only call GC actor when we delete a file. This requires
+    // the GC actor still doing cleanup when it is not called.
+    auto safe_highest = _versions->min_uncommitted_file_id() - 1_file_id;
+    _gc_actor.tell(
+      gc_message{
+        .live_files = _versions->get_live_files(),
+        .safe_highest_file_id = safe_highest,
+      });
 }
 
 std::optional<internal::sequence_number> impl::max_persisted_seqno() const {

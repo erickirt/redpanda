@@ -795,7 +795,7 @@ version_set::make_input_iterator(compaction* c) {
         if (inputs.empty()) {
             continue;
         }
-        if (inputs == c->_inputs.front() && c->level() == 0_level) {
+        if (&inputs == &c->_inputs.front() && c->level() == 0_level) {
             for (auto& file : inputs) {
                 list.push_back(
                   co_await _table_cache->create_iterator(

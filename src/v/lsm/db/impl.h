@@ -15,16 +15,14 @@
 #include "lsm/core/internal/iterator.h"
 #include "lsm/core/internal/keys.h"
 #include "lsm/core/internal/options.h"
-#include "lsm/db/compaction_actor.h"
-#include "lsm/db/flush_actor.h"
 #include "lsm/db/gc_actor.h"
-#include "lsm/db/manifest_actor.h"
 #include "lsm/db/memtable.h"
 #include "lsm/db/snapshot.h"
 #include "lsm/db/table_cache.h"
 #include "lsm/db/version_set.h"
 #include "lsm/io/persistence.h"
 #include "ssx/condition_variable.h"
+#include "ssx/mutex.h"
 #include "ssx/time.h"
 
 #include <seastar/core/future.hh>
@@ -112,7 +110,9 @@ private:
 
     void maybe_schedule_compaction();
 
-    void on_new_manifest();
+    ss::future<> do_flush();
+    ss::future<> do_compaction();
+    ss::future<> apply_edits(version_edit);
 
     io::persistence _persistence;
     ss::lw_shared_ptr<internal::options> _opts;
@@ -125,11 +125,10 @@ private:
     ssx::condition_variable _background_work_finished_signal;
     ss::abort_source _as;
     snapshot_list _snapshots;
-
     gc_actor _gc_actor;
-    manifest_actor _manifest_actor;
-    flush_actor _flush_actor;
-    compaction_actor _compaction_actor;
+    ssx::mutex _manifest_write_mu;
+    std::optional<ss::future<>> _compaction_task;
+    std::optional<ss::future<>> _flush_task;
 };
 
 } // namespace lsm::db

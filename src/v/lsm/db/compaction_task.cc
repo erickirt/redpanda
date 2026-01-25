@@ -9,15 +9,14 @@
  * by the Apache License, Version 2.0
  */
 
-#include "lsm/db/compaction_actor.h"
+#include "lsm/db/compaction_task.h"
 
 #include "base/vlog.h"
 #include "lsm/core/exceptions.h"
 #include "lsm/core/internal/logger.h"
-#include "lsm/db/manifest_actor.h"
 #include "lsm/sst/builder.h"
 
-#include <seastar/util/defer.hh>
+#include <seastar/core/coroutine.hh>
 
 namespace lsm::db {
 
@@ -63,12 +62,15 @@ struct compaction_state {
     uint64_t total_bytes = 0;
 };
 
-} // namespace
-
 using internal::operator""_level;
 
-ss::future<> compaction_actor::process(compaction compaction) {
-    auto _ = ss::defer([this] { _active = false; });
+ss::future<version_edit> do_run_compaction_task(
+  io::data_persistence* persistence,
+  snapshot_list* snapshots,
+  version_set* versions,
+  ss::lw_shared_ptr<internal::options> opts,
+  compaction compaction,
+  ss::abort_source* as) {
     auto input_level = compaction.level();
     auto output_level = input_level + 1_level;
     auto num_input_files
@@ -98,8 +100,6 @@ ss::future<> compaction_actor::process(compaction compaction) {
           .oldest_seqno = file->oldest_seqno,
           .newest_seqno = file->newest_seqno,
         });
-        co_await _manifest_actor->tell(
-          manifest_update_message{.edit = std::move(*compaction.edit())});
         vlog(
           log.trace,
           "compaction_end input_level={} output_level={} output_files=1 "
@@ -107,7 +107,7 @@ ss::future<> compaction_actor::process(compaction compaction) {
           input_level,
           output_level,
           file->file_size);
-        co_return;
+        co_return std::move(*compaction.edit());
     }
     compaction_state state{
       // We need to preserve intermediate data between snapshots so we can
@@ -119,24 +119,24 @@ ss::future<> compaction_actor::process(compaction compaction) {
       // Note we can call `value` on `last_seqno` because we have to have
       // some
       // data in the database in order to trigger compaction.
-      .smallest_snapshot = _snapshots->oldest_seqno().value_or(
-        _versions->last_seqno().value()),
+      .smallest_snapshot = snapshots->oldest_seqno().value_or(
+        versions->last_seqno().value()),
     };
-    auto max_file_size = _opts->levels[output_level].max_file_size;
+    auto max_file_size = opts->levels[output_level].max_file_size;
     sst::builder::options sst_options{
-      .block_size = _opts->sst_block_size,
-      .filter_period = _opts->sst_filter_period,
-      .compression = _opts->levels[output_level].compression,
+      .block_size = opts->sst_block_size,
+      .filter_period = opts->sst_filter_period,
+      .compression = opts->levels[output_level].compression,
     };
     try {
-        auto input = co_await _versions->make_input_iterator(&compaction);
+        auto input = co_await versions->make_input_iterator(&compaction);
         std::optional<internal::key> current_key;
         internal::sequence_number last_seqno_for_key
           = internal::sequence_number::max();
         co_await input->seek_to_first();
-        while (input->valid() && !_as.abort_requested()) {
+        while (input->valid() && !as->abort_requested()) {
             auto key = input->key();
-            if (state.builder && compaction.should_stop_before(key)) {
+            if (compaction.should_stop_before(key) && state.builder) {
                 co_await state.finish_current_builder();
             }
             bool drop = false;
@@ -166,16 +166,16 @@ ss::future<> compaction_actor::process(compaction compaction) {
             last_seqno_for_key = key_seqno;
             if (!drop) {
                 if (!state.builder) {
-                    auto guard = _versions->new_file_id(); // Returns RAII guard
-                    auto id = guard.id(); // Extract ID from guard
+                    auto guard = versions->new_file_id();
+                    auto id = guard.id();
                     vlog(log.trace, "compaction_start_new_file file_id={}", id);
-                    state.guards.push_back(std::move(guard)); // Store guard
+                    state.guards.push_back(std::move(guard));
                     co_await state.open_current_builder(
                       {
                         .id = id,
-                        .epoch = _opts->database_epoch,
+                        .epoch = opts->database_epoch,
                       },
-                      _persistence,
+                      persistence,
                       sst_options);
                 }
                 auto& current = state.current_output();
@@ -201,7 +201,7 @@ ss::future<> compaction_actor::process(compaction compaction) {
     if (state.builder) {
         co_await state.finish_current_builder();
     }
-    _as.check(); // Do this after we clean up the builder
+    as->check(); // Do this after we clean up the builder
     if (state.err) {
         std::rethrow_exception(state.err);
     }
@@ -222,8 +222,6 @@ ss::future<> compaction_actor::process(compaction compaction) {
         // Transfer file IDs to manifest actor
         guard.cancel();
     }
-    co_await _manifest_actor->tell(
-      manifest_update_message{.edit = std::move(*edit)});
     vlog(
       log.trace,
       "compaction_end input_level={} output_level={} output_files={} "
@@ -232,10 +230,30 @@ ss::future<> compaction_actor::process(compaction compaction) {
       output_level,
       state.outputs.size(),
       state.total_bytes);
+    co_return std::move(*edit);
 }
 
-void compaction_actor::on_error(std::exception_ptr ex) noexcept {
-    vlog(log.warn, "compaction_end error=\"{}\"", ex);
+} // namespace
+
+ss::future<version_edit> run_compaction_task(
+  io::data_persistence* persistence,
+  snapshot_list* snapshots,
+  version_set* versions,
+  ss::lw_shared_ptr<internal::options> opts,
+  compaction compaction,
+  ss::abort_source* as) {
+    try {
+        co_return co_await do_run_compaction_task(
+          persistence,
+          snapshots,
+          versions,
+          std::move(opts),
+          std::move(compaction),
+          as);
+    } catch (...) {
+        vlog(log.warn, "compaction_end error=\"{}\"", std::current_exception());
+        throw;
+    }
 }
 
 } // namespace lsm::db

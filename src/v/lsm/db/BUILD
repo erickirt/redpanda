@@ -52,6 +52,8 @@ redpanda_cc_library(
         "impl.h",
     ],
     implementation_deps = [
+        ":compaction_task",
+        ":flush_task",
         ":iter",
         ":table_builder",
         ":version_edit",
@@ -60,10 +62,7 @@ redpanda_cc_library(
         "//src/v/lsm/sst:builder",
     ],
     deps = [
-        ":compaction_actor",
-        ":flush_actor",
         ":gc_actor",
-        ":manifest_actor",
         ":memtable",
         ":snapshot",
         ":table_cache",
@@ -80,6 +79,7 @@ redpanda_cc_library(
         "//src/v/lsm/sst:block_cache",
         "//src/v/ssx:clock",
         "//src/v/ssx:condition_variable",
+        "//src/v/ssx:mutex",
         "//src/v/ssx:time",
         "@seastar",
     ],
@@ -256,40 +256,17 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "manifest_actor",
+    name = "flush_task",
     srcs = [
-        "manifest_actor.cc",
+        "flush_task.cc",
     ],
     hdrs = [
-        "manifest_actor.h",
+        "flush_task.h",
     ],
     implementation_deps = [
         "//src/v/lsm/core/internal:logger",
     ],
     deps = [
-        ":gc_actor",
-        ":version_edit",
-        ":version_set",
-        "//src/v/base",
-        "//src/v/lsm/core/internal:options",
-        "//src/v/ssx:actor",
-        "@seastar",
-    ],
-)
-
-redpanda_cc_library(
-    name = "flush_actor",
-    srcs = [
-        "flush_actor.cc",
-    ],
-    hdrs = [
-        "flush_actor.h",
-    ],
-    implementation_deps = [
-        "//src/v/lsm/core/internal:logger",
-    ],
-    deps = [
-        ":manifest_actor",
         ":memtable",
         ":table_builder",
         ":version_set",
@@ -303,12 +280,12 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
-    name = "compaction_actor",
+    name = "compaction_task",
     srcs = [
-        "compaction_actor.cc",
+        "compaction_task.cc",
     ],
     hdrs = [
-        "compaction_actor.h",
+        "compaction_task.h",
     ],
     implementation_deps = [
         "//src/v/lsm/core:exceptions",
@@ -316,14 +293,12 @@ redpanda_cc_library(
         "//src/v/lsm/sst:builder",
     ],
     deps = [
-        ":manifest_actor",
         ":snapshot",
         ":version_set",
         "//src/v/base",
         "//src/v/lsm/core/internal:files",
         "//src/v/lsm/core/internal:options",
         "//src/v/lsm/io:persistence",
-        "//src/v/ssx:actor",
         "@seastar",
     ],
 )
