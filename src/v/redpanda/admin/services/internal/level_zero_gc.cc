@@ -109,4 +109,78 @@ level_zero_gc_service_impl::get_status(
     co_return response;
 }
 
+seastar::future<proto::admin::level_zero_gc::start_response>
+level_zero_gc_service_impl::start(
+  serde::pb::rpc::context ctx, proto::admin::level_zero_gc::start_request req) {
+    using namespace proto::admin::level_zero_gc;
+    auto [local, remote] = validate_request_routing(ctx, req);
+
+    start_response response;
+    if (local == apply_local::yes) {
+        co_await _gc->invoke_on_all(&cloud_topics::level_zero_gc::start);
+        auto& result = response.get_results().emplace_back();
+        result.set_node_id(_self);
+    }
+
+    if (remote == apply_remote::yes) {
+        auto results = co_await dispatch_and_collect<
+          start_request,
+          start_response,
+          start_result,
+          level_zero_gc_service_client>(
+          req,
+          [ctx](
+            level_zero_gc_service_client& cl,
+            model::node_id id,
+            const start_request&) {
+              start_request proxy_req;
+              proxy_req.set_node_id(id);
+              return cl.start(ctx, std::move(proxy_req));
+          },
+          [](start_response rsp) { return std::move(rsp.get_results()); });
+        response.get_results().reserve(
+          response.get_results().size() + results.size());
+        std::ranges::move(results, std::back_inserter(response.get_results()));
+    }
+
+    co_return response;
+}
+
+seastar::future<proto::admin::level_zero_gc::pause_response>
+level_zero_gc_service_impl::pause(
+  serde::pb::rpc::context ctx, proto::admin::level_zero_gc::pause_request req) {
+    using namespace proto::admin::level_zero_gc;
+    auto [local, remote] = validate_request_routing(ctx, req);
+
+    pause_response response;
+    if (local == apply_local::yes) {
+        co_await _gc->invoke_on_all(&cloud_topics::level_zero_gc::pause);
+        auto& result = response.get_results().emplace_back();
+        result.set_node_id(_self);
+    }
+
+    if (remote == apply_remote::yes) {
+        auto results = co_await dispatch_and_collect<
+          pause_request,
+          pause_response,
+          pause_result,
+          level_zero_gc_service_client>(
+          req,
+          [ctx](
+            level_zero_gc_service_client& cl,
+            model::node_id id,
+            const pause_request&) {
+              pause_request proxy_req;
+              proxy_req.set_node_id(id);
+              return cl.pause(ctx, std::move(proxy_req));
+          },
+          [](pause_response rsp) { return std::move(rsp.get_results()); });
+        response.get_results().reserve(
+          response.get_results().size() + results.size());
+        std::ranges::move(results, std::back_inserter(response.get_results()));
+    }
+
+    co_return response;
+}
+
 } // namespace admin

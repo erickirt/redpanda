@@ -31,6 +31,20 @@ service LevelZeroGcService {
             authz: SUPERUSER
         };
     }
+
+    // Starts GC workers on targeted node(s).
+    rpc Start(StartRequest) returns (StartResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
+
+    // Pauses GC workers on targeted node(s).
+    rpc Pause(PauseRequest) returns (PauseResponse) {
+        option (pbgen.rpc) = {
+            authz: SUPERUSER
+        };
+    }
 }
 
 // Request to query GC worker status.
@@ -57,6 +71,42 @@ message NodeStatus {
 message ShardStatus {
     int32 shard_id = 1;
     Status status = 2;
+}
+
+// Request to start GC workers.
+message StartRequest {
+    // Target a specific node, or omit to start on all nodes.
+    optional int32 node_id = 1;
+}
+
+// Aggregated start results from one or more nodes.
+message StartResponse {
+    repeated StartResult results = 1;
+}
+
+// Request to pause GC workers.
+message PauseRequest {
+    // Target a specific node, or omit to pause on all nodes.
+    optional int32 node_id = 1;
+}
+
+// Aggregated pause results from one or more nodes.
+message PauseResponse {
+    repeated PauseResult results = 1;
+}
+
+// Outcome of starting GC on a single node.
+message StartResult {
+    int32 node_id = 1;
+    // Set if the node could not be reached or returned an error.
+    optional string error = 3;
+}
+
+// Outcome of pausing GC on a single node.
+message PauseResult {
+    int32 node_id = 1;
+    // Set if the node could not be reached or returned an error.
+    optional string error = 3;
 }
 
 // GC worker lifecycle states.

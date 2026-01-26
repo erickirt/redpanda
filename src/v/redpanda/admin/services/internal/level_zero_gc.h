@@ -55,6 +55,14 @@ public:
         serde::pb::rpc::context,
         proto::admin::level_zero_gc::get_status_request) override;
 
+    seastar::future<proto::admin::level_zero_gc::start_response> start(
+      serde::pb::rpc::context,
+      proto::admin::level_zero_gc::start_request) override;
+
+    seastar::future<proto::admin::level_zero_gc::pause_response> pause(
+      serde::pb::rpc::context,
+      proto::admin::level_zero_gc::pause_request) override;
+
 private:
     using apply_local = ss::bool_class<struct apply_local_tag>;
     using apply_remote = ss::bool_class<struct apply_remote_tag>;
