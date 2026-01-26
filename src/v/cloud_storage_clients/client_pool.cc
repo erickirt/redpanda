@@ -241,6 +241,13 @@ ss::future<client_pool::client_lease> client_pool::acquire(
 
         while (!deadline_reached() && !_gate.is_closed()
                && !_as.abort_requested()) {
+            if (up_key != default_upstream_key) {
+                // For now, we don't implement client re-use for non-default
+                // upstreams. Just create a new client every time.
+                client = up->make_client(_as);
+                break;
+            }
+
             if (client.has_value()) {
                 if (!(*client)->is_valid()) {
                     vlog(
@@ -318,7 +325,7 @@ ss::future<client_pool::client_lease> client_pool::acquire(
                         _probe->register_borrow();
                     }
                     source_sid = sid;
-                    client = up->make_client();
+                    client = up->make_client(_as);
                 } else {
                     vlog(pool_log.debug, "can't borrow connection, waiting");
                     // In-between failing to borrow from local pool and failing
@@ -518,7 +525,7 @@ void client_pool::return_one(
 }
 
 void client_pool::emplace_idle(upstream_registry::handle& up) noexcept {
-    auto new_client = up->make_client();
+    auto new_client = up->make_client(_as);
     const client* raw_ptr = new_client.get();
     auto [it, inserted] = _idle_clients.emplace(
       raw_ptr, idle_entry(std::move(new_client)));

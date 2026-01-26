@@ -45,7 +45,20 @@ public:
     void prepare_stop();
     /// @}
 
-    client_ptr make_client() noexcept;
+    /// Create a client using the provided abort source.
+    ///
+    /// Client lifetime is decoupled from the upstream so that clients can
+    /// complete in-flight operations even if the upstream is evicted from the
+    /// registry.
+    ///
+    /// A client that outlives the upstream can finish in-flight operations but
+    /// new ones might fail i.e. because of outdated credentials.
+    /// client::is_valid can be used to check if the client is still valid for
+    /// new operations.
+    ///
+    /// Abort source must outlive the client. Abort status is checked
+    /// asynchronously.
+    client_ptr make_client(ss::abort_source& client_as) noexcept;
 
     void maybe_refresh_credentials();
     uint64_t token_refresh_count() const noexcept;
