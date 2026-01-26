@@ -143,13 +143,14 @@ public:
         }
         auto holder = _gate.hold();
         // Wait for space if mailbox is full
-        co_await _cv.wait(
-          [this] { return _as.abort_requested() || !is_full(); });
+        while (!_as.abort_requested() && is_full()) {
+            co_await _cv.wait();
+        }
         if (_as.abort_requested()) {
             co_return;
         }
         storage_traits::push(_mailbox, std::move(msg));
-        _cv.signal();
+        _cv.broadcast();
     }
 
     // Send a message. It drops the oldest message to make room (never blocks)
@@ -165,7 +166,7 @@ public:
             storage_traits::pop(_mailbox);
         }
         storage_traits::push(_mailbox, std::move(msg));
-        _cv.signal();
+        _cv.broadcast();
     }
 
     // Try to send a message without blocking, returns false if mailbox is full.
@@ -178,7 +179,7 @@ public:
             return false;
         }
         storage_traits::push(_mailbox, std::move(msg));
-        _cv.signal();
+        _cv.broadcast();
         return true;
     }
 
@@ -201,8 +202,9 @@ private:
 
     ss::future<> run() {
         while (true) {
-            co_await _cv.wait(
-              [this] { return _as.abort_requested() || !is_empty(); });
+            while (!_as.abort_requested() && is_empty()) {
+                co_await _cv.wait();
+            }
             if (_as.abort_requested()) {
                 co_return;
             }
