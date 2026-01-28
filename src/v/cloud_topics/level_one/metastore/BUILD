@@ -36,6 +36,32 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "manifest_io",
+    srcs = [
+        "manifest_io.cc",
+    ],
+    hdrs = [
+        "manifest_io.h",
+    ],
+    implementation_deps = [
+        "//src/v/cloud_storage_clients",
+        "//src/v/serde",
+        "//src/v/ssx:future_util",
+        "//src/v/utils:retry_chain_node",
+        "@fmt",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":metastore_manifest",
+        "//src/v/cloud_io:remote",
+        "//src/v/cloud_storage:remote_label",
+        "//src/v/model",
+        "//src/v/utils:detailed_error",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "garbage_collector",
     srcs = [
         "garbage_collector.cc",
