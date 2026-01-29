@@ -24,6 +24,50 @@
 
 namespace cluster::cloud_metadata {
 
+// Defines the order in which the recovery stages should be evaluated. This
+// should match the order of generated actions in get_actions().
+//
+// NOTE: unlike the enum values themselves, this is not persisted, and can be
+// used to add new enum values (which must be added to the end) that are
+// executed out of enum value order.
+int order(recovery_stage s) {
+    using enum recovery_stage;
+    switch (s) {
+    case initialized:
+        return 0;
+    case starting:
+        return 1;
+    case recovered_license:
+        return 2;
+    case recovered_cluster_config:
+        return 3;
+    case recovered_users:
+        return 4;
+    case recovered_acls:
+        return 5;
+    case recovered_remote_topic_data:
+        return 6;
+    case recovered_topic_data:
+        return 7;
+    case recovered_controller_snapshot:
+        return 8;
+    case recovered_offsets_topic:
+        return 9;
+    case recovered_tx_coordinator:
+        return 10;
+    case complete:
+        return 100;
+    case failed:
+        return 101;
+    }
+}
+
+// Returns whether, if currently in the given cur_stage, whether we still need
+// actions for the given target stage.
+bool needs_actions(recovery_stage cur_stage, recovery_stage target) {
+    return order(cur_stage) < order(target);
+}
+
 chunked_hash_set<ss::sstring>
 controller_snapshot_reconciler::properties_ignore_list() {
     chunked_hash_set<ss::sstring> ignore_list;
@@ -53,8 +97,8 @@ controller_snapshot_reconciler::get_actions(
     const auto& snap_license = snap.features.snap.license;
     auto existing_license = _feature_table.get_configured_license();
     if (
-      cur_stage < recovery_stage::recovered_license && !existing_license
-      && snap_license.has_value()) {
+      needs_actions(cur_stage, recovery_stage::recovered_license)
+      && !existing_license && snap_license.has_value()) {
         // If there is already a license, it's presumably more up-to-date than
         // whatever is in a snapshot. Otherwise, try using the license.
         actions.license = snap.features.snap.license.value();
@@ -63,7 +107,7 @@ controller_snapshot_reconciler::get_actions(
 
     const auto& snap_config = snap.config.values;
     auto ignore_list = properties_ignore_list();
-    if (cur_stage < recovery_stage::recovered_cluster_config) {
+    if (needs_actions(cur_stage, recovery_stage::recovered_cluster_config)) {
         for (const auto& [snap_k, snap_v] : snap_config) {
             if (ignore_list.contains(snap_k)) {
                 continue;
@@ -80,7 +124,7 @@ controller_snapshot_reconciler::get_actions(
         }
     }
 
-    if (cur_stage < recovery_stage::recovered_users) {
+    if (needs_actions(cur_stage, recovery_stage::recovered_users)) {
         const auto& snap_user_creds = snap.security.user_credentials;
         for (const auto& user : snap_user_creds) {
             if (!_creds.contains(user.username)) {
@@ -92,7 +136,7 @@ controller_snapshot_reconciler::get_actions(
         }
     }
 
-    if (cur_stage < recovery_stage::recovered_acls) {
+    if (needs_actions(cur_stage, recovery_stage::recovered_acls)) {
         const auto& snap_acls = snap.security.acls;
         for (const auto& binding : snap_acls) {
             // TODO: filter those that exist. For now, just pass in everything
@@ -117,7 +161,7 @@ controller_snapshot_reconciler::get_actions(
         }
     }
 
-    if (cur_stage < recovery_stage::recovered_topic_data) {
+    if (needs_actions(cur_stage, recovery_stage::recovered_topic_data)) {
         const auto& snap_tables = snap.topics.topics;
         for (const auto& [tp_ns, meta] : snap_tables) {
             const auto& tp_config = meta.metadata.configuration;
