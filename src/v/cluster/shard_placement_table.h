@@ -14,7 +14,6 @@
 #include "absl/container/node_hash_map.h"
 #include "base/format_to.h"
 #include "base/seastarx.h"
-#include "cluster/shard_placement_table_probe.h"
 #include "cluster/types.h"
 #include "container/chunked_hash_map.h"
 #include "ssx/mutex.h"
@@ -43,7 +42,7 @@ namespace cluster {
 class shard_placement_table
   : public ss::peering_sharded_service<shard_placement_table> {
 private:
-    using probe = shard_placement_table_probe;
+    class probe;
 
 public:
     // assignment modification methods must be called on this shard
@@ -268,7 +267,6 @@ public:
       const model::ntp& ntp,
       remake_partition_state remake_state,
       model::revision_id expected_log_rev);
-
 
 private:
     void assert_is_assignment_shard() const;
