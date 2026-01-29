@@ -89,6 +89,10 @@ log_and_convert(const replicated_database::error& e, std::string_view prefix) {
         ret = rpc::errc::timed_out;
         lvl = ss::log_level::warn;
         break;
+    case replicated_database::errc::update_rejected:
+        ret = rpc::errc::concurrent_requests;
+        lvl = ss::log_level::warn;
+        break;
     case replicated_database::errc::replication_error:
     case replicated_database::errc::not_leader:
         ret = rpc::errc::not_leader;
@@ -918,6 +922,7 @@ ss::future<std::expected<void, rpc::errc>> db_domain_manager::write_rows(
     case io_error:
         needs_step_down = true;
         break;
+    case update_rejected:
     case shutting_down:
     case not_leader:
         break;
