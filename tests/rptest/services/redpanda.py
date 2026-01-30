@@ -1275,6 +1275,7 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._usage_stats = UsageStats()
+        self._max_workers: int | None = None
 
     @property
     @abstractmethod
@@ -1405,10 +1406,9 @@ class RedpandaServiceABC(ABC, RedpandaServiceConstants):
         )
 
     def for_nodes(self, nodes: Collection[U], cb: Callable[[U], T]) -> list[T]:
-        n_workers = len(nodes)
-        if n_workers > 0:
+        if len(nodes) > 0:
             with concurrent.futures.ThreadPoolExecutor(
-                max_workers=n_workers
+                max_workers=self._max_workers
             ) as executor:
                 # The list() wrapper is to cause futures to be evaluated here+now
                 # (including throwing any exceptions) and not just spawned in background.
@@ -1796,6 +1796,10 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
         self.context = self._context = context
 
         super().__init__()
+
+        # Cloudv2 agents run on very small instances that can easily be
+        # overwhelmed by too many concurrent ssh sessions.
+        self._max_workers = 10
 
         self.config_profile_name = config_profile_name
         self._min_brokers = min_brokers
