@@ -1220,6 +1220,14 @@ class SchemaRegistryRedpandaClient:
             **kwargs,
         )
 
+    def get_contexts(self, headers: Headers = HTTP_GET_HEADERS, **kwargs: Any):
+        return self.request("GET", "contexts", headers=headers, **kwargs)
+
+    def delete_context(
+        self, context: str, headers: Headers = HTTP_DELETE_HEADERS, **kwargs: Any
+    ):
+        return self.request("DELETE", f"contexts/{context}", headers=headers, **kwargs)
+
     def create_acl(
         self,
         principal,
@@ -5517,6 +5525,66 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
             ),
         )
         self.assert_equal(result.status_code, 200)
+
+    @cluster(num_nodes=1)
+    def test_context_list_delete(self):
+        """Test GET /contexts and DELETE /contexts/{context} endpoints."""
+
+        # Initially, only the default context should be listed
+        result = self.sr_client.get_contexts()
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json(), ["."])
+
+        # Register a schema in a custom context
+        ctx = ".test-ctx"
+        ctx_subject = f":{ctx}:test-sub"
+
+        result = self.sr_client.post_subjects_subject_versions(
+            subject=ctx_subject, data=json.dumps({"schema": schema1_def})
+        )
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Now both contexts should be listed
+        result = self.sr_client.get_contexts()
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_in(".", result.json())
+        self.assert_in(ctx, result.json())
+
+        # Try to delete the custom context (should fail - not empty)
+        result = self.sr_client.delete_context(ctx)
+        self.assert_equal(result.status_code, 422)
+        self.assert_equal(result.json()["error_code"], 42211)
+
+        # Soft-delete the subject
+        result = self.sr_client.delete_subject(subject=ctx_subject)
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Try to delete context again (should still fail - has soft-deleted subjects)
+        result = self.sr_client.delete_context(ctx)
+        self.assert_equal(result.status_code, 422)
+        self.assert_equal(result.json()["error_code"], 42211)
+
+        # Permanently delete the subject
+        result = self.sr_client.delete_subject(subject=ctx_subject, permanent=True)
+        self.assert_equal(result.status_code, requests.codes.ok)
+
+        # Now delete the context (should succeed)
+        result = self.sr_client.delete_context(ctx)
+        self.assert_equal(result.status_code, 204)
+
+        # Only default context should remain
+        result = self.sr_client.get_contexts()
+        self.assert_equal(result.status_code, requests.codes.ok)
+        self.assert_equal(result.json(), ["."])
+
+        # Try to delete the default context (should fail with 422)
+        # Use URL-encoded dot (%2E) since "." has special meaning in URL paths
+        result = self.sr_client.delete_context("%2E")
+        self.assert_equal(result.status_code, 422)
+
+        # Try to delete a non-existent context (should fail with 404)
+        result = self.sr_client.delete_context(".nonexistent")
+        self.assert_equal(result.status_code, 404)
 
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
