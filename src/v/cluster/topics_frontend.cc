@@ -862,8 +862,18 @@ ss::future<topic_result> topics_frontend::do_create_topic(
       && _features.local().is_active(features::feature::remote_labels)
       && !config::shard_local_cfg()
             .cloud_storage_disable_remote_labels_for_tests.value()) {
-        auto remote_label = std::make_optional<cloud_storage::remote_label>(
-          _storage.local().get_cluster_uuid().value());
+        auto is_cloud_topic
+          = assignable_config.cfg.properties.cloud_topic_enabled;
+        auto ct_metastore_label
+          = _topics.local()
+              .get_topic_metadata_ref(model::l1_metastore_nt)
+              .and_then([](const topic_metadata& m) {
+                  return m.get_configuration().properties.remote_label;
+              });
+        auto remote_label = is_cloud_topic && ct_metastore_label
+                              ? *ct_metastore_label
+                              : cloud_storage::remote_label(
+                                  _storage.local().get_cluster_uuid().value());
         assignable_config.cfg.properties.remote_label = remote_label;
         vlog(
           clusterlog.debug,
