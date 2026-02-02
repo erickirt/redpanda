@@ -12,6 +12,7 @@
 #include "config/configuration.h"
 #include "kafka/server/client_quota_translator.h"
 #include "kafka/server/quota_manager.h"
+#include "test_utils/async.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
@@ -121,7 +122,17 @@ SEASTAR_THREAD_TEST_CASE(quota_manager_fetch_throttling) {
     qm.record_fetch_tp(user, cid, 10, now).get();
     delay = qm.throttle_fetch_tp(user, cid, now).get();
 
-    BOOST_CHECK_GT(delay, 0ms);
+    // Spin until the correct throttling is returned.
+    {
+        auto wait_until_throttle = [now, &qm, &delay] {
+            return tests::cooperative_spin_wait_with_timeout(
+              5s, [now, &qm, &delay] {
+                  delay = qm.throttle_fetch_tp(user, cid, now).get();
+                  return delay > 0ms;
+              });
+        };
+        wait_until_throttle().get();
+    }
 
     // Test that once we wait out the throttling delay, we don't
     // throttle again (as long as we stay under the limit)
@@ -272,6 +283,20 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         auto delay = f.sqm.local()
                        .record_produce_tp_and_throttle(user, client_id, 1, now)
                        .get();
+        // Spin until the correct throttling is returned.
+        {
+            auto wait_until_throttle = [now, &f, &delay, client_id] {
+                return tests::cooperative_spin_wait_with_timeout(
+                  5s, [now, &f, &delay, client_id] {
+                      delay = f.sqm.local()
+                                .record_produce_tp_and_throttle(
+                                  user, client_id, 0, now)
+                                .get();
+                      return delay > 0ms;
+                  });
+            };
+            wait_until_throttle().get();
+        }
         BOOST_CHECK_EQUAL(delay / 1ms, 1000);
     }
 
@@ -302,6 +327,19 @@ SEASTAR_THREAD_TEST_CASE(update_test) {
         BOOST_REQUIRE(it->second->tp_fetch_rate.has_value());
         auto delay
           = f.sqm.local().throttle_fetch_tp(user, client_id, now).get();
+        // Spin until the correct throttling is returned.
+        {
+            auto wait_until_throttle = [now, &f, &delay, client_id] {
+                return tests::cooperative_spin_wait_with_timeout(
+                  5s, [now, &f, &delay, client_id] {
+                      delay = f.sqm.local()
+                                .throttle_fetch_tp(user, client_id, now)
+                                .get();
+                      return delay > 0ms;
+                  });
+            };
+            wait_until_throttle().get();
+        }
         BOOST_CHECK_EQUAL(delay / 1ms, 1000);
 
         // Check the new produce rate now applies
@@ -481,9 +519,21 @@ SEASTAR_THREAD_TEST_CASE(test_increasing_specificity) {
             f.quota_store.local().set_quota(tc.ekey, quota);
 
             // Record zero bytes to update the global map to new rates
-            const delays d = make_records(now, zero_bytes);
-            // Sanity check: Zero byte-requests should not be throttled
-            BOOST_REQUIRE_EQUAL(d, no_delay);
+            delays d = make_records(now, zero_bytes);
+
+            // Spin until the correct throttling is returned. The token buckets
+            // are updated through a relaxed memory model. There is some
+            // uncertainty involved here
+            {
+                auto wait_until_throttle = [now, &make_records, &d] {
+                    return tests::cooperative_spin_wait_with_timeout(
+                      5s, [now, &make_records, &d] {
+                          d = make_records(now, zero_bytes);
+                          return d == no_delay;
+                      });
+                };
+                wait_until_throttle().get();
+            }
 
             // Verify that all rates have been updated
             auto it = buckets_map->find(tc.tkey);
@@ -507,6 +557,20 @@ SEASTAR_THREAD_TEST_CASE(test_increasing_specificity) {
               {2 * max_rate.produce_bytes,
                2 * max_rate.consume_bytes,
                2 * max_rate.n_mutations});
+
+            // Spin until the correct throttling is returned.
+            {
+                auto wait_until_throttle = [now, &make_records, &throttle] {
+                    return tests::cooperative_spin_wait_with_timeout(
+                      5s, [now, &make_records, &throttle] {
+                          throttle = make_records(now, zero_bytes);
+                          return throttle.produce_delay > 0s
+                                 && throttle.consume_delay > 0s
+                                 && throttle.pm_delay > 0s;
+                      });
+                };
+                wait_until_throttle().get();
+            }
 
             BOOST_REQUIRE_EQUAL(throttle, one_sec);
         }
