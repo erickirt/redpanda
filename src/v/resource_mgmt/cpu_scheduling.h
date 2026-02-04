@@ -127,6 +127,11 @@ public:
          */
         _cloud_topics_compaction = co_await ss::create_scheduling_group(
           "cloud_topics_compaction", 150);
+        /**
+         * Cloud topics reconciler scheduling group.
+         */
+        _cloud_topics_reconciler = co_await ss::create_scheduling_group(
+          "cloud_topics_reconciler", 150);
     }
 
     ss::scheduling_group admin_sg() { return _admin; }
@@ -170,6 +175,10 @@ public:
 
     ss::scheduling_group cluster_linking_sg() { return _cluster_linking; }
 
+    ss::scheduling_group cloud_topics_reconciler_sg() {
+        return _cloud_topics_reconciler;
+    }
+
     std::vector<std::reference_wrapper<const ss::scheduling_group>>
     all_scheduling_groups() const {
         return {
@@ -190,7 +199,8 @@ public:
           std::cref(_produce),
           std::cref(_ts_read),
           std::cref(_cluster_linking),
-          std::cref(_cloud_topics_compaction)};
+          std::cref(_cloud_topics_compaction),
+          std::cref(_cloud_topics_reconciler)};
     }
 
 private:
@@ -215,4 +225,5 @@ private:
     ss::scheduling_group _ts_read;
     ss::scheduling_group _cluster_linking;
     ss::scheduling_group _cloud_topics_compaction;
+    ss::scheduling_group _cloud_topics_reconciler;
 };
