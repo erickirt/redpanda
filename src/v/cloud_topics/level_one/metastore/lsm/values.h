@@ -28,8 +28,8 @@ struct metadata_row_value
     kafka::offset start_offset{};
     kafka::offset next_offset{};
     partition_state::compaction_epoch_t compaction_epoch{0};
-    // Rolled-up estimate of the partition's size in bytes, updated
-    // incrementally as extents are added/removed.
+    // Partition's size in bytes, updated incrementally as extents are
+    // added/removed.
     size_t size{0};
 };
 
