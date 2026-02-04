@@ -48,6 +48,7 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+            WORKFLOW RUN URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
             Please review this pull request with a focus on:
               - Code quality and best practices
@@ -56,3 +57,4 @@ jobs:
               - Performance considerations
 
             Provide detailed feedback using inline comments for specific issues.
+            Include a link to workflow run URL in the final review comment.
