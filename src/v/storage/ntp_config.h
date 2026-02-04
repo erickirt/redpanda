@@ -250,19 +250,37 @@ public:
     }
 
     bool is_archival_enabled() const {
-        if (cloud_topic_enabled()) {
+        if (_overrides == nullptr) {
             return false;
         }
-        return _overrides != nullptr && _overrides->shadow_indexing_mode
+        // Explicit tiered
+        if (_overrides->storage_mode == model::redpanda_storage_mode::tiered) {
+            return true;
+        }
+        // Explicit local or cloud
+        if (_overrides->storage_mode != model::redpanda_storage_mode::unset) {
+            return false;
+        }
+        // Unset, fall back to legacy shadow_indexing
+        return _overrides->shadow_indexing_mode
                && model::is_archival_enabled(
                  _overrides->shadow_indexing_mode.value());
     }
 
     bool is_remote_fetch_enabled() const {
-        if (cloud_topic_enabled()) {
+        if (_overrides == nullptr) {
             return false;
         }
-        return _overrides != nullptr && _overrides->shadow_indexing_mode
+        // Explicit tiered
+        if (_overrides->storage_mode == model::redpanda_storage_mode::tiered) {
+            return true;
+        }
+        // Explicit local or cloud
+        if (_overrides->storage_mode != model::redpanda_storage_mode::unset) {
+            return false;
+        }
+        // Unset, fall back to legacy shadow_indexing
+        return _overrides->shadow_indexing_mode
                && model::is_fetch_enabled(
                  _overrides->shadow_indexing_mode.value());
     }
@@ -289,13 +307,23 @@ public:
      * both reads and writes to S3, and is not a read replica.
      */
     bool is_tiered_storage() const {
-        if (cloud_topic_enabled()) {
+        if (_overrides == nullptr) {
             return false;
         }
-        return _overrides != nullptr
-               && !_overrides->read_replica.value_or(false)
-               && _overrides->shadow_indexing_mode
-                    == model::shadow_indexing_mode::full;
+        if (_overrides->read_replica.value_or(false)) {
+            return false;
+        }
+        // Explicit tiered
+        if (_overrides->storage_mode == model::redpanda_storage_mode::tiered) {
+            return true;
+        }
+        // Explicit local or cloud
+        if (_overrides->storage_mode != model::redpanda_storage_mode::unset) {
+            return false;
+        }
+        // Unset, fall back to legacy shadow_indexing
+        return _overrides->shadow_indexing_mode
+               == model::shadow_indexing_mode::full;
     }
 
     bool remote_delete() const {
@@ -367,10 +395,7 @@ public:
             // 2) this prefix is truncated away locally
             // 3) correspondent tombstone (or tx end marker) is compacted away
             // locally.
-            if (
-              _overrides->shadow_indexing_mode.has_value()
-              && _overrides->shadow_indexing_mode.value()
-                   != model::shadow_indexing_mode::disabled) {
+            if (is_archival_enabled() || is_remote_fetch_enabled()) {
                 return std::nullopt;
             }
         }
