@@ -13,6 +13,7 @@
 #include "bytes/iostream.h"
 #include "bytes/streambuf.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/topic_manifest_state.h"
 #include "cloud_storage/topic_path_provider.h"
 #include "cloud_storage/types.h"
 #include "json/encodings.h"
@@ -35,29 +36,6 @@
 #include <optional>
 #include <stdexcept>
 #include <string_view>
-
-namespace {
-// topic manifest state is a serde-friendly representation of
-// topic_manifest. it will allow to evolve the manifest without pushing
-// fields to topic_properties, if the need arises
-struct topic_manifest_state
-  : public serde::envelope<
-      topic_manifest_state,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    cluster::topic_configuration cfg;
-    // note: initial_revision will be used to initialize
-    // cfg.properties.remote_topic_properties.initial_revision, but keep it
-    // separate here to mirror the old behavior.
-
-    model::initial_revision_id initial_revision;
-
-    auto serde_fields() { return std::tie(cfg, initial_revision); }
-
-    bool operator==(const topic_manifest_state&) const = default;
-};
-
-} // namespace
 
 namespace cloud_storage {
 

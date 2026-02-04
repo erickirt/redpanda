@@ -14,6 +14,21 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "topic_manifest_state",
+    hdrs = [
+        "topic_manifest_state.h",
+    ],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        "//src/v/cluster:topic_configuration",
+        "//src/v/model",
+        "//src/v/serde",
+    ],
+)
+
+redpanda_cc_library(
     name = "topic_mount_manifest_path",
     srcs = [
         "topic_mount_manifest_path.cc",
@@ -161,6 +176,7 @@ redpanda_cc_library(
         "tx_range_manifest.h",
     ],
     implementation_deps = [
+        ":topic_manifest_state",
         "//src/v/json",
         "@rapidjson",
     ],
