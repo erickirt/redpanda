@@ -863,6 +863,7 @@ level_zero_gc::do_try_to_collect(std::optional<cluster_epoch>& max_gc_epoch) {
               object.key,
               object.last_modified,
               max_gc_birthday);
+            probe_.object_skipped_too_young();
             continue;
         }
 

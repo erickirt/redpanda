@@ -52,6 +52,13 @@ void level_zero_gc_probe::setup_internal_metrics(bool disable) {
             "epoch."),
           labels),
         sm::make_counter(
+          "objects_skipped_too_young_total",
+          [this] { return objects_skipped_too_young_; },
+          sm::description(
+            "L0 objects skipped because they are younger than the "
+            "deletion grace period."),
+          labels),
+        sm::make_counter(
           "list_errors_total",
           [this] { return list_errors_; },
           sm::description(
