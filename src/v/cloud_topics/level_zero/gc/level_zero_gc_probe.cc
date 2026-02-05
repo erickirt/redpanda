@@ -59,6 +59,11 @@ void level_zero_gc_probe::setup_internal_metrics(bool disable) {
             "deletion grace period."),
           labels),
         sm::make_counter(
+          "collection_rounds_total",
+          [this] { return collection_rounds_; },
+          sm::description("Number of completed L0 garbage collection rounds."),
+          labels),
+        sm::make_counter(
           "list_errors_total",
           [this] { return list_errors_; },
           sm::description(

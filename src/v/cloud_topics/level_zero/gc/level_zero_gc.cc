@@ -727,6 +727,7 @@ level_zero_gc::try_to_collect() {
     std::optional<cluster_epoch> max_gc_epoch;
     size_t total_eligible{0};
     probe_.reset_deletion_epoch();
+    probe_.collection_round();
     while (delete_worker_->has_capacity()) {
         auto res = co_await do_try_to_collect(std::ref(max_gc_epoch));
         if (!res.has_value()) {

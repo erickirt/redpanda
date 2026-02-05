@@ -27,6 +27,7 @@ public:
     void objects_listed(uint64_t count) { objects_listed_ += count; }
     void object_skipped_not_eligible() { objects_skipped_not_eligible_++; }
     void object_skipped_too_young() { objects_skipped_too_young_++; }
+    void collection_round() { collection_rounds_++; }
     void list_error() { list_errors_++; }
     void delete_error() { delete_errors_++; }
     void set_max_gc_eligible_epoch(cluster_epoch epoch) {
@@ -46,6 +47,7 @@ private:
     uint64_t objects_listed_{0};
     uint64_t objects_skipped_not_eligible_{0};
     uint64_t objects_skipped_too_young_{0};
+    uint64_t collection_rounds_{0};
     uint64_t list_errors_{0};
     uint64_t delete_errors_{0};
 
