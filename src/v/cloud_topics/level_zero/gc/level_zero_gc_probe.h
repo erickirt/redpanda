@@ -21,11 +21,15 @@ public:
     explicit level_zero_gc_probe(bool disable);
 
     void objects_deleted(uint64_t count = 1) { objects_deleted_ += count; }
+    void list_error() { list_errors_++; }
+    void delete_error() { delete_errors_++; }
 
 private:
     void setup_internal_metrics(bool disable);
 
     uint64_t objects_deleted_{0};
+    uint64_t list_errors_{0};
+    uint64_t delete_errors_{0};
 
     metrics::internal_metric_groups _metrics;
 };

@@ -147,6 +147,7 @@ public:
                           cd_log.info,
                           "Received an error deleting L0 data objects: {}",
                           res.error());
+                        probe_->delete_error();
                     } else {
                         probe_->objects_deleted(num_eligible);
                         vlog(
@@ -182,6 +183,7 @@ private:
         auto list_result = co_await storage_->list_objects(
           &as_, curr_prefix_, std::exchange(continuation_token_, std::nullopt));
         if (!list_result.has_value()) {
+            probe_->list_error();
             co_return std::unexpected{list_result.error()};
         }
 
