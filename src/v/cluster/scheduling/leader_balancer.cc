@@ -632,12 +632,12 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
 
     auto muted_nodes = collect_muted_nodes(health_report.value());
 
-    std::unique_ptr<leader_balancer_strategy> strategy
-      = std::make_unique<leader_balancer_types::random_hill_climbing_strategy>(
-        std::move(index),
-        std::move(group_id_to_topic),
-        leader_balancer_types::muted_index{std::move(muted_nodes), {}},
-        std::move(preference_index));
+    std::unique_ptr<leader_balancer_strategy> strategy = std::make_unique<
+      leader_balancer_types::calibrated_hill_climbing_strategy>(
+      std::move(index),
+      std::move(group_id_to_topic),
+      leader_balancer_types::muted_index{std::move(muted_nodes), {}},
+      std::move(preference_index));
 
     auto cores = strategy->stats();
 
