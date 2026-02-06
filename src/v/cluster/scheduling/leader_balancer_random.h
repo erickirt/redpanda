@@ -20,8 +20,13 @@
 #include "raft/fundamental.h"
 #include "random/generators.h"
 
+#include <algorithm>
+#include <cmath>
+#include <compare>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <variant>
@@ -273,6 +278,207 @@ private:
     std::optional<reassignment> generate_reassignment() {
         return this->_reassignments.generate_reassignment();
     }
+};
+
+/// An adaptive hill-climbing strategy that raises the acceptance bar over
+/// time so it preferentially selects high-impact moves. This makes the strategy
+/// spend its early iterations on the most impactful transfers and reduce
+/// repeated moves.
+///
+/// It uses the same hierarchical objective evaluation as
+/// random_hill_climbing_strategy (pinning > shard load > node load),
+/// but runs it in a recalibration loop:
+///   1. Sample ~100 random improving moves and record the best score.
+///   2. Set a threshold at 50 % of that best score.
+///   3. Accept only moves above the threshold until ~100 sub-threshold
+///      (but otherwise improving) moves have been rejected, then
+///      recalibrate.
+class calibrated_hill_climbing_strategy final
+  : public climbing_strategy_base<calibrated_hill_climbing_strategy> {
+    friend base;
+
+public:
+    using base::base;
+
+    /*
+     * Find a group reassignment that reduces total error.
+     */
+    std::optional<reassignment>
+    find_movement(const leader_balancer_types::muted_groups_t& skip) override {
+        // attempt to find a movement under existing calibration
+        if (auto maybe_movement = do_find_movement(skip)) {
+            return maybe_movement;
+        }
+
+        // nothing found under current calibration, recalibrate
+        calibrate(skip);
+
+        // freshly recalibrated, so a not found result will be final
+        return do_find_movement(skip);
+    }
+
+private:
+    struct reassignment_score {
+        double pinning_diff;
+        double shard_load_diff;
+        double node_load_diff;
+
+        std::partial_ordering
+        operator<=>(const reassignment_score& other) const noexcept {
+            if (
+              std::fabs(pinning_diff) > error_jitter
+              || std::fabs(other.pinning_diff) > error_jitter) {
+                return pinning_diff <=> other.pinning_diff;
+            }
+            if (
+              std::fabs(shard_load_diff) > error_jitter
+              || std::fabs(other.shard_load_diff) > error_jitter) {
+                return shard_load_diff <=> other.shard_load_diff;
+            }
+            if (
+              std::fabs(node_load_diff) > error_jitter
+              || std::fabs(other.node_load_diff) > error_jitter) {
+                return node_load_diff <=> other.node_load_diff;
+            }
+            return std::partial_ordering::equivalent;
+        }
+
+        bool operator==(const reassignment_score& other) const& noexcept {
+            return (*this <=> other) == std::partial_ordering::equivalent;
+        }
+    };
+
+    static constexpr reassignment_score worst_score{
+      .pinning_diff = std::numeric_limits<double>::lowest(),
+      .shard_load_diff = std::numeric_limits<double>::lowest(),
+      .node_load_diff = std::numeric_limits<double>::lowest(),
+    };
+
+    struct calibration {
+        reassignment_score min_acceptable_score;
+        size_t remaining_rejections;
+    };
+    static constexpr calibration allow_all_calibration = {
+      .min_acceptable_score = worst_score,
+      .remaining_rejections = std::numeric_limits<size_t>::max(),
+    };
+    static constexpr calibration block_all_calibration = {
+      .min_acceptable_score = worst_score,
+      .remaining_rejections = 0,
+    };
+
+    void calibrate(const leader_balancer_types::muted_groups_t& skip) {
+        // take the best of 100 samples, demand at least half that score
+        constexpr size_t sample_size = 100;
+        constexpr double adjustment_coeff = 0.5;
+        // and use this bar till it's a problem for 100 potential moves
+        constexpr size_t max_rejections_per_calibration = sample_size;
+
+        // de-calibrate temporarily to sample broadly
+        set_calibration(allow_all_calibration);
+
+        reassignment_score best_in_sample = worst_score;
+        for (size_t i = 0; i < sample_size; ++i) {
+            auto maybe_movement = do_find_movement_with_score(skip);
+            if (!maybe_movement) {
+                break;
+            }
+            best_in_sample = std::max(best_in_sample, maybe_movement->score);
+        }
+
+        if (best_in_sample == worst_score) {
+            set_calibration(block_all_calibration);
+        } else {
+            reassignment_score adjusted = {
+              .pinning_diff = adjustment_coeff * best_in_sample.pinning_diff,
+              .shard_load_diff = adjustment_coeff
+                                 * best_in_sample.shard_load_diff,
+              .node_load_diff = adjustment_coeff
+                                * best_in_sample.node_load_diff,
+            };
+            set_calibration(
+              {.min_acceptable_score = adjusted,
+               .remaining_rejections = max_rejections_per_calibration});
+        }
+    }
+
+    void set_calibration(const calibration& c) {
+        _calibration = c;
+        _reassignments.reset();
+    }
+
+    std::optional<reassignment>
+    do_find_movement(const leader_balancer_types::muted_groups_t& skip) {
+        return do_find_movement_without_score(skip);
+    }
+
+    // returns score if reassignment is acceptable, nullopt otherwise
+    std::optional<reassignment_score>
+    get_reassignment_score(const reassignment& r) {
+        const auto& mas = _calibration.min_acceptable_score;
+
+        // A variant of random_hill_climbing_strategy::get_reassignment_score
+        // that takes calibration into account. It only decreases remaining
+        // attempts when a reassignment would not be viable without calibration.
+        if (_pinning_constr) {
+            auto pinning_diff = _pinning_constr->evaluate(r);
+            if (pinning_diff < -error_jitter) {
+                return std::nullopt;
+            } else if (
+              pinning_diff > error_jitter && pinning_diff > mas.pinning_diff) {
+                return {
+                  {.pinning_diff = pinning_diff,
+                   .shard_load_diff = 0,
+                   .node_load_diff = 0}};
+            }
+        }
+        if (mas.pinning_diff > error_jitter) {
+            --_calibration.remaining_rejections;
+            return std::nullopt;
+        }
+
+        auto shard_load_diff = _etdc.evaluate(r) + _eslc.evaluate(r);
+        if (shard_load_diff < -error_jitter) {
+            return std::nullopt;
+        } else if (
+          shard_load_diff > error_jitter
+          && shard_load_diff > mas.shard_load_diff) {
+            return {
+              {.pinning_diff = 0,
+               .shard_load_diff = shard_load_diff,
+               .node_load_diff = 0}};
+        }
+        if (mas.shard_load_diff > error_jitter) {
+            --_calibration.remaining_rejections;
+            return std::nullopt;
+        }
+
+        auto node_load_diff = _enlc.evaluate(r);
+        if (node_load_diff < -error_jitter) {
+            return std::nullopt;
+        } else if (
+          node_load_diff > error_jitter
+          && node_load_diff > mas.node_load_diff) {
+            return {
+              {.pinning_diff = 0,
+               .shard_load_diff = 0,
+               .node_load_diff = node_load_diff}};
+        }
+        if (mas.node_load_diff > error_jitter) {
+            --_calibration.remaining_rejections;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<reassignment> generate_reassignment() {
+        if (_calibration.remaining_rejections == 0) {
+            return std::nullopt;
+        }
+        return _reassignments.generate_reassignment();
+    }
+
+    // force recalibration on first run
+    calibration _calibration = block_all_calibration;
 };
 
 } // namespace cluster::leader_balancer_types
