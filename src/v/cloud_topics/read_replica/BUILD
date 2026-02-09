@@ -3,6 +3,19 @@ load("//bazel:build.bzl", "redpanda_cc_library")
 package(default_visibility = ["//src/v/cloud_topics/read_replica:__subpackages__"])
 
 redpanda_cc_library(
+    name = "partition_metadata",
+    hdrs = [
+        "partition_metadata.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/cloud_storage_clients",
+        "//src/v/model",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "snapshot_metastore",
     srcs = [
         "snapshot_metastore.cc",
