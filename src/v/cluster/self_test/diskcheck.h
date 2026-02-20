@@ -24,7 +24,6 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/io_intent.hh>
 #include <seastar/core/lowres_clock.hh>
 
 #include <chrono>

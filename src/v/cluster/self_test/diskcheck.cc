@@ -47,12 +47,8 @@ uint64_t get_next_pos(uint64_t pos, const diskcheck_opts& opts) {
 }
 
 ss::future<size_t> write_and_maybe_flush(
-  ss::file& file,
-  uint64_t pos,
-  const std::vector<iovec>& iov,
-  bool dsync,
-  ss::io_intent* intent) {
-    auto bytes_written = co_await file.dma_write(pos, iov, intent);
+  ss::file& file, uint64_t pos, const std::vector<iovec>& iov, bool dsync) {
+    auto bytes_written = co_await file.dma_write(pos, iov);
     if (dsync) {
         co_await file.flush();
     }
@@ -65,8 +61,7 @@ ss::future<> run_benchmark_fiber(
   ss::file& file,
   metrics& m,
   const diskcheck_opts& opts,
-  ss::abort_source& cancelled,
-  ss::io_intent* intent) {
+  ss::abort_source& cancelled) {
     const auto buf_len = std::min(opts.request_size, 128_KiB);
     auto buf = ss::allocate_aligned_buffer<char>(buf_len, opts.alignment());
     random_generators::fill_buffer_randomchars(buf.get(), buf_len);
@@ -82,13 +77,12 @@ ss::future<> run_benchmark_fiber(
     auto stop = start + opts.duration;
     while (stop > ss::lowres_clock::now() && !cancelled.abort_requested()) {
         if constexpr (mode == read_or_write::write) {
-            co_await m.measure([&iov, &file, &pos, dsync = opts.dsync, intent] {
-                return write_and_maybe_flush(file, pos, iov, dsync, intent);
+            co_await m.measure([&iov, &file, &pos, dsync = opts.dsync] {
+                return write_and_maybe_flush(file, pos, iov, dsync);
             });
         } else {
-            co_await m.measure([&iov, &file, &pos, intent] {
-                return file.dma_read(pos, iov, intent);
-            });
+            co_await m.measure(
+              [&iov, &file, &pos] { return file.dma_read(pos, iov); });
         }
         pos = get_next_pos(pos, opts);
     }
@@ -104,20 +98,10 @@ ss::future<metrics> do_run_benchmark(
     auto start_highres = ss::lowres_system_clock::now();
     static const auto five_seconds_us = 500000;
     metrics m{five_seconds_us};
-    ss::io_intent intent;
-    ss::timer<ss::lowres_clock> timer;
-    timer.set_callback([&intent] { intent.cancel(); });
-    timer.rearm(start + opts.duration);
-    try {
-        co_await ss::parallel_for_each(
-          irange, [&start, &files, &m, &opts, &cancelled, &intent](uint64_t i) {
-              return run_benchmark_fiber<mode>(
-                start, files[i], m, opts, cancelled, &intent);
-          });
-    } catch (const ss::cancelled_error&) {
-        vlog(clusterlog.debug, "Benchmark completed (duration reached)");
-    }
-    timer.cancel();
+    co_await ss::parallel_for_each(
+      irange, [&start, &files, &m, &opts, &cancelled](uint64_t i) {
+          return run_benchmark_fiber<mode>(start, files[i], m, opts, cancelled);
+      });
     auto end = ss::lowres_system_clock::now();
     m.set_start_end_time(start_highres, end);
     m.set_total_time(end - start_highres);
