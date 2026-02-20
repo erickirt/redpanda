@@ -53,7 +53,7 @@ class KubectlTool:
         self,
         redpanda: Any,
         *,
-        remote_uri: str | None = None,
+        remote_uri: str,
         namespace: str = "redpanda",
         cluster_id: str = "",
         cluster_provider: str = "aws",
@@ -73,21 +73,18 @@ class KubectlTool:
 
         self._tp_proxy = tp_proxy
         self._tp_token = tp_token
-        self._kubectl_installed = False
-        self._privileged_pod_installed = False
         self._setup_tbot()
+        self._install_kubectl()
+        self._setup_privileged_pod()
 
     def _ssh_prefix(self):
         """Generate the ssh prefix of a cmd.
 
-        Example output of the 4 types of ssh prefixes:
-         0. # nothing if there is no _remote_uri to run a remote command onto
+        Example output of the 3 types of ssh prefixes:
          1. ssh target.example.com # for simple ssh
          2. tsh ssh --proxy=proxy.example.com target.example.com # for local dev that will use github auth by default
          3. tsh ssh --proxy=proxy.example.com --identity=/tmp/machine-id/identity target.example.com # for headless assuming tbot start
         """
-        if self._remote_uri is None:
-            return []
         if self._tp_proxy is None:
             return [
                 "ssh",
@@ -110,18 +107,14 @@ class KubectlTool:
             self._remote_uri,
         ]
 
-    def _scp_cmd(self, src, dest):
+    def _scp_cmd(self, src: str, dest: str):
         """Generate the scp cmd.
 
-        Example output of the 4 types of ssh prefixes:
-         0. # nothing if there is no _remote_uri to run a remote command onto
+        Example output of the 3 types of scp commands:
          1. scp src dest # for simple scp passwordless
          2. tsh scp --proxy=proxy.example.com src dest # for local dev that will use github auth by default
          3. tsh scp --proxy=proxy.example.com --identity=/tmp/machine-id/identity src dest # for headless assuming tbot start
         """
-        if self._remote_uri is None:
-            # do not copy anything if kubectl is on local machine
-            return []
         if self._tp_proxy is None:
             return ["scp", src, dest]
         if self._tp_token is None:
@@ -136,17 +129,15 @@ class KubectlTool:
             dest,
         ]
 
-    def _install(self):
+    def _install_kubectl(self):
         """Installs kubectl on a remote target host"""
-        if not self._kubectl_installed and self._remote_uri is not None:
-            breakglass_cmd = ["./breakglass-tools.sh"]
-            if self._provider == "azure":
-                # for azure, we manually override the path here to ensure
-                # that azure-cli installed as a snap gets found (workaround)
-                p = ["env", "PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin"]
-                breakglass_cmd = p + breakglass_cmd
-            self._ssh_cmd(breakglass_cmd)
-            self._kubectl_installed = True
+        breakglass_cmd = ["./breakglass-tools.sh"]
+        if self._provider == "azure":
+            # for azure, we manually override the path here to ensure
+            # that azure-cli installed as a snap gets found (workaround)
+            p = ["env", "PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin"]
+            breakglass_cmd = p + breakglass_cmd
+        self._ssh_cmd(breakglass_cmd)
 
     @property
     def logger(self) -> Logger:
@@ -290,8 +281,6 @@ class KubectlTool:
             list[str / bytes]: Return is either a whole lines list
                 or a Generator with lines as items
         """
-        # prepare
-        self._install()
         _kubectl = ["kubectl"]
 
         # Make it universal for str/list
@@ -307,7 +296,6 @@ class KubectlTool:
         :param pod_name: name of the pod, e.g. 'rp-clo88krkqkrfamptsst0-5', defaults to pod 0
         """
 
-        self._install()
         if pod_name is None:
             pod_name = self._redpanda_broker_pod_name()
         cmd = [
@@ -323,7 +311,6 @@ class KubectlTool:
         return self._ssh_cmd(cmd)
 
     def exists(self, remote_path: str, pod_name: str | None = None) -> bool:
-        self._install()
         if pod_name is None:
             pod_name = self._redpanda_broker_pod_name()
         try:
@@ -441,22 +428,18 @@ class KubectlTool:
             raise
 
     def _setup_privileged_pod(self):
-        if not self._privileged_pod_installed and self._remote_uri is not None:
-            filename = "everything-allowed-exec-pod.yml"
-            filename_path = os.path.join(
-                os.path.dirname(__file__), "everything-allowed-exec-pod.yml"
-            )
-            self._redpanda.logger.info(filename_path)
-            setup_cmd = self._scp_cmd(filename_path, f"{self._remote_uri}:")
-            if len(setup_cmd) > 0:
-                self._redpanda.logger.info(setup_cmd)
-                subprocess.check_output(setup_cmd)
-            apply_cmd = ["kubectl", "apply", "-f", filename]
-            self._ssh_cmd(apply_cmd)
-            self._privileged_pod_installed = True
+        filename = "everything-allowed-exec-pod.yml"
+        filename_path = os.path.join(
+            os.path.dirname(__file__), "everything-allowed-exec-pod.yml"
+        )
+        self._redpanda.logger.info(filename_path)
+        setup_cmd = self._scp_cmd(filename_path, f"{self._remote_uri}:")
+        self._redpanda.logger.info(setup_cmd)
+        subprocess.check_output(setup_cmd)
+        apply_cmd = ["kubectl", "apply", "-f", filename]
+        self._ssh_cmd(apply_cmd)
 
     def exec_privileged(self, remote_cmd, pod_name=None):
-        self._setup_privileged_pod()
         priv_pod = self._get_privileged_pod(pod_name)
         ssh_prefix = self._ssh_prefix()
         cmd = (
