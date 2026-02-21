@@ -1798,10 +1798,6 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
 
         super().__init__()
 
-        # Cloudv2 agents run on very small instances that can easily be
-        # overwhelmed by too many concurrent ssh sessions.
-        self._max_workers = 10
-
         self.config_profile_name = config_profile_name
         self._min_brokers = min_brokers
         self._superuser = RedpandaService.SUPERUSER_CREDENTIALS
