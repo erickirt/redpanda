@@ -86,6 +86,32 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
             return deleted_total
         return 0
 
+    @property
+    def l0_gc_client(self):
+        return Admin(self.redpanda).l0_gc()
+
+    def _get_metric_total(
+        self, name: str, nodes: list[ClusterNode] | None = None
+    ) -> int:
+        samples = self.redpanda.metrics_sample(name, nodes=nodes)
+        if samples is not None and samples.samples:
+            return int(sum(s.value for s in samples.samples))
+        return 0
+
+    def _get_metric_values(
+        self, name: str, nodes: list[ClusterNode] | None = None
+    ) -> list[int]:
+        samples = self.redpanda.metrics_sample(name, nodes=nodes)
+        if samples is not None and samples.samples:
+            return [int(s.value) for s in samples.samples]
+        return []
+
+    def _get_metric_max(self, name: str, nodes: list[ClusterNode] | None = None) -> int:
+        samples = self.redpanda.metrics_sample(name, nodes=nodes)
+        if samples is not None and samples.samples:
+            return int(max(s.value for s in samples.samples))
+        return 0
+
     def produce_some(self, topics: list[str], n: int = 300):
         with repeater_traffic(
             context=self.test_context,
@@ -162,10 +188,6 @@ class CloudTopicsL0GCAdminTest(CloudTopicsL0GCTestBase):
         super().__init__(
             test_context=test_context, housekeeping_interval_ms=10 * 60 * 60 * 1000
         )
-
-    @property
-    def l0_gc_client(self):
-        return Admin(self.redpanda).l0_gc()
 
     def gc_get_status(self, node: int | None = None) -> StatusReport:
         response = self.l0_gc_client.get_status(l0_gc_pb.GetStatusRequest(node_id=node))
