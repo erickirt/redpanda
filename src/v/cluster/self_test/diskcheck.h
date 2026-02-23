@@ -11,23 +11,14 @@
 
 #pragma once
 
-#include "base/likely.h"
 #include "base/seastarx.h"
 #include "cluster/node/local_monitor.h"
-#include "cluster/self_test/metrics.h"
 #include "cluster/self_test_rpc_types.h"
-#include "config/node_config.h"
 #include "ssx/abort_source.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/aligned_buffer.hh>
-#include <seastar/core/coroutine.hh>
-#include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/lowres_clock.hh>
 
-#include <chrono>
-#include <exception>
 #include <optional>
 
 namespace cluster::self_test {

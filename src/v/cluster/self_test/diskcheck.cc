@@ -14,12 +14,13 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "cluster/logger.h"
+#include "cluster/self_test/metrics.h"
 #include "random/generators.h"
 #include "ssx/sformat.h"
 #include "utils/directory_walker.h"
 #include "utils/uuid.h"
 
-#include <seastar/core/future-util.hh>
+#include <seastar/core/aligned_buffer.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/switch_to.hh>
