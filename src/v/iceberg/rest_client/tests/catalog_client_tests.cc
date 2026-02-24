@@ -301,8 +301,8 @@ TEST(token_tests, handle_non_retriable_http_status) {
     ASSERT_FALSE(token.has_value());
     ASSERT_THAT(
       token.error(),
-      VariantWith<r::http_call_error>(
-        VariantWith<bh::status>(bh::status::bad_request)));
+      VariantWith<r::http_call_error>(VariantWith<r::http_status_error>(
+        Field(&r::http_status_error::status, bh::status::bad_request))));
 }
 
 TEST(token_tests, handle_retriable_http_status) {
@@ -381,5 +381,7 @@ TEST(token_tests, handle_retries_exhausted) {
           Each(Eq(r::error_kind::retriable_http_status))),
         Field(
           &r::retries_exhausted::last_error,
-          Optional(VariantWith<bh::status>(bh::status::gateway_timeout))))));
+          Optional(
+            VariantWith<r::http_status_error>(Field(
+              &r::http_status_error::status, bh::status::gateway_timeout)))))));
 }

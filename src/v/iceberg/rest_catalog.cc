@@ -36,7 +36,9 @@ struct http_error_mapping_visitor {
     errc operator()(const rest_client::http_call_error& err) const {
         return ss::visit(
           err,
-          [this](http_status status) { return map_http_status(status); },
+          [this](const rest_client::http_status_error& status) {
+              return map_http_status(status.status);
+          },
           [](const ss::sstring&) { return unexpected_state; });
     }
 

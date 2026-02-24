@@ -393,12 +393,7 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
         }
 
         auto& error = call_res.error();
-        vlog(
-          iceberg::log.warn,
-          "[{}] error: {}, message: '{}'",
-          request_target,
-          error.err,
-          error.err_msg);
+        vlog(iceberg::log.warn, "[{}] error: {}", request_target, error.err);
         if (error.kind == error_kind::aborted) {
             co_return tl::unexpected(
               aborted_error{"Shutting down while evaluating retry"});

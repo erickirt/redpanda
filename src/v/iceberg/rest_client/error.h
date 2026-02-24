@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "base/format_to.h"
 #include "base/seastarx.h"
 #include "http/request_builder.h"
 #include "utils/named_type.h"
@@ -23,10 +24,23 @@
 
 namespace iceberg::rest_client {
 
-// An error seen during an http call, represented either by a status code, or a
-// string in case of an exception.
+struct http_status_error {
+    boost::beast::http::status status;
+    ss::sstring body;
+
+    fmt::iterator format_to(fmt::iterator it) const {
+        it = fmt::format_to(it, "{}", status);
+        if (!body.empty()) {
+            it = fmt::format_to(it, ": {}", body);
+        }
+        return it;
+    }
+};
+
+// An error seen during an http call, represented either by a status code with
+// response body, or a string in case of an exception.
 // TODO - use exception_ptr instead of string
-using http_call_error = std::variant<boost::beast::http::status, ss::sstring>;
+using http_call_error = std::variant<http_status_error, ss::sstring>;
 
 using parse_error_msg = named_type<ss::sstring, struct parse_error_msg_t>;
 

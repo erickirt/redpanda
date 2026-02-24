@@ -18,7 +18,6 @@ namespace iceberg::rest_client {
 struct request_error {
     error_kind kind;
     http_call_error err;
-    ss::sstring err_msg;
 };
 
 struct retry_policy {

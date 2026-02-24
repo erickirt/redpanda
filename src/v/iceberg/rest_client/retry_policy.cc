@@ -20,16 +20,15 @@ using iceberg::rest_client::error_kind;
 using iceberg::rest_client::request_error;
 
 request_error aborted(std::string_view msg) {
-    return request_error{.kind = error_kind::aborted, .err = ss::sstring{msg}};
+    return {.kind = error_kind::aborted, .err = ss::sstring{msg}};
 }
 
 request_error make_permanent_failure(std::string_view msg) {
-    return request_error{
-      .kind = error_kind::permanent_failure, .err = ss::sstring{msg}};
+    return {.kind = error_kind::permanent_failure, .err = ss::sstring{msg}};
 }
 
 request_error retriable(error_kind kind, std::string_view msg) {
-    return request_error{.kind = kind, .err = ss::sstring{msg}};
+    return {.kind = kind, .err = ss::sstring{msg}};
 }
 
 using enum boost::beast::http::status;
@@ -83,10 +82,12 @@ default_retry_policy::should_retry(http::downloaded_response response) const {
                     != retriable_statuses.end()
                   ? error_kind::retriable_http_status
                   : error_kind::permanent_failure;
-    constexpr size_t max_msg_size = 400;
-    auto msg = response.body.share(0, max_msg_size).linearize_to_string();
+    constexpr size_t max_body_size = 400;
+    auto body = response.body.share(0, max_body_size).linearize_to_string();
     return tl::unexpected(
-      request_error{.kind = kind, .err = status, .err_msg = std::move(msg)});
+      request_error{
+        .kind = kind,
+        .err = http_status_error{.status = status, .body = std::move(body)}});
 }
 
 request_error default_retry_policy::should_retry(std::exception_ptr ex) const {

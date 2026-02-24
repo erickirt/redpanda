@@ -47,9 +47,8 @@ auto fmt::formatter<iceberg::rest_client::http_call_error>::format(
   const iceberg::rest_client::http_call_error& err,
   fmt::format_context& ctx) const -> decltype(ctx.out()) {
     return std::visit(
-      [&ctx](const auto& http_call_error) {
-          return fmt::format_to(
-            ctx.out(), "http_call_error: {}", http_call_error);
+      [&ctx](const auto& v) {
+          return fmt::format_to(ctx.out(), "http_call_error: {}", v);
       },
       err);
 }
