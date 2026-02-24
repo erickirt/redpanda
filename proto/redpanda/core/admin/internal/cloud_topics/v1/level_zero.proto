@@ -20,11 +20,11 @@ import "proto/redpanda/core/pbgen/options.proto";
 import "proto/redpanda/core/pbgen/rpc.proto";
 import "proto/redpanda/core/common/v1/ntp.proto";
 
-option (pbgen.cpp_namespace) = "proto::admin::level_zero_gc";
+option (pbgen.cpp_namespace) = "proto::admin::level_zero";
 
 // Admin endpoints to query Level-0 garbage collection workers for Cloud Topics.
 
-service LevelZeroGcService {
+service LevelZeroService {
     // Returns GC worker status for each shard on targeted node(s).
     rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {
         option (pbgen.rpc) = {
