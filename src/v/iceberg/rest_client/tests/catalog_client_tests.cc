@@ -375,7 +375,11 @@ TEST(token_tests, handle_retries_exhausted) {
     ASSERT_FALSE(token.has_value());
     ASSERT_THAT(
       token.error(),
-      VariantWith<r::retries_exhausted>(Field(
-        &r::retries_exhausted::errors,
-        Each(VariantWith<bh::status>(bh::status::gateway_timeout)))));
+      VariantWith<r::retries_exhausted>(AllOf(
+        Field(
+          &r::retries_exhausted::reasons,
+          Each(Eq(r::error_kind::retriable_http_status))),
+        Field(
+          &r::retries_exhausted::last_error,
+          Optional(VariantWith<bh::status>(bh::status::gateway_timeout))))));
 }

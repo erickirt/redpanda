@@ -35,10 +35,45 @@ struct json_parse_error {
     parse_error_msg error;
 };
 
-// Error returned when retry limit is exhausted due to a breached time deadline.
-// Contains errors encountered during retries for logging
+enum class error_kind {
+    permanent_failure,
+    aborted,
+    retriable_http_status,
+    network_error,
+    timeout,
+};
+
+constexpr std::string_view to_string_view(error_kind r) {
+    using enum error_kind;
+    switch (r) {
+    case permanent_failure:
+        return "permanent_failure";
+    case aborted:
+        return "aborted";
+    case retriable_http_status:
+        return "retriable_http_status";
+    case network_error:
+        return "network_error";
+    case timeout:
+        return "timeout";
+    }
+}
+
+constexpr bool is_retriable(error_kind r) {
+    switch (r) {
+    case error_kind::retriable_http_status:
+    case error_kind::network_error:
+    case error_kind::timeout:
+        return true;
+    case error_kind::permanent_failure:
+    case error_kind::aborted:
+        return false;
+    }
+}
+
 struct retries_exhausted {
-    std::vector<http_call_error> errors;
+    std::vector<error_kind> reasons;
+    std::optional<http_call_error> last_error;
 };
 
 // Error returned when the underlying subsystems are being shut down.
@@ -66,6 +101,17 @@ struct fmt::formatter<iceberg::rest_client::domain_error>
     auto format(
       const iceberg::rest_client::domain_error&, fmt::format_context& ctx) const
       -> decltype(ctx.out());
+};
+
+template<>
+struct fmt::formatter<iceberg::rest_client::error_kind>
+  : fmt::formatter<std::string_view> {
+    auto
+    format(iceberg::rest_client::error_kind r, fmt::format_context& ctx) const
+      -> decltype(ctx.out()) {
+        return fmt::formatter<std::string_view>::format(
+          iceberg::rest_client::to_string_view(r), ctx);
+    }
 };
 
 template<>

@@ -324,7 +324,8 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
         request_builder.with_content_length(payload.value().size_bytes());
     }
     retry_chain_node rtc(&parent_rtc);
-    std::vector<http_call_error> retriable_errors{};
+    std::vector<error_kind> retriable_errors;
+    std::optional<http_call_error> last_error;
 
     while (true) {
         retry_permit permit{};
@@ -346,14 +347,18 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
             // conservatively return a non-aborted error so callers don't think
             // we're shutting down when we're not.
             co_return tl::unexpected(
-              retries_exhausted{.errors = std::move(retriable_errors)});
+              retries_exhausted{
+                .reasons = std::move(retriable_errors),
+                .last_error = std::move(last_error)});
         }
         if (!permit.is_allowed) {
             if (!retriable_errors.empty() && _probe) {
                 _probe->register_timeout();
             }
             co_return tl::unexpected(
-              retries_exhausted{.errors = std::move(retriable_errors)});
+              retries_exhausted{
+                .reasons = std::move(retriable_errors),
+                .last_error = std::move(last_error)});
         }
         auto request = request_builder.host(host).build();
         if (!request.has_value()) {
@@ -394,20 +399,19 @@ ss::future<expected<iobuf>> catalog_client::perform_request(
           request_target,
           error.err,
           error.err_msg);
-        if (error.aborted) {
+        if (error.kind == error_kind::aborted) {
             co_return tl::unexpected(
               aborted_error{"Shutting down while evaluating retry"});
         }
         if (_probe) {
-            // NOTE: aborted, above, implies Redpanda itself is shutting down,
-            // so don't count them towards failed requests.
             _probe->register_failed_request(endpoint);
         }
-        if (!error.can_be_retried) {
+        if (!is_retriable(error.kind)) {
             co_return tl::unexpected(std::move(error.err));
         }
 
-        retriable_errors.emplace_back(std::move(error.err));
+        retriable_errors.push_back(error.kind);
+        last_error.emplace(std::move(error.err));
         auto sleep_fut = co_await ss::coroutine::as_future(
           ss::sleep_abortable(permit.delay, rtc.root_abort_source()));
         if (sleep_fut.failed()) {

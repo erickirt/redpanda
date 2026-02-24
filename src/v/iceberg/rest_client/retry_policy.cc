@@ -16,21 +16,20 @@
 
 namespace {
 
-using iceberg::rest_client::failure;
+using iceberg::rest_client::error_kind;
+using iceberg::rest_client::request_error;
 
-failure aborted(std::string_view msg) {
-    return failure{
-      .can_be_retried = false, .aborted = true, .err = ss::sstring{msg}};
+request_error aborted(std::string_view msg) {
+    return request_error{.kind = error_kind::aborted, .err = ss::sstring{msg}};
 }
 
-failure unretriable(std::string_view msg) {
-    return failure{
-      .can_be_retried = false, .aborted = false, .err = ss::sstring{msg}};
+request_error make_permanent_failure(std::string_view msg) {
+    return request_error{
+      .kind = error_kind::permanent_failure, .err = ss::sstring{msg}};
 }
 
-failure retriable(std::string_view msg) {
-    return failure{
-      .can_be_retried = true, .aborted = false, .err = ss::sstring{msg}};
+request_error retriable(error_kind kind, std::string_view msg) {
+    return request_error{.kind = kind, .err = ss::sstring{msg}};
 }
 
 using enum boost::beast::http::status;
@@ -80,34 +79,33 @@ default_retry_policy::should_retry(http::downloaded_response response) const {
         return response;
     }
 
-    const auto can_be_retried = std::ranges::find(retriable_statuses, status)
-                                != retriable_statuses.end();
+    auto kind = std::ranges::find(retriable_statuses, status)
+                    != retriable_statuses.end()
+                  ? error_kind::retriable_http_status
+                  : error_kind::permanent_failure;
     constexpr size_t max_msg_size = 400;
     auto msg = response.body.share(0, max_msg_size).linearize_to_string();
     return tl::unexpected(
-      failure{
-        .can_be_retried = can_be_retried,
-        .err = status,
-        .err_msg = std::move(msg)});
+      request_error{.kind = kind, .err = status, .err_msg = std::move(msg)});
 }
 
-failure default_retry_policy::should_retry(std::exception_ptr ex) const {
+request_error default_retry_policy::should_retry(std::exception_ptr ex) const {
     try {
         std::rethrow_exception(ex);
     } catch (const std::system_error& err) {
         if (net::is_reconnect_error(err)) {
-            return retriable(err.what());
+            return retriable(error_kind::network_error, err.what());
         }
-        return unretriable(err.what());
+        return make_permanent_failure(err.what());
     } catch (const ss::timed_out_error& err) {
-        return retriable(err.what());
+        return retriable(error_kind::timeout, err.what());
     } catch (const boost::system::system_error& err) {
         if (
           err.code() != boost::beast::http::error::end_of_stream
           && err.code() != boost::beast::http::error::partial_message) {
-            return unretriable(err.what());
+            return make_permanent_failure(err.what());
         }
-        return retriable(err.what());
+        return retriable(error_kind::network_error, err.what());
     } catch (const ss::gate_closed_exception&) {
         return aborted(fmt::format("{}", std::current_exception()));
     } catch (const ss::abort_requested_exception&) {
@@ -118,14 +116,15 @@ failure default_retry_policy::should_retry(std::exception_ptr ex) const {
           || is_abort_or_gate_close_exception(nested.outer)) {
             return aborted(fmt::format("{}", std::current_exception()));
         };
-        return unretriable(
+        return make_permanent_failure(
           fmt::format(
             "{} [outer: {}, inner: {}]",
             nested.what(),
             nested.outer,
             nested.inner));
     } catch (...) {
-        return unretriable(fmt::format("{}", std::current_exception()));
+        return make_permanent_failure(
+          fmt::format("{}", std::current_exception()));
     }
 }
 

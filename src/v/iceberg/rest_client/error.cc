@@ -31,8 +31,14 @@ struct domain_error_printing_visitor {
     }
 
     auto operator()(const iceberg::rest_client::retries_exhausted& err) const {
-        return fmt::format_to(
-          ctx->out(), "retries_exhausted:[{}]", fmt::join(err.errors, ", "));
+        auto it = fmt::format_to(
+          ctx->out(),
+          "retries_exhausted:[reasons=[{}]",
+          fmt::join(err.reasons, ", "));
+        if (err.last_error.has_value()) {
+            it = fmt::format_to(it, ", last_error={}", *err.last_error);
+        }
+        return fmt::format_to(it, "]");
     }
 };
 } // namespace
