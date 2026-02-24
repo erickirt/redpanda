@@ -72,17 +72,7 @@ struct update_metadata_update
         return std::tie(domain, seqno, start_offset, next_offset, latest_term);
     }
 
-    fmt::iterator format_to(fmt::iterator it) const {
-        return fmt::format_to(
-          it,
-          "{{domain:{}, seqno:{}, start_offset:{}, next_offset:{}, "
-          "latest_term:{}}}",
-          domain,
-          seqno,
-          start_offset,
-          next_offset,
-          latest_term);
-    }
+    fmt::iterator format_to(fmt::iterator it) const;
 
     friend bool
     operator==(const update_metadata_update&, const update_metadata_update&)

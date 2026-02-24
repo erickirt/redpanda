@@ -53,6 +53,18 @@ fmt::iterator state::format_to(fmt::iterator it) const {
       latest_term);
 }
 
+fmt::iterator update_metadata_update::format_to(fmt::iterator it) const {
+    return fmt::format_to(
+      it,
+      "{{domain:{}, seqno:{}, start_offset:{}, next_offset:{}, "
+      "latest_term:{}}}",
+      domain,
+      seqno,
+      start_offset,
+      next_offset,
+      latest_term);
+}
+
 bool update_metadata_update::can_apply(const state& s) const {
     if (s.domain != l1::domain_uuid{} && s.domain != domain) {
         // Can't change the domain once set.
