@@ -13,6 +13,7 @@
 #include "base/vassert.h"
 #include "base/vlog.h"
 #include "cloud_storage_clients/logger.h"
+#include "ssx/future-util.h"
 
 #include <seastar/coroutine/as_future.hh>
 #include <seastar/util/log.hh>
@@ -144,8 +145,10 @@ ss::future<> multipart_upload::complete() {
           _state->upload_part(_part_number++, std::move(_buffer)));
         if (fut.failed()) {
             auto ex = fut.get_exception();
-            vlog(
-              s3_log.error,
+            vlogl(
+              s3_log,
+              ssx::is_shutdown_exception(ex) ? ss::log_level::warn
+                                             : ss::log_level::error,
               "Multipart upload final part failed, aborting: {}",
               ex);
             co_await abort_on_error();
@@ -159,8 +162,12 @@ ss::future<> multipart_upload::complete() {
       _state->complete_multipart_upload());
     if (fut.failed()) {
         auto ex = fut.get_exception();
-        vlog(
-          s3_log.error, "Multipart upload completion failed, aborting: {}", ex);
+        vlogl(
+          s3_log,
+          ssx::is_shutdown_exception(ex) ? ss::log_level::warn
+                                         : ss::log_level::error,
+          "Multipart upload completion failed, aborting: {}",
+          ex);
         co_await abort_on_error();
         std::rethrow_exception(ex);
     }
