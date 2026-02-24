@@ -10,11 +10,9 @@
 
 #include "iceberg/rest_client/retry_policy.h"
 
-#include "bytes/streambuf.h"
 #include "net/connection.h"
 
 #include <exception>
-#include <sstream>
 
 namespace {
 
@@ -85,13 +83,12 @@ default_retry_policy::should_retry(http::downloaded_response response) const {
     const auto can_be_retried = std::ranges::find(retriable_statuses, status)
                                 != retriable_statuses.end();
     constexpr size_t max_msg_size = 400;
-    iobuf_istream is{response.body.share(
-      0, std::min(max_msg_size, response.body.size_bytes()))};
-    std::stringstream s;
-    s << is.istream().rdbuf();
+    auto msg = response.body.share(0, max_msg_size).linearize_to_string();
     return tl::unexpected(
       failure{
-        .can_be_retried = can_be_retried, .err = status, .err_msg = s.str()});
+        .can_be_retried = can_be_retried,
+        .err = status,
+        .err_msg = std::move(msg)});
 }
 
 failure default_retry_policy::should_retry(std::exception_ptr ex) const {
@@ -130,10 +127,6 @@ failure default_retry_policy::should_retry(std::exception_ptr ex) const {
     } catch (...) {
         return unretriable(fmt::format("{}", std::current_exception()));
     }
-}
-
-bool failure::is_transport_error() const {
-    return std::holds_alternative<ss::sstring>(err);
 }
 
 } // namespace iceberg::rest_client
