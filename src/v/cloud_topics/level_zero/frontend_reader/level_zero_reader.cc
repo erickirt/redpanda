@@ -98,10 +98,18 @@ level_zero_log_reader_impl::read_some(
         auto wait_deadline = model::timeout_clock::now()
                              + std::chrono::milliseconds(25);
         try {
+            // Translate committed_offset from raft-space to kafka-space.
+            // The batch cache monitor tracks kafka offsets (put() notifies
+            // with kafka offsets), so the seed must also be in kafka-space.
+            // Using a raft offset here would over-seed the monitor by the
+            // offset delta, causing the wait to resolve immediately.
+            auto ot_state = _ctp->get_offset_translator_state();
+            auto committed_kafka = ot_state->from_log_offset(
+              _ctp->raft()->committed_offset());
             co_await _ct_api->cache_wait(
               tidp,
               kafka::offset_cast(_next_offset),
-              model::prev_offset(_ctp->raft()->committed_offset()),
+              model::prev_offset(committed_kafka),
               wait_deadline,
               _config.abort_source);
         } catch (const ss::timed_out_error&) {
