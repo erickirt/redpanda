@@ -18,19 +18,56 @@
 #include <fmt/core.h>
 #include <gtest/gtest.h>
 
+#include <expected>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace serde::avro::testing {
 
-/// Controls how extra record fields in `actual` are handled during comparison.
-///
-/// reject     — records must have identical field counts.
-/// allow_null — `actual` may have additional trailing fields (the normal
-///              result of Avro schema evolution) provided each is null.
-enum class extra_fields { reject, allow_null };
+struct compare_options {
+    /// How extra record fields in `actual` are handled.
+    ///
+    /// reject         — records must have identical field counts.
+    /// allow_null     — `actual` may have additional trailing fields
+    ///                  (schema evolution) provided each is null.
+    enum class extra_fields_policy : uint8_t { reject, allow_null };
+
+    /// How map entries are matched.
+    ///
+    /// positional     — entries are compared index-by-index; duplicate keys
+    ///                  are permitted (the original Avro map semantics).
+    /// by_key_unique  — entries are matched by key regardless of order;
+    ///                  duplicate keys in either side cause a test failure.
+    enum class map_matching_policy : uint8_t { positional, by_key_unique };
+
+    extra_fields_policy extra_fields = extra_fields_policy::reject;
+    map_matching_policy map_matching = map_matching_policy::by_key_unique;
+};
 
 namespace detail {
+
+/// Build a key->index map for an Avro map's entries, returning an error
+/// if duplicate keys are found.
+inline std::
+  expected<std::unordered_map<std::string, size_t>, ::testing::AssertionResult>
+  build_map_index(
+    const std::vector<std::pair<std::string, ::avro::GenericDatum>>& map,
+    std::string_view path,
+    std::string_view side) {
+    std::unordered_map<std::string, size_t> index;
+    index.reserve(map.size());
+    for (size_t i = 0; i < map.size(); ++i) {
+        auto [_, inserted] = index.emplace(map[i].first, i);
+        if (!inserted) {
+            return std::unexpected(
+              ::testing::AssertionFailure()
+              << path << ": duplicate key in " << side << " map: '"
+              << map[i].first << "'");
+        }
+    }
+    return index;
+}
 
 inline std::string_view logical_type_name(::avro::LogicalType::Type type) {
     switch (type) {
@@ -81,7 +118,66 @@ inline ::testing::AssertionResult compare_impl(
   const ::avro::GenericDatum& expected,
   const ::avro::GenericDatum& actual,
   std::string_view path,
-  extra_fields ef) {
+  compare_options opts);
+
+using map_kvs = std::vector<std::pair<std::string, ::avro::GenericDatum>>;
+
+inline ::testing::AssertionResult compare_map_positional(
+  const map_kvs& expected_kvs,
+  const map_kvs& actual_kvs,
+  std::string_view path,
+  compare_options opts) {
+    for (size_t i = 0; i < expected_kvs.size(); ++i) {
+        if (expected_kvs[i].first != actual_kvs[i].first) {
+            return ::testing::AssertionFailure()
+                   << path << ": map key mismatch at index " << i
+                   << " (expected '" << expected_kvs[i].first << "', actual '"
+                   << actual_kvs[i].first << "')";
+        }
+        auto key_path = fmt::format("{}[\"{}\"]", path, expected_kvs[i].first);
+        auto cmp = compare_impl(
+          expected_kvs[i].second, actual_kvs[i].second, key_path, opts);
+        if (!cmp) {
+            return cmp;
+        }
+    }
+    return ::testing::AssertionSuccess();
+}
+
+inline ::testing::AssertionResult compare_map_by_key(
+  const map_kvs& expected_kvs,
+  const map_kvs& actual_kvs,
+  std::string_view path,
+  compare_options opts) {
+    auto expected_index = build_map_index(expected_kvs, path, "expected");
+    if (!expected_index) {
+        return expected_index.error();
+    }
+    auto actual_index = build_map_index(actual_kvs, path, "actual");
+    if (!actual_index) {
+        return actual_index.error();
+    }
+    for (const auto& [key, expected_value] : expected_kvs) {
+        auto pos = actual_index->find(key);
+        if (pos == actual_index->end()) {
+            return ::testing::AssertionFailure()
+                   << path << ": key missing from actual map: '" << key << "'";
+        }
+        auto key_path = fmt::format("{}[\"{}\"]", path, key);
+        const auto& actual_value = actual_kvs[pos->second].second;
+        auto cmp = compare_impl(expected_value, actual_value, key_path, opts);
+        if (!cmp) {
+            return cmp;
+        }
+    }
+    return ::testing::AssertionSuccess();
+}
+
+inline ::testing::AssertionResult compare_impl(
+  const ::avro::GenericDatum& expected,
+  const ::avro::GenericDatum& actual,
+  std::string_view path,
+  compare_options opts) {
     if (expected.isUnion() != actual.isUnion()) {
         return ::testing::AssertionFailure() << path << ": union mismatch";
     }
@@ -160,7 +256,10 @@ inline ::testing::AssertionResult compare_impl(
                    << path << ": record field count mismatch (expected "
                    << expected_count << ", actual " << actual_count << ")";
         }
-        if (actual_count != expected_count && ef == extra_fields::reject) {
+        if (
+          actual_count != expected_count
+          && opts.extra_fields
+               == compare_options::extra_fields_policy::reject) {
             return ::testing::AssertionFailure()
                    << path << ": record field count mismatch (expected "
                    << expected_count << ", actual " << actual_count << ")";
@@ -169,7 +268,7 @@ inline ::testing::AssertionResult compare_impl(
             auto p = fmt::format(
               "{}.{}", path, expected_record.schema()->nameAt(i));
             auto res = compare_impl(
-              expected_record.fieldAt(i), actual_record.fieldAt(i), p, ef);
+              expected_record.fieldAt(i), actual_record.fieldAt(i), p, opts);
             if (!res) {
                 return res;
             }
@@ -196,39 +295,29 @@ inline ::testing::AssertionResult compare_impl(
         }
         for (size_t i = 0; i < expected_array.size(); ++i) {
             auto p = fmt::format("{}[{}]", path, i);
-            auto res = compare_impl(expected_array[i], actual_array[i], p, ef);
+            auto res = compare_impl(
+              expected_array[i], actual_array[i], p, opts);
             if (!res) {
                 return res;
             }
         }
         return ::testing::AssertionSuccess();
     }
-    // Avro maps are ordered vectors of pairs and may contain duplicate keys.
-    // Compare positionally rather than by key lookup to handle duplicates.
     case ::avro::AVRO_MAP: {
-        const auto& expected_map = expected.value<::avro::GenericMap>().value();
-        const auto& actual_map = actual.value<::avro::GenericMap>().value();
-        if (expected_map.size() != actual_map.size()) {
+        const auto& expected_kvs = expected.value<::avro::GenericMap>().value();
+        const auto& actual_kvs = actual.value<::avro::GenericMap>().value();
+        if (expected_kvs.size() != actual_kvs.size()) {
             return ::testing::AssertionFailure()
                    << path << ": map size mismatch (expected "
-                   << expected_map.size() << ", actual " << actual_map.size()
+                   << expected_kvs.size() << ", actual " << actual_kvs.size()
                    << ")";
         }
-        for (size_t i = 0; i < expected_map.size(); ++i) {
-            if (expected_map[i].first != actual_map[i].first) {
-                return ::testing::AssertionFailure()
-                       << path << ": map key mismatch at index " << i
-                       << " (expected '" << expected_map[i].first
-                       << "', actual '" << actual_map[i].first << "')";
-            }
-            auto p = fmt::format("{}[\"{}\"]", path, expected_map[i].first);
-            auto res = compare_impl(
-              expected_map[i].second, actual_map[i].second, p, ef);
-            if (!res) {
-                return res;
-            }
+        if (
+          opts.map_matching
+          == compare_options::map_matching_policy::positional) {
+            return compare_map_positional(expected_kvs, actual_kvs, path, opts);
         }
-        return ::testing::AssertionSuccess();
+        return compare_map_by_key(expected_kvs, actual_kvs, path, opts);
     }
     case ::avro::AVRO_UNION:
         // GenericDatum::type() unwraps the selected union branch, so the
@@ -251,13 +340,13 @@ inline ::testing::AssertionResult compare_impl(
 /// \param expected  The reference datum tree.
 /// \param actual    The datum tree under test.
 /// \param path      Dotted path prefix used in mismatch messages.
-/// \param ef        How extra fields in \p actual records are handled.
+/// \param opts      Comparison options.
 inline ::testing::AssertionResult generic_datum_eq(
   const ::avro::GenericDatum& expected,
   const ::avro::GenericDatum& actual,
   std::string_view path = "root",
-  extra_fields ef = extra_fields::reject) {
-    return detail::compare_impl(expected, actual, path, ef);
+  compare_options opts = {}) {
+    return detail::compare_impl(expected, actual, path, opts);
 }
 
 } // namespace serde::avro::testing

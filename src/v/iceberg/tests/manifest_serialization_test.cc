@@ -57,8 +57,7 @@ bool trivial_fields_eq(
 ::testing::AssertionResult manifest_avro_equal(
   iobuf expected_buf,
   iobuf actual_buf,
-  serde::avro::testing::extra_fields ef
-  = serde::avro::testing::extra_fields::reject) {
+  serde::avro::testing::compare_options opts = {}) {
     auto expected_in = std::make_unique<avro_iobuf_istream>(
       std::move(expected_buf));
     auto actual_in = std::make_unique<avro_iobuf_istream>(
@@ -82,7 +81,7 @@ bool trivial_fields_eq(
             break;
         }
         auto res = serde::avro::testing::generic_datum_eq(
-          expected_entry, actual_entry, "entry", ef);
+          expected_entry, actual_entry, "entry", opts);
         if (!res) {
             return ::testing::AssertionFailure()
                    << "entry[" << i << "] mismatch: " << res.message();
@@ -411,7 +410,8 @@ TEST(ManifestSerializationTest, TestSerializeManifestData) {
         ASSERT_TRUE(manifest_avro_equal(
           orig_buf.copy(),
           std::move(serialized_buf),
-          serde::avro::testing::extra_fields::allow_null));
+          {.extra_fields = serde::avro::testing::compare_options::
+             extra_fields_policy::allow_null}));
 
         serialized_buf = serialize_avro(m_roundtrip);
     }

@@ -18,6 +18,9 @@
 #include <string>
 #include <string_view>
 
+using serde::avro::testing::compare_options;
+using serde::avro::testing::generic_datum_eq;
+
 namespace {
 
 avro::ValidSchema compile_schema(std::string_view json_schema) {
@@ -25,13 +28,13 @@ avro::ValidSchema compile_schema(std::string_view json_schema) {
 }
 
 TEST(AvroComparatorTest, EqualPrimitiveDatums) {
-    auto res = serde::avro::testing::generic_datum_eq(
+    auto res = generic_datum_eq(
       avro::GenericDatum(int32_t{12}), avro::GenericDatum(int32_t{12}));
     ASSERT_TRUE(res);
 }
 
 TEST(AvroComparatorTest, FailsOnPrimitiveMismatch) {
-    auto res = serde::avro::testing::generic_datum_eq(
+    auto res = generic_datum_eq(
       avro::GenericDatum(int32_t{12}), avro::GenericDatum(int32_t{13}));
     ASSERT_FALSE(res);
     ASSERT_STREQ(
@@ -45,8 +48,7 @@ TEST(AvroComparatorTest, FailsOnUnionBranchMismatch) {
     avro::GenericDatum actual(union_schema.root());
     expected.selectBranch(1);
     expected.value<int64_t>() = 9;
-    auto res = serde::avro::testing::generic_datum_eq(
-      expected, actual, "entry.some_union");
+    auto res = generic_datum_eq(expected, actual, "entry.some_union");
     ASSERT_FALSE(res);
     ASSERT_STREQ(
       "entry.some_union: union branch mismatch (expected: branch=1, "
@@ -65,11 +67,9 @@ TEST(AvroComparatorTest, FailsOnMissingMapKey) {
     actual.value<avro::GenericMap>().value().emplace_back(
       "k2", avro::GenericDatum(int32_t{1}));
 
-    auto res = serde::avro::testing::generic_datum_eq(expected, actual, "root");
+    auto res = generic_datum_eq(expected, actual, "root");
     ASSERT_FALSE(res);
-    ASSERT_STREQ(
-      "root: map key mismatch at index 0 (expected 'k1', actual 'k2')",
-      res.message());
+    ASSERT_STREQ("root: key missing from actual map: 'k1'", res.message());
 }
 
 TEST(AvroComparatorTest, FailsOnNestedRecordFieldMismatch) {
@@ -91,8 +91,7 @@ TEST(AvroComparatorTest, FailsOnNestedRecordFieldMismatch) {
     expected_record.fieldAt(1).value<std::string>() = "x";
     actual_record.fieldAt(1).value<std::string>() = "x";
 
-    auto res = serde::avro::testing::generic_datum_eq(
-      expected, actual, "payload");
+    auto res = generic_datum_eq(expected, actual, "payload");
     ASSERT_FALSE(res);
     ASSERT_STREQ(
       "payload.f: int mismatch (expected: 7, actual: 8)", res.message());
@@ -109,8 +108,7 @@ TEST(AvroComparatorTest, FailsOnLogicalTypeMismatch) {
     expected.value<int64_t>() = 123;
     actual.value<int64_t>() = 123;
 
-    auto res = serde::avro::testing::generic_datum_eq(
-      expected, actual, "entry.some_timestamp");
+    auto res = generic_datum_eq(expected, actual, "entry.some_timestamp");
     ASSERT_FALSE(res);
     ASSERT_STREQ(
       "entry.some_timestamp: logical type mismatch (expected timestamp-micros, "
@@ -135,8 +133,11 @@ TEST(AvroComparatorTest, SubsetMatchAllowsExtraNullFields) {
     expected.value<avro::GenericRecord>().fieldAt(0).value<int32_t>() = 42;
     actual.value<avro::GenericRecord>().fieldAt(0).value<int32_t>() = 42;
 
-    auto res = serde::avro::testing::generic_datum_eq(
-      expected, actual, "root", serde::avro::testing::extra_fields::allow_null);
+    auto res = generic_datum_eq(
+      expected,
+      actual,
+      "root",
+      {.extra_fields = compare_options::extra_fields_policy::allow_null});
     ASSERT_TRUE(res);
 }
 
@@ -160,8 +161,11 @@ TEST(AvroComparatorTest, SubsetMatchRejectsExtraNonNullField) {
     g.selectBranch(1);
     g.value<std::string>() = "not null";
 
-    auto res = serde::avro::testing::generic_datum_eq(
-      expected, actual, "root", serde::avro::testing::extra_fields::allow_null);
+    auto res = generic_datum_eq(
+      expected,
+      actual,
+      "root",
+      {.extra_fields = compare_options::extra_fields_policy::allow_null});
     ASSERT_FALSE(res);
     ASSERT_STREQ("root.g: extra field is not null", res.message());
 }
@@ -183,11 +187,63 @@ TEST(AvroComparatorTest, StrictMatchRejectsExtraNullFields) {
     expected.value<avro::GenericRecord>().fieldAt(0).value<int32_t>() = 42;
     actual.value<avro::GenericRecord>().fieldAt(0).value<int32_t>() = 42;
 
-    auto res = serde::avro::testing::generic_datum_eq(expected, actual, "root");
+    auto res = generic_datum_eq(expected, actual, "root");
     ASSERT_FALSE(res);
     ASSERT_STREQ(
       "root: record field count mismatch (expected 1, actual 2)",
       res.message());
+}
+
+TEST(AvroComparatorTest, MapComparisonIsOrderIndependent) {
+    auto map_schema = compile_schema(R"({"type":"map","values":"int"})");
+    avro::GenericDatum expected(map_schema.root());
+    avro::GenericDatum actual(map_schema.root());
+
+    auto& expected_map = expected.value<avro::GenericMap>().value();
+    expected_map.emplace_back("a", avro::GenericDatum(int32_t{1}));
+    expected_map.emplace_back("b", avro::GenericDatum(int32_t{2}));
+
+    auto& actual_map = actual.value<avro::GenericMap>().value();
+    actual_map.emplace_back("b", avro::GenericDatum(int32_t{2}));
+    actual_map.emplace_back("a", avro::GenericDatum(int32_t{1}));
+
+    ASSERT_TRUE(generic_datum_eq(expected, actual, "root"));
+}
+
+TEST(AvroComparatorTest, FailsOnDuplicateKeyInExpectedMap) {
+    auto map_schema = compile_schema(R"({"type":"map","values":"int"})");
+    avro::GenericDatum expected(map_schema.root());
+    avro::GenericDatum actual(map_schema.root());
+
+    auto& expected_map = expected.value<avro::GenericMap>().value();
+    expected_map.emplace_back("k", avro::GenericDatum(int32_t{1}));
+    expected_map.emplace_back("k", avro::GenericDatum(int32_t{2}));
+
+    auto& actual_map = actual.value<avro::GenericMap>().value();
+    actual_map.emplace_back("a", avro::GenericDatum(int32_t{1}));
+    actual_map.emplace_back("b", avro::GenericDatum(int32_t{2}));
+
+    auto res = generic_datum_eq(expected, actual, "root");
+    ASSERT_FALSE(res);
+    ASSERT_STREQ("root: duplicate key in expected map: 'k'", res.message());
+}
+
+TEST(AvroComparatorTest, FailsOnDuplicateKeyInActualMap) {
+    auto map_schema = compile_schema(R"({"type":"map","values":"int"})");
+    avro::GenericDatum expected(map_schema.root());
+    avro::GenericDatum actual(map_schema.root());
+
+    auto& expected_map = expected.value<avro::GenericMap>().value();
+    expected_map.emplace_back("a", avro::GenericDatum(int32_t{1}));
+    expected_map.emplace_back("b", avro::GenericDatum(int32_t{2}));
+
+    auto& actual_map = actual.value<avro::GenericMap>().value();
+    actual_map.emplace_back("k", avro::GenericDatum(int32_t{1}));
+    actual_map.emplace_back("k", avro::GenericDatum(int32_t{2}));
+
+    auto res = generic_datum_eq(expected, actual, "root");
+    ASSERT_FALSE(res);
+    ASSERT_STREQ("root: duplicate key in actual map: 'k'", res.message());
 }
 
 } // anonymous namespace

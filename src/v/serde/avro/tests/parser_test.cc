@@ -169,7 +169,14 @@ TEST_P(AvroParserTest, RoundtripTest) {
         // covert to GenericDatum
         parsed_to_avro(parsed_avro, parsed);
 
-        ASSERT_TRUE(generic_datum_eq(random_value, parsed_avro));
+        ASSERT_TRUE(generic_datum_eq(
+          random_value,
+          parsed_avro,
+          "root",
+          {
+            .map_matching = serde::avro::testing::compare_options::
+              map_matching_policy::positional,
+          }));
     }
 };
 
