@@ -630,10 +630,8 @@ reconciler<Clock>::make_context(const l1::object_id& oid) {
     auto upload_result = co_await _l1_io->create_multipart_upload(
       oid, cloud_storage_clients::multipart_upload::min_part_size, &_as);
     if (!upload_result.has_value()) {
-        co_return std::unexpected(
-          reconcile_error(
-            "Failed to initiate multipart upload: {}", upload_result.error())
-            .non_benign());
+        co_return std::unexpected(reconcile_error(
+          "Failed to initiate multipart upload: {}", upload_result.error()));
     }
     ctx.upload = std::move(upload_result).value();
 
