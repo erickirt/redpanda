@@ -2319,10 +2319,8 @@ TEST(SegmentReuploadUnit, test_collect_stale_after_prefix_truncate) {
       .get();
 
     auto result = collector.make_upload_candidate(segment_lock_timeout).get();
-    ASSERT_TRUE(std::holds_alternative<upload_candidate_with_locks>(result));
-
-    // This is a bug. We should detect that the collected segments are stale.
-    EXPECT_THROW(
-      b.get_log()->from_log_offset(collector.begin_inclusive()),
-      std::runtime_error);
+    ASSERT_TRUE(
+      std::holds_alternative<candidate_creation_error>(result)
+      && std::get<candidate_creation_error>(result)
+           == candidate_creation_error::concurrency_error);
 }
