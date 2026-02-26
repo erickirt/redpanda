@@ -635,19 +635,25 @@ BOOST_AUTO_TEST_CASE(test_store_global_compat) {
     pps::compatibility_level expected{pps::compatibility_level::backward};
     pps::store s;
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == expected);
+      s.get_compatibility(pps::default_context, pps::default_to_global::yes)
+        .value()
+      == expected);
 
     // duplicate should return false
     BOOST_REQUIRE(s.clear_compatibility(pps::default_context).value() == false);
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == expected);
+      s.get_compatibility(pps::default_context, pps::default_to_global::yes)
+        .value()
+      == expected);
 
     expected = pps::compatibility_level::full_transitive;
     BOOST_REQUIRE(
       s.set_compatibility(dummy_marker, pps::default_context, expected).value()
       == true);
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == expected);
+      s.get_compatibility(pps::default_context, pps::default_to_global::yes)
+        .value()
+      == expected);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
@@ -661,7 +667,8 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
       pps::compatibility_level::backward};
     pps::store s;
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == global_expected);
+      s.get_compatibility(pps::default_context, fallback).value()
+      == global_expected);
     s.insert({subject0, string_def0.share()});
 
     auto sub_expected = pps::compatibility_level::backward;
@@ -686,7 +693,8 @@ BOOST_AUTO_TEST_CASE(test_store_subject_compat) {
     BOOST_REQUIRE(
       s.get_compatibility(subject0, fallback).value() == sub_expected);
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value() == global_expected);
+      s.get_compatibility(pps::default_context, fallback).value()
+      == global_expected);
 
     // Clearing compatibility should fallback to global
     BOOST_REQUIRE(
@@ -1105,13 +1113,14 @@ BOOST_AUTO_TEST_CASE(test_store_context_config) {
     auto test_ctx = pps::context{".test"};
     pps::seq_marker dummy_marker;
     auto s = pps::store{pps::is_mutable::yes};
+    auto fallback = pps::default_to_global::yes;
 
     // Default config is backward compatibility
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value()
+      s.get_compatibility(pps::default_context, fallback).value()
       == pps::compatibility_level::backward);
     BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value()
+      s.get_compatibility(test_ctx, fallback).value()
       == pps::compatibility_level::backward);
 
     // Set config on default context
@@ -1120,10 +1129,10 @@ BOOST_AUTO_TEST_CASE(test_store_context_config) {
          dummy_marker, pps::default_context, pps::compatibility_level::full)
         .value());
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value()
+      s.get_compatibility(pps::default_context, fallback).value()
       == pps::compatibility_level::full);
     BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value()
+      s.get_compatibility(test_ctx, fallback).value()
       == pps::compatibility_level::backward);
 
     // Set different config on test context
@@ -1131,15 +1140,16 @@ BOOST_AUTO_TEST_CASE(test_store_context_config) {
                      dummy_marker, test_ctx, pps::compatibility_level::none)
                     .value());
     BOOST_REQUIRE(
-      s.get_compatibility(pps::default_context).value()
+      s.get_compatibility(pps::default_context, fallback).value()
       == pps::compatibility_level::full);
     BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value() == pps::compatibility_level::none);
+      s.get_compatibility(test_ctx, fallback).value()
+      == pps::compatibility_level::none);
 
     // Clear config returns to default
     BOOST_REQUIRE(s.clear_compatibility(test_ctx).value());
     BOOST_REQUIRE(
-      s.get_compatibility(test_ctx).value()
+      s.get_compatibility(test_ctx, fallback).value()
       == pps::compatibility_level::backward);
 }
 

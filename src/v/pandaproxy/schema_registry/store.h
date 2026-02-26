@@ -676,7 +676,9 @@ public:
     }
 
     ///\brief Get the compatibility level of a context.
-    result<compatibility_level> get_compatibility(const context& ctx) const {
+    result<compatibility_level>
+    get_compatibility(const context& ctx, default_to_global) const {
+        // TODO: Implement proper fallback behavior for context
         auto it = _context_stores.find(ctx);
         if (
           it == _context_stores.end()
@@ -698,7 +700,7 @@ public:
         if (compat) {
             return compat.value();
         } else if (fallback) {
-            return get_compatibility(sub.ctx);
+            return get_compatibility(sub.ctx, fallback);
         }
         return compatibility_not_found(sub);
     }

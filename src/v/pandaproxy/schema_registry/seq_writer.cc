@@ -322,7 +322,8 @@ ss::future<std::optional<bool>> seq_writer::do_write_config(
             existing = co_await _store.get_compatibility(
               sub, default_to_global::no);
         } else {
-            existing = co_await _store.get_compatibility(sub.ctx);
+            existing = co_await _store.get_compatibility(
+              sub.ctx, default_to_global::no);
         }
         if (existing == compat) {
             co_return false;
