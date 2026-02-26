@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import re
-from time import sleep
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.mark import matrix
@@ -254,9 +253,11 @@ class CompactionWithRecoveryTest(RedpandaTest, PartitionMovementMixin):
 
         moves_done = 0
         while moves_done < self.num_moves:
-            self._do_move_and_verify(topic=topic.name, partition=0, timeout_sec=300)
+            x_core_only = moves_done % 2 == 1
+            self._do_move_and_verify(
+                topic=topic.name, partition=0, timeout_sec=300, x_core_only=x_core_only
+            )
             moves_done += 1
-            sleep(1)
 
         workload.remote_stop_producer()
         workload.remote_wait_producer()
