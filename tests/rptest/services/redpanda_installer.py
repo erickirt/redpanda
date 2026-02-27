@@ -231,13 +231,15 @@ class RedpandaInstaller:
         self._arch = None
 
     def _create_http_session(self) -> requests.Session:
-        """Create a session with retry for transient connection errors."""
+        """Create a session with retry for transient errors (connection and HTTP 5xx)."""
         retry = Retry(
             total=3,
             connect=3,
             read=3,
+            status=3,
             backoff_factor=1.0,
             allowed_methods=["HEAD", "GET"],
+            status_forcelist=[500, 502, 503, 504],
         )
         session = requests.Session()
         session.mount("https://", HTTPAdapter(max_retries=retry))
