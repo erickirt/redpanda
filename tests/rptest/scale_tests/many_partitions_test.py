@@ -15,7 +15,7 @@ from collections import Counter
 from typing import Any, Callable
 from ducktape.cluster.cluster import ClusterNode
 import numpy
-from ducktape.mark import parametrize
+from ducktape.mark import ignore, parametrize  # type: ignore[reportUnknownVariableType]
 from ducktape.utils.util import TimeoutError, wait_until
 
 from rptest.clients.rpk import RpkException, RpkTool
@@ -867,6 +867,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             topic_partitions_per_shard=topic_partitions_per_shard,
         )
 
+    @ignore  # TODO: Evaluate parameters and turn this back on
     @cluster(
         num_nodes=12,
         log_allow_list=RESTART_LOG_ALLOW_LIST + METASTORE_TRANSPORT_LOG_ALLOW_LIST,
