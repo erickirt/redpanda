@@ -52,8 +52,10 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/cloud_topics:logger",
+        "//src/v/cloud_topics/level_one/common:object_id",
         "//src/v/cloud_topics/level_one/metastore:garbage_collector",
         "//src/v/cloud_topics/level_one/metastore:rpc_types",
+        "//src/v/cloud_topics/level_one/metastore:state_update",
         "//src/v/config",
         "//src/v/container:chunked_hash_map",
         "//src/v/model:batch_builder",

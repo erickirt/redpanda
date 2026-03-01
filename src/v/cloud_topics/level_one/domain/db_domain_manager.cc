@@ -906,6 +906,45 @@ db_domain_manager::get_extent_metadata(rpc::get_extent_metadata_request req) {
     };
 }
 
+ss::future<rpc::preregister_objects_reply>
+db_domain_manager::preregister_objects(rpc::preregister_objects_request req) {
+    auto gl_res = co_await gate_and_open_writes();
+    if (!gl_res.has_value()) {
+        co_return rpc::preregister_objects_reply{
+          .ec = gl_res.error(),
+        };
+    }
+
+    preregister_objects_db_update update;
+    update.registered_at = model::timestamp::now();
+    update.object_ids.reserve(req.count);
+    for (uint32_t i = 0; i < req.count; ++i) {
+        update.object_ids.push_back(create_object_id());
+    }
+
+    auto reader = state_reader(db_->db().create_snapshot());
+    chunked_vector<write_batch_row> rows;
+    auto build_res = co_await update.build_rows(reader, rows);
+    if (!build_res.has_value()) {
+        co_return rpc::preregister_objects_reply{
+          .ec = log_and_convert(
+            build_res.error(), "Rejecting request to preregister objects: "),
+        };
+    }
+
+    auto apply_res = co_await write_rows(gl_res.value(), std::move(rows));
+    if (!apply_res.has_value()) {
+        co_return rpc::preregister_objects_reply{
+          .ec = apply_res.error(),
+        };
+    }
+
+    co_return rpc::preregister_objects_reply{
+      .ec = rpc::errc::ok,
+      .object_ids = std::move(update.object_ids),
+    };
+}
+
 ss::future<std::expected<ss::rwlock::holder, rpc::errc>>
 db_domain_manager::exclusive_db_lock() {
     auto fut = co_await ss::coroutine::as_future(

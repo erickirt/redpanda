@@ -87,6 +87,9 @@ public:
     ss::future<std::expected<database_stats, rpc::errc>>
     get_database_stats() override;
 
+    ss::future<rpc::preregister_objects_reply>
+      preregister_objects(rpc::preregister_objects_request) override;
+
 private:
     // Initializes the underlying database for the current term, potentially
     // reopening it if needed (e.g. the underlying Raft term has changed since

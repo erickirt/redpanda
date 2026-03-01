@@ -686,10 +686,10 @@ TEST_F(DbDomainManagerTest, TestBasicReplaceObjects) {
     }
     validate_metadata(
       tp, kafka::offset(0), kafka::offset(10), exact_next::yes, 10);
-    // Replace [0, 9] in with one object.
+    // Replace [0, 9] with one object.
     l1_rpc::replace_objects_request req{
       .metastore_partition = model::partition_id(0),
-      .new_objects = make_new_objects(tp, kafka::offset(0), 1, 10),
+      .new_objects = make_new_objects(tp, kafka::offset(0), 10, 1),
     };
     auto reply = initial_manager->replace_objects(std::move(req)).get();
     ASSERT_EQ(reply.ec, l1_rpc::errc::ok);
