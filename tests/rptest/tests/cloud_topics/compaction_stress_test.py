@@ -20,6 +20,7 @@ from rptest.services.kgo_verifier_services import (
 )
 from rptest.services.redpanda import MetricsEndpoint
 from rptest.tests.cloud_topics.e2e_test import EndToEndCloudTopicsBase
+from rptest.utils.mode_checks import is_debug_mode
 
 
 class CompactionStressBase(EndToEndCloudTopicsBase):
@@ -225,3 +226,70 @@ class CompactionStressBase(EndToEndCloudTopicsBase):
             consumer.wait(timeout_sec=120)
         finally:
             consumer.stop()
+
+
+class CompactionStressKeyCardinalityTest(CompactionStressBase):
+    """
+    Force multi-pass compaction by producing more unique keys than fit
+    in the key-offset map.
+
+    With a 1MB map budget (capacity ~25K keys) and 200K unique keys
+    (10K in debug), compaction needs multiple passes to fully deduplicate.
+
+    In debug/sanitizer builds the data volume is reduced to stay within
+    the framework's per-test write budget.
+    """
+
+    TOPIC_NAME = "key_cardinality_stress"
+    KEY_MAP_MEMORY = 1024 * 1024  # 1 MB
+    MSG_SIZE = 512
+
+    if is_debug_mode():
+        key_set_cardinality = 10_000
+        msg_count = 50_000
+    else:
+        key_set_cardinality = 200_000
+        msg_count = 1_000_000
+
+    def __init__(self, test_context: TestContext):
+        super().__init__(
+            test_context,
+            extra_rp_conf={
+                "cloud_topics_compaction_key_map_memory": self.KEY_MAP_MEMORY,
+            },
+        )
+
+    def setUp(self):
+        assert self.redpanda
+        self.redpanda.start()
+        self.rpk.create_topic(
+            topic=self.TOPIC_NAME,
+            partitions=1,
+            replicas=3,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+                "cleanup.policy": TopicSpec.CLEANUP_COMPACT,
+                "min.cleanable.dirty.ratio": "0.0",
+            },
+        )
+
+    @cluster(num_nodes=4)
+    def test_key_cardinality_overflow(self):
+        self.wait_for_managed_logs()
+
+        producer = self.produce_and_wait(
+            topic=self.TOPIC_NAME,
+            msg_size=self.MSG_SIZE,
+            msg_count=self.msg_count,
+            key_set_cardinality=self.key_set_cardinality,
+        )
+
+        # With ~25K map capacity and 200K keys, compaction needs ~8
+        # passes to cover all keys. Wait for records_removed to
+        # stabilize — once it stops changing, compaction has converged.
+        self.wait_for_compaction_quiesce()
+
+        self.consume_and_verify(
+            topic=self.TOPIC_NAME,
+            producer=producer,
+        )
