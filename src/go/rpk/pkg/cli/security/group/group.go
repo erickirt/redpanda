@@ -11,7 +11,6 @@
 package group
 
 import (
-	adminv2 "buf.build/gen/go/redpandadata/core/protocolbuffers/go/redpanda/core/admin/v2"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
@@ -34,12 +33,4 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	p.InstallAdminFlags(cmd)
 	p.InstallFormatFlag(cmd)
 	return cmd
-}
-
-func groupMember(name string) *adminv2.RoleMember {
-	return &adminv2.RoleMember{
-		Member: &adminv2.RoleMember_Group{
-			Group: &adminv2.RoleGroup{Name: name},
-		},
-	}
 }

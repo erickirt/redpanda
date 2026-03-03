@@ -16,6 +16,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func groupMember(name string) *adminv2.RoleMember {
+	return &adminv2.RoleMember{
+		Member: &adminv2.RoleMember_Group{
+			Group: &adminv2.RoleGroup{Name: name},
+		},
+	}
+}
+
 func TestGroupMember(t *testing.T) {
 	m := groupMember("engineering")
 	require.NotNil(t, m.GetGroup())
