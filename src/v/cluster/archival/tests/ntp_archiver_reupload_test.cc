@@ -137,6 +137,9 @@ struct reupload_fixture : public archiver_fixture {
     void initialize(
       const std::vector<segment_desc>& segment_spec,
       bool enable_compaction = true) {
+        // Disable rm_stm: this test writes segments bypassing raft.
+        config::shard_local_cfg().enable_idempotence.set_value(false);
+        config::shard_local_cfg().enable_transactions.set_value(false);
         if (enable_compaction) {
             storage::ntp_config::default_overrides o;
             o.cleanup_policy_bitflags
