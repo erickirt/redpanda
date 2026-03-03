@@ -518,26 +518,42 @@ public:
         co_await peek();
         auto peeked = *_peeked;
         _peeked.reset();
-        if (auto* hdr = std::get_if<model::record_batch_header>(&peeked)) {
-            auto expected_size = hdr->size_bytes
-                                 - model::packed_record_batch_header_size;
-            auto records = co_await read_iobuf_exactly(_input, expected_size);
-            if (records.size_bytes() != expected_size) {
-                throw std::runtime_error(
-                  fmt::format(
-                    "expected {} bytes of record data, got {}",
-                    expected_size,
-                    records.size_bytes()));
-            }
-            co_return model::record_batch(
-              *hdr, std::move(records), model::record_batch::tag_ctor_ng{});
-        } else if (std::holds_alternative<partition_tag>(peeked)) {
-            co_return co_await read_next_serde<model::topic_id_partition>();
-        } else if (std::holds_alternative<footer_tag>(peeked)) {
-            co_return co_await read_next_serde<footer>();
-        } else {
-            co_return eof{};
-        }
+        co_return co_await ss::visit(
+          peeked,
+          [this](const model::record_batch_header& hdr) {
+              auto expected_size = hdr.size_bytes
+                                   - model::packed_record_batch_header_size;
+              return read_iobuf_exactly(_input, expected_size)
+                .then([hdr, expected_size](auto records) {
+                    if (records.size_bytes() != expected_size) {
+                        return ss::make_exception_future<result>(
+                          std::runtime_error(
+                            fmt::format(
+                              "expected {} bytes of record data, got {}",
+                              expected_size,
+                              records.size_bytes())));
+                    }
+                    return ss::make_ready_future<result>(result(
+                      model::record_batch(
+                        hdr,
+                        std::move(records),
+                        model::record_batch::tag_ctor_ng{})));
+                });
+          },
+          [this](const partition_tag&) {
+              return read_next_serde<model::topic_id_partition>().then(
+                [](auto v) {
+                    return ss::make_ready_future<result>(std::move(v));
+                });
+          },
+          [this](const footer_tag&) {
+              return read_next_serde<footer>().then([](auto v) {
+                  return ss::make_ready_future<result>(std::move(v));
+              });
+          },
+          [](const eof&) {
+              return ss::make_ready_future<result>(result(eof{}));
+          });
     }
 
     ss::future<> close() final {
