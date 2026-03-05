@@ -605,12 +605,23 @@ public:
     }
 
     ///\brief Get the mode of a context.
-    result<mode> get_mode(const context& ctx, default_to_global) const {
-        auto it = _context_stores.find(ctx);
-        if (it == _context_stores.end() || !it->second._mode.has_value()) {
-            return mode::read_write;
+    result<mode>
+    get_mode(const context& ctx, default_to_global fallback) const {
+        // Check context's own mode
+        if (auto it = _context_stores.find(ctx);
+            it != _context_stores.end() && it->second._mode.has_value()) {
+            return it->second._mode.value();
         }
-        return *it->second._mode;
+
+        // Default contexts always return a value, never
+        // an error. Other contexts enter this block only when
+        // fallback is enabled; otherwise they reach the
+        // error return below.
+        if (fallback || ctx == default_context) {
+            return default_top_level_mode;
+        }
+
+        return mode_not_found(ctx);
     }
 
     ///\brief Get the mode for a subject, or fallback to global.

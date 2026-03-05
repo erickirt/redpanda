@@ -471,6 +471,261 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_subject_global_context_fallback) {
       == pps::default_top_level_compat);
 }
 
+// default_context mode, no fallback
+// Resolution: default_context mode → hardcoded default
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_default_context_mode_no_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto no_fallback = pps::default_to_global::no;
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_mode(pps::default_context, no_fallback).get()
+      == pps::default_top_level_mode);
+
+    auto expected = pps::mode::read_only;
+    BOOST_REQUIRE(
+      store
+        .set_mode(dummy_marker, pps::default_context, expected, pps::force::no)
+        .get());
+
+    BOOST_REQUIRE(
+      store.get_mode(pps::default_context, no_fallback).get() == expected);
+
+    BOOST_REQUIRE(store.clear_mode(pps::default_context, pps::force::no).get());
+
+    BOOST_REQUIRE(
+      store.get_mode(pps::default_context, no_fallback).get()
+      == pps::default_top_level_mode);
+}
+
+// default_context mode, fallback enabled
+// Resolution: default_context mode → hardcoded default
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_default_context_mode_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto fallback = pps::default_to_global::yes;
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_mode(pps::default_context, fallback).get()
+      == pps::default_top_level_mode);
+
+    auto expected = pps::mode::import;
+    BOOST_REQUIRE(
+      store
+        .set_mode(dummy_marker, pps::default_context, expected, pps::force::no)
+        .get());
+
+    BOOST_REQUIRE(
+      store.get_mode(pps::default_context, fallback).get() == expected);
+
+    BOOST_REQUIRE(store.clear_mode(pps::default_context, pps::force::no).get());
+
+    BOOST_REQUIRE(
+      store.get_mode(pps::default_context, fallback).get()
+      == pps::default_top_level_mode);
+}
+
+// non-default context mode, no fallback
+// Resolution: context mode → error
+SEASTAR_THREAD_TEST_CASE(
+  test_sharded_store_nondefault_context_mode_no_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto no_fallback = pps::default_to_global::no;
+    auto ctx = pps::context{".ctx"};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE_EXCEPTION(
+      store.get_mode(ctx, no_fallback).get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          return e.code() == pps::error_code::mode_not_found;
+      });
+
+    auto expected = pps::mode::read_only;
+    BOOST_REQUIRE(
+      store.set_mode(dummy_marker, ctx, expected, pps::force::no).get());
+
+    BOOST_REQUIRE(store.get_mode(ctx, no_fallback).get() == expected);
+
+    BOOST_REQUIRE(store.clear_mode(ctx, pps::force::no).get());
+
+    BOOST_REQUIRE_EXCEPTION(
+      store.get_mode(ctx, no_fallback).get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          return e.code() == pps::error_code::mode_not_found;
+      });
+}
+
+// non-default context mode, fallback enabled
+// Resolution: context mode → hardcoded default
+SEASTAR_THREAD_TEST_CASE(test_sharded_store_nondefault_context_mode_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto fallback = pps::default_to_global::yes;
+    auto ctx = pps::context{".ctx"};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_mode(ctx, fallback).get() == pps::default_top_level_mode);
+
+    auto expected = pps::mode::import;
+    BOOST_REQUIRE(
+      store.set_mode(dummy_marker, ctx, expected, pps::force::no).get());
+    BOOST_REQUIRE(store.get_mode(ctx, fallback).get() == expected);
+
+    BOOST_REQUIRE(store.clear_mode(ctx, pps::force::no).get());
+    BOOST_REQUIRE(
+      store.get_mode(ctx, fallback).get() == pps::default_top_level_mode);
+}
+
+// subject in default_context mode, no fallback
+// Resolution: subject mode → error
+SEASTAR_THREAD_TEST_CASE(
+  test_sharded_store_subject_default_context_mode_no_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto no_fallback = pps::default_to_global::no;
+    auto ctx_sub = pps::context_subject{
+      pps::default_context, pps::subject{"sub"}};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE_EXCEPTION(
+      store.get_mode(ctx_sub, no_fallback).get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          return e.code() == pps::error_code::mode_not_found;
+      });
+
+    auto expected = pps::mode::read_only;
+    BOOST_REQUIRE(
+      store.set_mode(dummy_marker, ctx_sub, expected, pps::force::no).get());
+    BOOST_REQUIRE(store.get_mode(ctx_sub, no_fallback).get() == expected);
+}
+
+// subject in default_context mode, fallback enabled
+// Resolution: subject mode → default_context mode → hardcoded default
+SEASTAR_THREAD_TEST_CASE(
+  test_sharded_store_subject_default_context_mode_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto fallback = pps::default_to_global::yes;
+    auto subject = pps::subject{"sub"};
+    auto ctx = pps::default_context;
+    auto ctx_sub = pps::context_subject{ctx, subject};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_mode(ctx_sub, fallback).get() == pps::default_top_level_mode);
+
+    auto expected1 = pps::mode::read_only;
+    BOOST_REQUIRE(
+      store
+        .set_mode(dummy_marker, pps::default_context, expected1, pps::force::no)
+        .get());
+    BOOST_REQUIRE(store.get_mode(ctx_sub, fallback).get() == expected1);
+
+    auto expected2 = pps::mode::import;
+    BOOST_REQUIRE(
+      store.set_mode(dummy_marker, ctx_sub, expected2, pps::force::no).get());
+    BOOST_REQUIRE(store.get_mode(ctx_sub, fallback).get() == expected2);
+
+    BOOST_REQUIRE(
+      store.clear_mode(dummy_marker, ctx_sub, pps::force::no).get());
+    BOOST_REQUIRE(store.get_mode(ctx_sub, fallback).get() == expected1);
+
+    BOOST_REQUIRE(store.clear_mode(pps::default_context, pps::force::no).get());
+    BOOST_REQUIRE(
+      store.get_mode(ctx_sub, fallback).get() == pps::default_top_level_mode);
+}
+
+// subject in non-default context mode, no fallback
+// Resolution: subject mode → error
+SEASTAR_THREAD_TEST_CASE(
+  test_sharded_store_subject_nondefault_context_mode_no_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto no_fallback = pps::default_to_global::no;
+    auto ctx = pps::context{".ctx"};
+    auto ctx_sub = pps::context_subject{ctx, pps::subject{"sub"}};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE_EXCEPTION(
+      store.get_mode(ctx_sub, no_fallback).get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          return e.code() == pps::error_code::mode_not_found;
+      });
+
+    auto expected = pps::mode::read_only;
+    BOOST_REQUIRE(
+      store.set_mode(dummy_marker, ctx_sub, expected, pps::force::no).get());
+
+    BOOST_REQUIRE(store.get_mode(ctx_sub, no_fallback).get() == expected);
+
+    BOOST_REQUIRE(
+      store.clear_mode(dummy_marker, ctx_sub, pps::force::no).get());
+
+    BOOST_REQUIRE_EXCEPTION(
+      store.get_mode(ctx_sub, no_fallback).get(),
+      pps::exception,
+      [](const pps::exception& e) {
+          return e.code() == pps::error_code::mode_not_found;
+      });
+}
+
+// subject in non-default context mode, fallback enabled
+// Resolution: subject mode → context mode → hardcoded default
+SEASTAR_THREAD_TEST_CASE(
+  test_sharded_store_subject_nondefault_context_mode_fallback) {
+    pps::sharded_store store;
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
+    auto stop_store = ss::defer([&store]() { store.stop().get(); });
+
+    auto fallback = pps::default_to_global::yes;
+    auto ctx = pps::context{".ctx"};
+    auto ctx_sub = pps::context_subject{ctx, pps::subject{"subject"}};
+    pps::seq_marker dummy_marker;
+
+    BOOST_REQUIRE(
+      store.get_mode(ctx_sub, fallback).get() == pps::default_top_level_mode);
+
+    auto expected1 = pps::mode::read_only;
+    BOOST_REQUIRE(
+      store.set_mode(dummy_marker, ctx, expected1, pps::force::no).get());
+    BOOST_REQUIRE(store.get_mode(ctx_sub, fallback).get() == expected1);
+
+    auto expected2 = pps::mode::import;
+    BOOST_REQUIRE(
+      store.set_mode(dummy_marker, ctx_sub, expected2, pps::force::no).get());
+    BOOST_REQUIRE(store.get_mode(ctx_sub, fallback).get() == expected2);
+
+    BOOST_REQUIRE(
+      store.clear_mode(dummy_marker, ctx_sub, pps::force::no).get());
+    BOOST_REQUIRE(store.get_mode(ctx_sub, fallback).get() == expected1);
+
+    BOOST_REQUIRE(store.clear_mode(ctx, pps::force::no).get());
+    BOOST_REQUIRE(
+      store.get_mode(ctx_sub, fallback).get() == pps::default_top_level_mode);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     pps::sharded_store store;
     store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();

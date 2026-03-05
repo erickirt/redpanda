@@ -186,6 +186,13 @@ inline error_info compatibility_not_found(const context_subject& sub) {
         sub)};
 }
 
+inline error_info mode_not_found(const context& ctx) {
+    return error_info{
+      error_code::mode_not_found,
+      fmt::format(
+        "Context '{}' does not have context-level mode configured", ctx)};
+}
+
 inline error_info mode_not_found(const context_subject& sub) {
     return error_info{
       error_code::mode_not_found,
