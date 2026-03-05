@@ -292,7 +292,7 @@ public:
         RPTEST_EXPECT_EQ(log->closed_segment_bytes(), expected.second);
     }
 
-    // Utility class to enable/disable stm_manager according to the log
+    // Utility class to enable/disable stm_hookset according to the log
     // lifetime. In production raft layer does it.
     //
     // Limitations;
@@ -305,7 +305,7 @@ public:
         log_holder() = default;
         explicit log_holder(ss::shared_ptr<storage::log>&& log_ptr)
           : _log_ptr(std::move(log_ptr)) {
-            _log_ptr->stm_manager()->start();
+            _log_ptr->stm_hookset()->start();
         }
 
         log_holder(const log_holder&) = delete;
@@ -331,7 +331,7 @@ public:
               _log_ptr.use_count() == 2,
               "there are {} shared_ptrs to log, expected 2",
               _log_ptr.use_count());
-            _log_ptr->stm_manager()->stop();
+            _log_ptr->stm_hookset()->stop();
         }
 
         operator const ss::shared_ptr<storage::log>&() const {
@@ -345,7 +345,7 @@ public:
         ss::shared_ptr<storage::log> _log_ptr;
     };
 
-    // Manage log and de-/activate stm_manager for the log lifetime
+    // Manage log and de-/activate stm_hookset for the log lifetime
     log_holder manage_log(storage::log_manager& mgr, storage::ntp_config cfg) {
         return log_holder(mgr.manage(std::move(cfg)).get());
     }

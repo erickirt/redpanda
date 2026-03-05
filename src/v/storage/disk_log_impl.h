@@ -324,8 +324,8 @@ public:
     // transactional data or fence batches
     model::offset transaction_free_prefix_offset() const final;
 
-    ss::lw_shared_ptr<storage::stm_manager> stm_manager() override {
-        return _stm_manager;
+    ss::lw_shared_ptr<storage::stm_hookset> stm_hookset() override {
+        return _stm_hookset;
     }
 
 private:
@@ -461,7 +461,7 @@ private:
       model::offset& cached) const;
 
 private:
-    ss::lw_shared_ptr<storage::stm_manager> _stm_manager;
+    ss::lw_shared_ptr<storage::stm_hookset> _stm_hookset;
 
     // Computes the segment size based on the latest max_segment_size
     // configuration. This takes into consideration any segment size

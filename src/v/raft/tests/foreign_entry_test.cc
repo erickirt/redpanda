@@ -66,7 +66,7 @@ struct foreign_entry_fixture {
         auto log = _storage.log_mgr()
                      .manage(storage::ntp_config(_ntp, test_directory()))
                      .get();
-        log->stm_manager()->start();
+        log->stm_hookset()->start();
     }
 
     std::vector<storage::append_result> write_n(const std::size_t n) {
@@ -131,7 +131,7 @@ struct foreign_entry_fixture {
           std::move(nodes), model::revision_id(1));
     }
     ~foreign_entry_fixture() {
-        get_log()->stm_manager()->stop();
+        get_log()->stm_hookset()->stop();
         _storage.stop().get();
         _feature_table.stop().get();
     }

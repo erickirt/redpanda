@@ -2586,7 +2586,7 @@ TEST_F(storage_test_fixture, reader_prevents_log_shutdown) {
                      std::make_unique<storage::ntp_config::default_overrides>(
                        overrides)))
                  .get();
-    log->stm_manager()->start();
+    log->stm_hookset()->start();
     // append some batches
     append_exactly(log, 5, 128).get();
 
@@ -2598,7 +2598,7 @@ TEST_F(storage_test_fixture, reader_prevents_log_shutdown) {
       std::nullopt,
       std::nullopt,
       std::nullopt);
-    log->stm_manager()->stop();
+    log->stm_hookset()->stop();
 
     auto f = ss::now();
     {
@@ -5363,7 +5363,7 @@ TEST_F(storage_test_fixture, dirty_and_closed_bytes_bookkeeping) {
                    mgr->config().base_dir,
                    std::make_unique<ntp_config::default_overrides>(overrides)))
                  .get();
-    log->stm_manager()->start();
+    log->stm_hookset()->start();
     auto* disk_log = static_cast<disk_log_impl*>(log.get());
 
     housekeeping_config cfg{
@@ -5399,7 +5399,7 @@ TEST_F(storage_test_fixture, dirty_and_closed_bytes_bookkeeping) {
     // Restarts the log manager- this has the added benefit of forcing recovery
     // from the existing segment set.
     auto restart_log_manager_func = [&]() {
-        log->stm_manager()->stop();
+        log->stm_hookset()->stop();
         mgr->stop().get();
         mgr = std::make_unique<log_manager>(
           log_cfg, kvstore, resources, feature_table);
@@ -5410,7 +5410,7 @@ TEST_F(storage_test_fixture, dirty_and_closed_bytes_bookkeeping) {
                   std::make_unique<ntp_config::default_overrides>(overrides)))
                 .get();
         disk_log = static_cast<disk_log_impl*>(log.get());
-        log->stm_manager()->start();
+        log->stm_hookset()->start();
     };
 
     auto adjacent_merge_func = [&]() {
@@ -5473,7 +5473,7 @@ TEST_F(storage_test_fixture, dirty_and_closed_bytes_bookkeeping) {
         did_compact = disk_log->sliding_window_compact(cfg.compact).get();
         check_dirty_and_closed_segment_bytes(log);
     }
-    log->stm_manager()->stop();
+    log->stm_hookset()->stop();
 }
 
 TEST_F(storage_test_fixture, negative_dirty_and_closed_bytes_triggers_reset) {
@@ -5837,8 +5837,8 @@ TEST_F(storage_test_fixture, log_manager_concurrent_housekeeping_and_removal) {
           auto ntp_to_remove = random_generators::random_choice(
             std::vector<model::ntp>(managed_ntps.begin(), managed_ntps.end()));
 
-          mgr.get(ntp_to_remove)->stm_manager()->start();
-          mgr.get(ntp_to_remove)->stm_manager()->stop();
+          mgr.get(ntp_to_remove)->stm_hookset()->start();
+          mgr.get(ntp_to_remove)->stm_hookset()->stop();
           return mgr.remove(ntp_to_remove).then([]() {
               return ss::sleep(remove_func_sleep);
           });
@@ -5859,7 +5859,7 @@ TEST_F(storage_test_fixture, log_manager_concurrent_housekeeping_and_removal) {
       .get();
 
     for (const auto& ntp : mgr.get_all_ntps()) {
-        auto stmm = mgr.get(ntp)->stm_manager();
+        auto stmm = mgr.get(ntp)->stm_hookset();
         stmm->start();
         stmm->stop();
     }

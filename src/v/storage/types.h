@@ -55,7 +55,7 @@ public:
     // create a snapshot at given offset unless a snapshot with given or newer
     // offset already exists
     virtual ss::future<> ensure_local_snapshot_exists(model::offset) = 0;
-    // hints stm_manager that now it's a good time to make a snapshot
+    // hints stm_hookset that now it's a good time to make a snapshot
     virtual void write_local_snapshot_in_background() = 0;
 
     // Lets the STM control snapshotting and local data removal by limiting
@@ -102,7 +102,7 @@ public:
 };
 
 /**
- * stm_manager is an interface responsible for the coordination of state
+ * stm_hookset is an interface responsible for the coordination of state
  * machines  snapshotting and the log operations such as eviction and
  * compaction. We use  snapshots for two purposes:
  *
@@ -118,21 +118,21 @@ public:
  * to a situation when the state exists only in RAM which makes the system
  * vulnerable to power outages.
  *
- * We pass stm_manager to log.h and eviction_stm.h to give them a way to make
+ * We pass stm_hookset to log.h and eviction_stm.h to give them a way to make
  * sure that a snapshot with given or newer offset exists before removing the
- * prior events. When a snapshot doesn't exist stm_manager makes the snapshot
+ * prior events. When a snapshot doesn't exist stm_hookset makes the snapshot
  * and returns control flow.
  *
  * make_snapshot lets log to hint when it's good time to make a snapshot e.g.
  * after a segment roll. It's up to a state machine to decide whether to make
  * it now or on its own pace.
  */
-class stm_manager {
+class stm_hookset {
 public:
-    ~stm_manager() {
+    ~stm_hookset() {
         vassert(
           _status != status::running,
-          "stm_manager is destructed without shutting down");
+          "stm_hookset is destructed without shutting down");
     }
 
     void start() {
@@ -243,7 +243,7 @@ private:
         switch (_status) {
         case status::not_started: {
             vassert(
-              false, "stm_manager has not started for operation {}", operation);
+              false, "stm_hookset has not started for operation {}", operation);
         }
         case status::running:
             [[likely]] return;
@@ -264,7 +264,7 @@ private:
         if (_status == status::not_started) {
             vlog(
               stlog.error,
-              "attempt to list STMs before stm_manager is started");
+              "attempt to list STMs before stm_hookset is started");
             co_await _status_running_cv.wait();
         }
         check_status("await_start");

@@ -138,12 +138,12 @@ TEST(LogManagerTest, test_can_load_logs) {
     std::vector<ss::shared_ptr<storage::log>> logs;
     for (size_t i = 0; i < 4; ++i) {
         auto log = m.manage(config_from_ntp(ntps[i].ntp())).get();
-        log->stm_manager()->start();
+        log->stm_hookset()->start();
         logs.push_back(std::move(log));
     }
     auto stop_stms = ss::defer([&logs] {
         for (auto& log : logs) {
-            log->stm_manager()->stop();
+            log->stm_hookset()->stop();
         }
     });
     EXPECT_EQ(4, m.size());

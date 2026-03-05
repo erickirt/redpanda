@@ -65,13 +65,13 @@ TEST_F(storage_test_fixture, test_random_workload) {
               ntp, mngr.config().base_dir, std::move(overrides));
         }
         auto log = mngr.manage(std::move(cfg)).get();
-        log->stm_manager()->start();
+        log->stm_hookset()->start();
         logs_to_fuzz.emplace_back(
           std::make_unique<storage::opfuzz>(std::move(log), ops_per_ntp));
     }
     auto stop_stms = ss::defer([&logs_to_fuzz] {
         for (auto& w : logs_to_fuzz) {
-            w->log()->stm_manager()->stop();
+            w->log()->stm_hookset()->stop();
         }
     });
     // Execute NTP workloads in parallel
@@ -111,7 +111,7 @@ TEST_F(storage_test_fixture, test_random_remove) {
         auto directory = ssx::sformat(
           "{}/{}", mngr.config().base_dir, ntp.path());
         auto log = mngr.manage(storage::ntp_config(ntp, directory)).get();
-        log->stm_manager()->start();
+        log->stm_hookset()->start();
         logs_to_fuzz.emplace_back(
           std::make_unique<storage::opfuzz>(std::move(log), ops_per_ntp));
     }
@@ -128,7 +128,7 @@ TEST_F(storage_test_fixture, test_random_remove) {
 
     // Stop stm_managers before removing logs
     for (auto& w : logs_to_fuzz) {
-        w->log()->stm_manager()->stop();
+        w->log()->stm_hookset()->stop();
     }
 
     std::vector<size_t> random_ntp_removal_sequence;

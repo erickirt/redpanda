@@ -157,7 +157,7 @@ public:
      */
     virtual ss::future<model::offset> monitor_eviction(ss::abort_source&) = 0;
 
-    virtual ss::lw_shared_ptr<storage::stm_manager> stm_manager() = 0;
+    virtual ss::lw_shared_ptr<storage::stm_hookset> stm_hookset() = 0;
 
     virtual size_t size_bytes() const = 0;
     // Byte size of the log for all segments after offset 'o'

@@ -153,7 +153,7 @@ public:
 
     bool needs_compaction() const final;
 
-    ss::lw_shared_ptr<storage::stm_manager> stm_manager() final;
+    ss::lw_shared_ptr<storage::stm_hookset> stm_hookset() final;
 
 private:
     ss::shared_ptr<storage::log> _underlying_log;
