@@ -41,6 +41,7 @@ class _StatusEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTyp
     L0_GC_STATUS_RUNNING: _Status.ValueType
     L0_GC_STATUS_STOPPING: _Status.ValueType
     L0_GC_STATUS_STOPPED: _Status.ValueType
+    L0_GC_STATUS_RESETTING: _Status.ValueType
 
 class Status(_Status, metaclass=_StatusEnumTypeWrapper):
     """GC worker lifecycle states.
@@ -51,6 +52,7 @@ L0_GC_STATUS_PAUSED: Status.ValueType
 L0_GC_STATUS_RUNNING: Status.ValueType
 L0_GC_STATUS_STOPPING: Status.ValueType
 L0_GC_STATUS_STOPPED: Status.ValueType
+L0_GC_STATUS_RESETTING: Status.ValueType
 Global___Status: typing_extensions.TypeAlias = Status
 
 @typing.final
@@ -194,6 +196,36 @@ class PauseGcResponse(google.protobuf.message.Message):
     def __init__(self) -> None:
         ...
 Global___PauseGcResponse: typing_extensions.TypeAlias = PauseGcResponse
+
+@typing.final
+class ResetGcRequest(google.protobuf.message.Message):
+    """Request to reset GC worker state on a specific node."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    NODE_ID_FIELD_NUMBER: builtins.int
+    node_id: builtins.int
+    'Target node. If omitted, the receiving node handles the request.'
+
+    def __init__(self, *, node_id: builtins.int | None=...) -> None:
+        ...
+
+    def HasField(self, field_name: typing.Literal['_node_id', b'_node_id', 'node_id', b'node_id']) -> builtins.bool:
+        ...
+
+    def ClearField(self, field_name: typing.Literal['_node_id', b'_node_id', 'node_id', b'node_id']) -> None:
+        ...
+
+    def WhichOneof(self, oneof_group: typing.Literal['_node_id', b'_node_id']) -> typing.Literal['node_id'] | None:
+        ...
+Global___ResetGcRequest: typing_extensions.TypeAlias = ResetGcRequest
+
+@typing.final
+class ResetGcResponse(google.protobuf.message.Message):
+    """Empty on success; RPC error on failure."""
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    def __init__(self) -> None:
+        ...
+Global___ResetGcResponse: typing_extensions.TypeAlias = ResetGcResponse
 
 @typing.final
 class AdvanceEpochRequest(google.protobuf.message.Message):
