@@ -17,6 +17,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/handlers.h"
+#include "pandaproxy/rest/iceberg_handlers.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
@@ -104,6 +105,11 @@ server::routes_t get_proxy_routes(ss::gate& gate, one_shot& es) {
         ss::httpd::rest_json::http_rest_status_ready,
         wrap(gate, es, status_ready)});
 
+    routes.routes.emplace_back(
+      server::route_t{
+        ss::httpd::rest_json::get_translation_state,
+        wrap(gate, es, get_translation_state)});
+
     return routes;
 }
 
@@ -114,7 +120,8 @@ proxy::proxy(
   size_t max_memory,
   ss::sharded<kafka::client::client>& client,
   ss::sharded<kafka_client_cache>& client_cache,
-  cluster::controller* controller)
+  cluster::controller* controller,
+  ss::sharded<datalake::coordinator::frontend>& dl_frontend)
   : _config(config)
   , _client_cfg(client_cfg)
   , _mem_sem(max_memory, "pproxy/mem")
@@ -122,9 +129,11 @@ proxy::proxy(
   , _inflight_config_binding(config::shard_local_cfg().max_in_flight_pandaproxy_requests_per_shard.bind())
   , _client(client)
   , _client_cache(client_cache)
+  , _dl_frontend(dl_frontend)
   , _ctx{{{{}, max_memory, _mem_sem, _inflight_config_binding(), _inflight_sem, {}, smp_sg}, *this},
-        {config::always_true(), config::shard_local_cfg().superusers.bind(), controller},
-        _config.pandaproxy_api.value()}
+  {config::always_true(), config::shard_local_cfg().superusers.bind(), controller},
+  _config.pandaproxy_api.value()}
+  , _topic_table(controller->get_topics_state())
   , _server(
       "pandaproxy",
       "rest_proxy",
