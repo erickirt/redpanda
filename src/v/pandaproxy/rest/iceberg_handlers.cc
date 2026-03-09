@@ -10,6 +10,8 @@
 #include "pandaproxy/rest/iceberg_handlers.h"
 
 #include "bytes/iostream.h"
+#include "cluster/topic_table.h"
+#include "config/rest_authn_endpoint.h"
 #include "datalake/coordinator/frontend.h"
 #include "datalake/coordinator/state.h"
 #include "datalake/table_id_provider.h"
@@ -19,6 +21,9 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/httpd.h"
 #include "proto/redpanda/core/rest/iceberg.proto.h"
+#include "security/acl.h"
+#include "security/authorizer.h"
+#include "security/request_auth.h"
 
 namespace pandaproxy::rest {
 
@@ -114,9 +119,26 @@ get_translation_state(proxy::server::request_t rq, proxy::server::reply_t rp) {
         co_return std::move(rp);
     }
 
-    auto& topic_states = fe_res.topic_states;
+    // Filter out topics the user is not authorized to describe.
+    if (rq.authn_method != config::rest_authn_method::none) {
+        auto auth_result = rq.context().authenticator.authenticate(*rq.req);
+        auth_result.pass();
+        auto principal = security::acl_principal{
+          security::principal_type::user, rq.user.name};
+        auto host = security::acl_host{rq.req->get_client_address().addr()};
+        auto& groups = auth_result.get_groups();
+        std::erase_if(topic_states, [&](const auto& entry) {
+            auto res = rq.service().authorizer().authorized(
+              entry.first,
+              security::acl_operation::describe,
+              principal,
+              host,
+              security::superuser_required::no,
+              groups);
+            return !res.is_authorized();
+        });
+    }
 
-    // Build the protobuf response.
     proto::pandaproxy::get_translation_state_response resp;
     chunked_hash_map<ss::sstring, proto::pandaproxy::topic_state>
       pb_topic_states;

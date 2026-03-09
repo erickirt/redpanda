@@ -17,6 +17,7 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/server.h"
 #include "pandaproxy/util.h"
+#include "security/fwd.h"
 #include "utils/adjustable_semaphore.h"
 
 #include <seastar/core/future.hh>
@@ -51,6 +52,8 @@ public:
     ss::sharded<datalake::coordinator::frontend>& dl_frontend() {
         return _dl_frontend;
     }
+    security::authorizer& authorizer();
+    cluster::topic_table& topic_table() { return _topic_table.local(); }
     ss::future<> mitigate_error(std::exception_ptr);
 
 private:
@@ -65,6 +68,7 @@ private:
     ss::gate _gate;
     ss::sharded<kafka::client::client>& _client;
     ss::sharded<kafka_client_cache>& _client_cache;
+    cluster::controller* _controller;
     ss::sharded<datalake::coordinator::frontend>& _dl_frontend;
     server::context_t _ctx;
     ss::sharded<cluster::topic_table>& _topic_table;

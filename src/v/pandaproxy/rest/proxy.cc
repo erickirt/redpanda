@@ -18,6 +18,7 @@
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/handlers.h"
 #include "pandaproxy/rest/iceberg_handlers.h"
+#include "security/authorizer.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
@@ -129,6 +130,7 @@ proxy::proxy(
   , _inflight_config_binding(config::shard_local_cfg().max_in_flight_pandaproxy_requests_per_shard.bind())
   , _client(client)
   , _client_cache(client_cache)
+  , _controller(controller)
   , _dl_frontend(dl_frontend)
   , _ctx{{{{}, max_memory, _mem_sem, _inflight_config_binding(), _inflight_sem, {}, smp_sg}, *this},
   {config::always_true(), config::shard_local_cfg().superusers.bind(), controller},
@@ -167,6 +169,10 @@ ss::future<> proxy::stop() {
 
 configuration& proxy::config() { return _config; }
 const configuration& proxy::config() const { return _config; }
+
+security::authorizer& proxy::authorizer() {
+    return _controller->get_authorizer().local();
+}
 
 ss::future<> proxy::do_start() {
     if (_is_started) {

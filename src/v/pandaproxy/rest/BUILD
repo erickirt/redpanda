@@ -47,6 +47,7 @@ redpanda_cc_library(
         "//src/v/pandaproxy:rest_requests",
         "//src/v/pandaproxy:rest_swagger_definitions",
         "//src/v/security",
+        "//src/v/security:request_auth",
         "//src/v/ssx:sformat",
         "//src/v/utils:adjustable_semaphore",
         "//src/v/utils:log_hist",
