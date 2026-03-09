@@ -439,12 +439,19 @@ private:
     // for monotonicity of computed LSO.
     model::offset _last_known_lso{model::invalid_lso};
     /**
-     * LSO lock protects the LSO from being exposed before transaction begin
-     * batch is applied.
+     * LSO lock protects from incorrect LSO calculation based on applied data
+     * when transaction begin batch has been accepted but not yet applied.
      *
-     * The lock is acquired in write mode when a begin transaction batch is
-     * being handled protecting exposure of potentially invalid LSO until the
-     * begin batch is applied.
+     * The lock is acquired in write mode during LSO calculation. The lock is
+     * acquired in read mode when a begin transaction batch is being replicated.
+     *
+     * This lock mode choice does not reflect any entity being written into or
+     * read from, but purely to enforce necessary isolation:
+     * - concurrent begin batch processing is allowed;
+     * - but no LSO recalculation is allowed during this.
+     *
+     * Write lock contention is not an issue, as calculation is done in a
+     * synchronous function. Should this change, a bimodal lock should be used.
      */
     ss::rwlock _lso_lock;
 

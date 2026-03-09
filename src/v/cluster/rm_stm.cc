@@ -260,7 +260,7 @@ ss::future<checked<model::term_id, tx::errc>> rm_stm::begin_tx(
   model::partition_id tm) {
     auto holder = _gate.hold();
     auto state_lock_holder = co_await _state_lock.hold_read_lock();
-    auto lso_lock_holder = co_await _lso_lock.hold_write_lock();
+    auto lso_lock_holder = co_await _lso_lock.hold_read_lock();
     if (!co_await sync(_sync_timeout())) {
         vlog(
           _ctx_log.trace,
@@ -1315,8 +1315,8 @@ model::offset rm_stm::last_stable_offset() {
           last_applied);
         return _last_known_lso;
     }
-    auto lso_read_units = _lso_lock.try_hold_read_lock();
-    if (!lso_read_units) {
+    auto lso_recalc_holder = _lso_lock.try_hold_write_lock();
+    if (!lso_recalc_holder) {
         // LSO calculation is in progress, return last known LSO
         vlog(
           _ctx_log.trace,
