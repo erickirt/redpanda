@@ -23,6 +23,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -42,6 +43,12 @@ type finalMetrics struct {
 	Errors         uint64  `json:"errors"`
 }
 
+const (
+	statsReqWidth = 12
+	statsMBWidth  = 8
+	statsErrWidth = 8
+)
+
 func computeMetrics(s *stats, now, measureStart time.Time) finalMetrics {
 	elapsed := now.Sub(measureStart).Seconds()
 	if elapsed <= 0 {
@@ -54,19 +61,24 @@ func computeMetrics(s *stats, now, measureStart time.Time) finalMetrics {
 	}
 }
 
-func printStats(s *stats, now, measureStart time.Time, final bool) {
-	if now.Before(measureStart) {
-		remaining := measureStart.Sub(now).Round(time.Second)
-		fmt.Printf("warmup in progress, %s remaining\n", remaining)
-		return
-	}
+func printStatsHeader(tw *out.TabWriter) {
+	tw.Print(
+		fmt.Sprintf("%*s", statsReqWidth, "REQUESTS/S"),
+		fmt.Sprintf("%*s", statsMBWidth, "MB/S"),
+		fmt.Sprintf("%*s", statsErrWidth, "ERRORS"),
+	)
+	_ = tw.Flush()
+}
+
+func printStats(tw *out.TabWriter, s *stats, now, measureStart time.Time) {
 	m := computeMetrics(s, now, measureStart)
 
-	prefix := ""
-	if final {
-		prefix = "final "
-	}
-	fmt.Printf("%srequests/s=%.2f MB/s=%.2f errors=%d\n", prefix, m.RequestsPerSec, m.MBPerSec, m.Errors)
+	tw.Print(
+		fmt.Sprintf("%12.2f", m.RequestsPerSec),
+		fmt.Sprintf("%8.2f", m.MBPerSec),
+		fmt.Sprintf("%8d", m.Errors),
+	)
+	_ = tw.Flush()
 }
 
 func createBenchmarkTopic(ctx context.Context, adm *kadm.Client, topic string, partitions int32, replicas int16) error {
@@ -382,6 +394,11 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}()
 
 			fmt.Printf("topic=%s clients=%d partitions=%d record_size=%d replication_factor=%d\n", topic, clients, partitions, recordSize, replicas)
+			if warmup > 0 {
+				fmt.Printf("warming up for %ds...\n", warmupS)
+			}
+
+			statsTable := out.NewTable()
 
 			var wg sync.WaitGroup
 			for _, cl := range producerClients {
@@ -392,6 +409,13 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				}(cl)
 			}
 
+			select {
+			case <-runCtx.Done():
+			case <-time.After(warmup):
+			}
+
+			printStatsHeader(statsTable)
+
 			ticker := time.NewTicker(time.Second)
 			defer ticker.Stop()
 			for {
@@ -399,7 +423,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				case <-runCtx.Done():
 					wg.Wait()
 					if ctx.Err() == nil {
-						printStats(stats, measureEnd, measureStart, true)
+						printStats(statsTable, stats, measureEnd, measureStart)
 					}
 					if metricsJSON != "" {
 						metrics := computeMetrics(stats, measureEnd, measureStart)
@@ -414,7 +438,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					}
 					return nil
 				case <-ticker.C:
-					printStats(stats, time.Now(), measureStart, false)
+					printStats(statsTable, stats, time.Now(), measureStart)
 				}
 			}
 		},
