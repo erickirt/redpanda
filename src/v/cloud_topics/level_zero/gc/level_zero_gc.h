@@ -404,6 +404,8 @@ public:
      *   - resetting: reset() is draining in-flight work
      *   - stopping: stop() requested but there may be work still in flight
      *   - stopped: Permanently stopped.
+     *   - safety_blocked: GC is started but the safety monitor is preventing
+     *     collection (e.g. cluster unhealthy)
      */
     enum class state : uint8_t {
         paused,
@@ -411,6 +413,7 @@ public:
         resetting,
         stopping,
         stopped,
+        safety_blocked,
     };
 
     /**

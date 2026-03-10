@@ -808,6 +808,8 @@ std::string_view to_string_view(level_zero_gc::state s) {
         return "level_zero_gc::state::stopping";
     case stopped:
         return "level_zero_gc::state::stopped";
+    case safety_blocked:
+        return "level_zero_gc::state::safety_blocked";
     }
     vunreachable("Unrecognized GC state: {}", s);
 }
@@ -822,7 +824,11 @@ auto level_zero_gc::get_state() const -> state {
         if (resetting_) {
             return state::resetting;
         }
-        return should_run_ ? state::running : state::paused;
+        if (!should_run_) {
+            return state::paused;
+        }
+        return safety_monitor_->can_proceed().ok ? state::running
+                                                 : state::safety_blocked;
     }();
     vlog(cd_log.debug, "cloud_topics L0 GC worker state: {}", st);
     return st;
