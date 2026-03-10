@@ -253,6 +253,33 @@ public:
         virtual size_t total_shards() const = 0;
     };
 
+    /// Interface for gating GC on system-level safety conditions.
+    ///
+    /// Production implementations poll external signals (e.g. cluster health)
+    /// in a background fiber and cache the result so that can_proceed() is
+    /// synchronous and cheap. This is orthogonal to admin pause/start — even
+    /// if an operator calls start(), GC will not proceed while the safety
+    /// monitor reports not-ok.
+    class safety_monitor {
+    public:
+        safety_monitor() = default;
+        safety_monitor(const safety_monitor&) = delete;
+        safety_monitor(safety_monitor&&) = delete;
+        safety_monitor& operator=(const safety_monitor&) = delete;
+        safety_monitor& operator=(safety_monitor&&) = delete;
+        virtual ~safety_monitor() = default;
+
+        struct result {
+            bool ok;
+            std::optional<ss::sstring> reason;
+        };
+
+        virtual result can_proceed() const = 0;
+
+        virtual void start() {}
+        virtual seastar::future<> stop() { return seastar::now(); }
+    };
+
 public:
     /*
      * Construct with the given storage and epoch providers. This interface is
