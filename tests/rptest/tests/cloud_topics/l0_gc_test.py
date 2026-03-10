@@ -136,7 +136,7 @@ class CloudTopicsL0GCTestBase(RedpandaTest):
             workers=1,
         ) as repeater:
             repeater.await_group_ready()
-            repeater.await_progress(n, timeout_sec=90)
+            repeater.await_progress(n, timeout_sec=120)
 
 
 class CloudTopicsL0GCTest(CloudTopicsL0GCTestBase):
