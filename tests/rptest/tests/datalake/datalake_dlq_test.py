@@ -427,14 +427,13 @@ class DatalakeDLQTest(RedpandaTest):
 
             # Wait for valid records to be written to the table.
             dl.wait_for_translation(
-                self.topic_name, num_valid_per_iter * num_iter, 30, 5
+                self.topic_name,
+                num_valid_per_iter * num_iter,
             )
 
             dl.wait_for_translation(
                 self.topic_name,
                 num_invalid_per_iter * num_iter,
-                30,
-                5,
                 table_override=f"{self.topic_name}~dlq",
             )
 
@@ -499,7 +498,8 @@ class DatalakeDLQTest(RedpandaTest):
 
             # Wait for valid records to be written to the table.
             dl.wait_for_translation(
-                self.topic_name, num_valid_per_iter * num_iter, 30, 5
+                self.topic_name,
+                num_valid_per_iter * num_iter,
             )
 
             if action == IcebergInvalidRecordAction.DROP:
@@ -511,8 +511,6 @@ class DatalakeDLQTest(RedpandaTest):
                 dl.wait_for_translation(
                     self.topic_name,
                     num_invalid_per_iter * num_iter,
-                    30,
-                    5,
                     table_override=f"{self.topic_name}~dlq",
                 )
             else:
@@ -557,16 +555,12 @@ class DatalakeDLQTest(RedpandaTest):
                 dl.produce_to_topic(self.topic_name, 1, num_invalid_per_iter)
 
             # Wait for valid records to be written to the table.
-            dl.wait_for_translation(
-                self.topic_name, num_valid_per_iter * num_iter, 30, 5
-            )
+            dl.wait_for_translation(self.topic_name, num_valid_per_iter * num_iter)
 
             # Wait for invalid records to be written to the DLQ table.
             dl.wait_for_translation(
                 self.topic_name,
                 num_invalid_per_iter * num_iter,
-                30,
-                5,
                 table_override=f"{self.topic_name}~dlq",
             )
 
@@ -607,7 +601,8 @@ class DatalakeDLQTest(RedpandaTest):
 
             # Wait for valid records to be written to the table.
             dl.wait_for_translation(
-                self.topic_name, 2 * num_valid_per_iter * num_iter, 30, 5
+                self.topic_name,
+                2 * num_valid_per_iter * num_iter,
             )
 
             dlq_count = dl.query_engine(query_engine).count_table(
