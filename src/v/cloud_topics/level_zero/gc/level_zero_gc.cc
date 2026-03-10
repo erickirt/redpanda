@@ -19,6 +19,7 @@
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/members_table.h"
 #include "cluster/topic_table.h"
+#include "config/configuration.h"
 #include "ssx/semaphore.h"
 #include "ssx/work_queue.h"
 
@@ -32,7 +33,8 @@
 
 namespace {
 constexpr ss::lowres_clock::duration control_timeout = 5s;
-}
+constexpr ss::lowres_clock::duration health_report_query_timeout = 10s;
+} // namespace
 
 namespace cloud_topics {
 
@@ -484,7 +486,6 @@ public:
          * Get a recent health report. Partitions use the health reporting
          * mechanism to self-report their max GC eligible epoch.
          */
-        constexpr auto health_report_query_timeout = 10s;
 
         auto health_report
           = co_await health_monitor_->local().get_cluster_health(
@@ -613,6 +614,73 @@ private:
     }
     model::node_id self_;
     seastar::sharded<cluster::members_table>* members_table_;
+};
+
+class cluster_safety_monitor : public level_zero_gc::safety_monitor {
+public:
+    explicit cluster_safety_monitor(
+      seastar::sharded<cluster::health_monitor_frontend>* health_monitor,
+      config::binding<std::chrono::milliseconds> check_interval)
+      : health_monitor_(health_monitor)
+      , check_interval_(std::move(check_interval))
+      , cached_result_{.ok = false, .reason = "awaiting first health check"}
+      , poll_loop_(do_poll_loop()) {}
+
+    result can_proceed() const override { return cached_result_; }
+
+    void start() override { started_ = true; }
+
+    seastar::future<> stop() override {
+        started_ = false;
+        as_.request_abort();
+        co_await std::exchange(poll_loop_, seastar::make_ready_future<>());
+    }
+
+private:
+    seastar::future<> do_poll_loop() noexcept {
+        while (!as_.abort_requested()) {
+            if (started_) {
+                auto poll_fut = co_await ss::coroutine::as_future(
+                  poll_health());
+                if (poll_fut.failed()) {
+                    auto ex = poll_fut.get_exception();
+                    cached_result_ = result{
+                      .ok = false,
+                      .reason = fmt::format("health check failed: {}", ex)};
+                }
+            }
+
+            auto sleep_fut = co_await seastar::coroutine::as_future(
+              seastar::sleep_abortable(check_interval_(), as_));
+            if (sleep_fut.failed()) {
+                sleep_fut.ignore_ready_future();
+                break;
+            }
+        }
+    }
+
+    seastar::future<> poll_health() {
+        auto overview
+          = co_await health_monitor_->local().get_cluster_health_overview(
+            model::timeout_clock::now() + health_report_query_timeout);
+
+        if (overview.is_healthy()) {
+            cached_result_ = result{.ok = true, .reason = std::nullopt};
+        } else {
+            cached_result_ = result{
+              .ok = false,
+              .reason = overview.unhealthy_reasons.empty()
+                          ? "cluster unhealthy"
+                          : overview.unhealthy_reasons.front()};
+        }
+    }
+
+    seastar::sharded<cluster::health_monitor_frontend>* health_monitor_;
+    config::binding<std::chrono::milliseconds> check_interval_;
+    result cached_result_;
+    bool started_{false};
+    seastar::abort_source as_;
+    seastar::future<> poll_loop_;
 };
 
 level_zero_gc::level_zero_gc(
