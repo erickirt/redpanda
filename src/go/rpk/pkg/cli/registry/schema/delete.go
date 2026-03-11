@@ -46,16 +46,18 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			version, err := parseVersion(sversion)
 			out.MaybeDieErr(err)
 
+			schemaCtx, _ := cmd.Flags().GetString("schema-context")
 			subject := args[0]
+			qualified := schemaregistry.QualifySubject(schemaCtx, subject)
 			if isPermanent {
-				err = cl.DeleteSchema(cmd.Context(), subject, version, sr.SoftDelete)
+				err = cl.DeleteSchema(cmd.Context(), qualified, version, sr.SoftDelete)
 				if err == nil || schemaregistry.IsSoftDeleteError(err) {
-					err = cl.DeleteSchema(cmd.Context(), subject, version, sr.HardDelete)
+					err = cl.DeleteSchema(cmd.Context(), qualified, version, sr.HardDelete)
 					out.MaybeDie(err, "unable to perform hard-deletion: %v", err)
 				}
 				out.MaybeDie(err, "unable to perform initial soft-deletion that is required for hard-deletion: %v", err)
 			} else {
-				err = cl.DeleteSchema(cmd.Context(), subject, version, sr.SoftDelete)
+				err = cl.DeleteSchema(cmd.Context(), qualified, version, sr.SoftDelete)
 				out.MaybeDieErr(err)
 			}
 			if isText, _, s, err := f.Format(deleteResponse{subject, sversion}); !isText {

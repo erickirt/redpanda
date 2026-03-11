@@ -61,7 +61,8 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 			references, err := parseReferenceFlag(fs, refs)
 			out.MaybeDie(err, "unable to parse reference flag %q: %v", refs, err)
 
-			subject := args[0]
+			schemaCtx, _ := cmd.Flags().GetString("schema-context")
+			subject := schemaregistry.QualifySubject(schemaCtx, args[0])
 			schema := sr.Schema{
 				Schema:     string(file),
 				Type:       t,

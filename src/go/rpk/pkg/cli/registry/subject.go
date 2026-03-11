@@ -11,16 +11,17 @@ package registry
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/sr"
 
+	srcontext "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/registry/context"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/schemaregistry"
 )
 
 func subjectCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -35,6 +36,11 @@ func subjectCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	)
 	p.InstallFormatFlag(cmd)
 	return cmd
+}
+
+type subjectWithContext struct {
+	Context string `json:"context" yaml:"context"`
+	Subject string `json:"subject" yaml:"subject"`
 }
 
 func subjectListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -55,19 +61,55 @@ func subjectListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
-			ctx := cmd.Context()
+			schemaCtx, _ := cmd.Flags().GetString("schema-context")
+			skipCheck, _ := cmd.Flags().GetBool("skip-context-check")
+			showCtxCol := schemaCtx == "" && srcontext.CheckContextSupport(cmd.Context(), cl.Client, fs, p, skipCheck) == nil
+
+			var params []sr.Param
 			if deleted {
-				ctx = sr.WithParams(cmd.Context(), sr.ShowDeleted)
+				params = append(params, sr.ShowDeleted)
+			}
+			if pfx := schemaregistry.ContextSubjectPrefix(schemaCtx); pfx != "" {
+				params = append(params, sr.SubjectPrefix(pfx))
+			}
+			ctx := cmd.Context()
+			if len(params) > 0 {
+				ctx = sr.WithParams(ctx, params...)
 			}
 
 			subjects, err := cl.Subjects(ctx)
 			out.MaybeDieErr(err)
+			slices.Sort(subjects)
+
+			if showCtxCol {
+				rows := make([]subjectWithContext, 0, len(subjects))
+				for _, s := range subjects {
+					sCtx, bare := schemaregistry.ParseSubjectContext(s)
+					rows = append(rows, subjectWithContext{
+						Context: schemaregistry.DisplayContext(sCtx),
+						Subject: bare,
+					})
+				}
+				if isText, _, s, err := f.Format(rows); !isText {
+					out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
+					out.Exit(s)
+				}
+				tw := out.NewTable("context", "subject")
+				defer tw.Flush()
+				for _, r := range rows {
+					tw.PrintStructFields(r)
+				}
+				return
+			}
+
+			for i, s := range subjects {
+				subjects[i] = schemaregistry.StripContextQualifier(schemaCtx, s)
+			}
 
 			if isText, _, s, err := f.Format(subjects); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 				out.Exit(s)
 			}
-			sort.Strings(subjects)
 			for _, s := range subjects {
 				fmt.Println(s)
 			}
@@ -100,23 +142,25 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
+			schemaCtx, _ := cmd.Flags().GetString("schema-context")
+
 			var (
 				wg      sync.WaitGroup
 				mu      sync.Mutex
 				results []deleteResponse
 			)
 
-			for i := range subjects {
-				subject := subjects[i]
+			for _, subject := range subjects {
+				qualified := schemaregistry.QualifySubject(schemaCtx, subject)
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
 					var versions []int
 					var err error
 					if isPermanent {
-						versions, err = cl.DeleteSubject(cmd.Context(), subject, sr.SoftDelete)
+						versions, err = cl.DeleteSubject(cmd.Context(), qualified, sr.SoftDelete)
 						if err == nil || schemaregistry.IsSubjectNotFoundError(err) {
-							versions, err = cl.DeleteSubject(cmd.Context(), subject, sr.HardDelete)
+							versions, err = cl.DeleteSubject(cmd.Context(), qualified, sr.HardDelete)
 							if err != nil {
 								err = fmt.Errorf("unable to perform hard-deletion: %w", err)
 							}
@@ -124,7 +168,7 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 							err = fmt.Errorf("unable to perform initial soft-deletion that is required for hard-deletion: %w", err)
 						}
 					} else {
-						versions, err = cl.DeleteSubject(cmd.Context(), subject, sr.SoftDelete)
+						versions, err = cl.DeleteSubject(cmd.Context(), qualified, sr.SoftDelete)
 					}
 					mu.Lock()
 					defer mu.Unlock()

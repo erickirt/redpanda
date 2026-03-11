@@ -80,6 +80,13 @@ Set the schema registry mode to IMPORT, overriding the emptiness check
 			err = mode.UnmarshalText([]byte(modeFlag))
 			out.MaybeDie(err, "unable to parse mode flag: %v", err)
 
+			schemaCtx, _ := cmd.Flags().GetString("schema-context")
+			for i, s := range subjects {
+				if s != sr.GlobalSubject {
+					subjects[i] = schemaregistry.QualifySubject(schemaCtx, s)
+				}
+			}
+
 			ctx := cmd.Context()
 			if force {
 				ctx = sr.WithParams(ctx, sr.Force)
@@ -88,9 +95,12 @@ Set the schema registry mode to IMPORT, overriding the emptiness check
 			if len(subjects) > 0 && global {
 				subjects = append(subjects, sr.GlobalSubject)
 			}
-			setModeResult := cl.SetMode(ctx, *mode, subjects...)
+			results := cl.SetMode(ctx, *mode, subjects...)
+			for i := range results {
+				results[i].Subject = schemaregistry.StripContextQualifier(schemaCtx, results[i].Subject)
+			}
 
-			exit1, err := printModeResult(f, setModeResult)
+			exit1, err := printModeResult(f, results)
 			out.MaybeDieErr(err)
 			if exit1 {
 				os.Exit(1)
