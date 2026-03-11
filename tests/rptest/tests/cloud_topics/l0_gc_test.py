@@ -1616,3 +1616,122 @@ class CloudTopicsL0GCStressTest(CloudTopicsL0GCTestBase):
 
         producer.stop()
         consumer.stop()
+
+
+class CloudTopicsL0GCSafetyBlockTest(CloudTopicsL0GCAdminBase):
+    """
+    Integration: the cluster_safety_monitor blocks L0 GC when the cluster
+    health overview reports an unhealthy state and unblocks it when health
+    is restored.
+    """
+
+    def __init__(self, test_context: TestContext):
+        super().__init__(
+            test_context=test_context,
+            extra_rp_conf_overrides={
+                "cloud_topics_short_term_gc_backoff_interval": 2000,
+                "health_monitor_max_metadata_age": 1000,
+            },
+        )
+
+    def _all_safety_blocked(self) -> bool:
+        try:
+            report = self.gc_get_status()
+            self.logger.debug(f"GC status report: {report}")
+            self.check_statuses(report, status=GcStatus.L0_GC_STATUS_SAFETY_BLOCKED)
+            return True
+        except AssertionError as e:
+            self.logger.debug(f"Not all safety_blocked yet: {e}")
+            return False
+
+    @cluster(
+        num_nodes=4,
+        log_allow_list=[
+            ".*cluster - storage space alert: free space.*",
+        ],
+    )
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(applies_only_on=[CloudStorageType.S3])
+    )
+    def test_safety_block_on_unhealthy_cluster(
+        self, cloud_storage_type: CloudStorageType
+    ):
+        self.topics = [TopicSpec(partition_count=1)]
+        self.create_topics(self.topics)
+        self.produce_some(topics=[self.topics[0].name], n=300)
+
+        wait_until(
+            lambda: self.get_num_objects_deleted() > 0,
+            timeout_sec=30,
+            backoff_sec=5,
+            retry_on_exc=True,
+        )
+
+        self.logger.debug("Trigger cluster unhealthy via disk space alert")
+        one_tb = 1024 * 1024 * 1024 * 1024
+        self.redpanda.set_cluster_config(
+            {"storage_space_alert_free_threshold_bytes": one_tb}
+        )
+
+        self.logger.debug("Wait for all nodes to report safety_blocked")
+        wait_until(
+            self._all_safety_blocked,
+            timeout_sec=60,
+            backoff_sec=2,
+            retry_on_exc=True,
+        )
+
+        blocked_metric = "vectorized_cloud_topics_l0_gc_safety_blocked_rounds_total"
+        baseline_total = self._get_metric_total(blocked_metric)
+        num_shards = len(self._get_metric_values(blocked_metric))
+        assert num_shards > 0, "Expected at least one shard reporting"
+
+        self.logger.debug(
+            "Verify GC stays blocked: all shards must skip multiple rounds"
+        )
+
+        def _blocked_rounds_advancing():
+            total = self._get_metric_total(blocked_metric)
+            advanced = total - baseline_total >= num_shards * 3
+            if advanced:
+                self.check_statuses(
+                    self.gc_get_status(),
+                    status=GcStatus.L0_GC_STATUS_SAFETY_BLOCKED,
+                )
+            return advanced
+
+        wait_until(
+            _blocked_rounds_advancing,
+            timeout_sec=60,
+            backoff_sec=2,
+            retry_on_exc=True,
+        )
+
+        self.logger.debug("Restore cluster health")
+        self.redpanda.set_cluster_config(
+            {"storage_space_alert_free_threshold_bytes": 0}
+        )
+
+        self.logger.debug("Wait for all nodes to return to running")
+        self.wait_all_running()
+
+        self.logger.debug("Verify blocked rounds stop advancing after recovery")
+        stable_count = 0
+        last_total = self._get_metric_total(blocked_metric)
+
+        def _blocked_rounds_stable():
+            nonlocal stable_count, last_total
+            total = self._get_metric_total(blocked_metric)
+            if total != last_total:
+                last_total = total
+                stable_count = 0
+                return False
+            stable_count += 1
+            return stable_count >= 3
+
+        wait_until(
+            _blocked_rounds_stable,
+            timeout_sec=30,
+            backoff_sec=2,
+            retry_on_exc=True,
+        )
