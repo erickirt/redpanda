@@ -16,6 +16,7 @@ import time
 from urllib.parse import urlparse
 
 import requests
+from confluent_kafka import KafkaError
 from connectrpc.errors import ConnectError, ConnectErrorCode
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix, parametrize
@@ -50,7 +51,7 @@ from rptest.tests.sasl_reauth_test import (
     get_sasl_metrics,
 )
 from rptest.tests.tls_metrics_test import FaketimeTLSProvider
-from rptest.util import expect_exception
+from rptest.util import expect_exception, wait_until_result
 from rptest.utils.log_utils import wait_until_nag_is_set
 from rptest.utils.mode_checks import skip_fips_mode
 
@@ -258,6 +259,34 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
         producer = k_client.get_producer()
         producer.poll(0.0)
         return set(producer.list_topics(timeout=5).topics.keys())
+
+    def _setup_gbac_group(self, group_name: str) -> OAuthConfig:
+        """Create a Keycloak group with the service user and return the
+        OAuth config for the CLIENT_ID application."""
+        client_id = CLIENT_ID
+        self.create_service_user()
+
+        self.keycloak.admin.create_group_mapper(client_id, use_full_path=False)
+        self.keycloak.admin.create_group(group_name)
+        self.keycloak.admin.add_service_user_to_group(client_id, group_name)
+
+        cfg = self.keycloak.generate_oauth_config(self.keycloak.nodes[0], client_id)
+        assert cfg.client_secret is not None
+        assert cfg.token_endpoint is not None
+        return cfg
+
+    def _tls_config(
+        self,
+    ) -> tuple[str, tuple[str, str] | None, str | bool]:
+        """Return (scheme, cert, ca_cert) for HTTP requests, handling
+        both TLS and non-TLS configurations."""
+        if self.client_cert is not None:
+            return (
+                "https",
+                (self.client_cert.crt, self.client_cert.key),
+                self.client_cert.ca.crt,
+            )
+        return ("http", None, True)
 
     @cluster(num_nodes=4)
     # https://redpandadata.atlassian.net/browse/ENG-307
@@ -1443,6 +1472,177 @@ class RedpandaOIDCTestMethods(RedpandaOIDCTestBase):
             f"Verified: user in group '{group_name}' can access both topics via different roles"
         )
 
+    @cluster(num_nodes=4)
+    def test_group_kafka_api_coverage(self):
+        """
+        Test group-based access control across core Kafka API operations.
+
+        Covers:
+        - Metadata request (authorized group) -> visible
+        - Metadata request (unauthorized group) -> not visible
+        - Produce to allowed topic -> succeeds
+        - Produce to denied topic -> denied
+        - Consume from allowed topic -> succeeds
+        - Consume from denied topic -> denied
+
+        Setup:
+        - Two topics: allowed-topic (group has all permissions) and
+          denied-topic (group has explicit deny ACL)
+        - Service user is a member of kafka-api-group
+        - Consumer group resource kafka-api-consumer-group is allowed
+        """
+        allowed_topic = "allowed-topic"
+        denied_topic = "denied-topic"
+        group_name = "kafka-api-group"
+        consumer_group_id = "kafka-api-consumer-group"
+
+        cfg = self._setup_gbac_group(group_name)
+
+        self.rpk.create_topic(allowed_topic)
+        self.rpk.create_topic(denied_topic)
+
+        # Produce a record to denied-topic via superuser so there is data
+        # to attempt to consume later in Phase 3.
+        self.rpk.produce(denied_topic, "setup-key", "setup-value")
+
+        group_principal = f"Group:{group_name}"
+
+        # Allow all on allowed-topic
+        self.rpk.sasl_allow_principal(group_principal, ["all"], "topic", allowed_topic)
+
+        # Explicit deny all on denied-topic
+        self.rpk.sasl_deny_principal(group_principal, ["all"], "topic", denied_topic)
+
+        # Allow consumer group resource for consume phase
+        self.rpk.sasl_allow_principal(
+            group_principal, ["all"], "group", consumer_group_id
+        )
+
+        self.logger.info("Phase 1: Metadata visibility")
+
+        def check_topic_visibility():
+            visible = self._get_visible_topics(cfg)
+            return allowed_topic in visible and denied_topic not in visible, visible
+
+        visible = wait_until_result(
+            check_topic_visibility,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg=(
+                f"Expected {allowed_topic} to be visible and "
+                f"{denied_topic} to be invisible"
+            ),
+        )
+        self.logger.info(f"Phase 1 passed: visible topics = {visible}")
+
+        self.logger.info("Phase 2: Produce authorization")
+
+        k_client = PythonLibrdkafka(
+            self.redpanda,
+            algorithm="OAUTHBEARER",
+            oauth_config=cfg,
+            tls_cert=self.client_cert,
+        )
+        producer = k_client.get_producer()
+        producer.poll(0.0)
+
+        # Produce to allowed topic should succeed
+        def produce_to_allowed():
+            errors: list[str] = []
+
+            def on_delivery(err, msg):
+                if err is not None:
+                    errors.append(str(err))
+
+            producer.produce(
+                topic=allowed_topic,
+                key="test-key",
+                value="test-value",
+                on_delivery=on_delivery,
+            )
+            producer.flush(timeout=10)
+            return len(errors) == 0
+
+        wait_until(
+            produce_to_allowed,
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg=f"Failed to produce to {allowed_topic}",
+        )
+        self.logger.info("Produce to allowed topic succeeded")
+
+        # Produce to denied topic should fail
+        denied_produce_errors: list = []
+
+        def on_delivery_denied(err, msg):
+            denied_produce_errors.append(err)
+
+        producer.produce(
+            topic=denied_topic,
+            key="test-key",
+            value="test-value",
+            on_delivery=on_delivery_denied,
+        )
+        producer.flush(timeout=10)
+        assert len(denied_produce_errors) == 1, (
+            f"Expected exactly one delivery callback, got {len(denied_produce_errors)}"
+        )
+        assert denied_produce_errors[0] is not None, (
+            "Expected delivery error for denied topic, got None"
+        )
+        assert (
+            denied_produce_errors[0].code() == KafkaError.TOPIC_AUTHORIZATION_FAILED
+        ), f"Expected TOPIC_AUTHORIZATION_FAILED, got {denied_produce_errors[0]}"
+        self.logger.info(
+            f"Produce to denied topic failed with {denied_produce_errors[0]}"
+        )
+
+        self.logger.info("Phase 3: Consume authorization")
+
+        # Consume from allowed topic should succeed
+        k_client_consumer = PythonLibrdkafka(
+            self.redpanda,
+            algorithm="OAUTHBEARER",
+            oauth_config=cfg,
+            tls_cert=self.client_cert,
+        )
+        consumer = k_client_consumer.get_consumer(
+            extra_config={
+                "group.id": consumer_group_id,
+                "auto.offset.reset": "earliest",
+            }
+        )
+        consumer.subscribe([allowed_topic])
+
+        def poll_allowed():
+            rec = consumer.poll(timeout=5)
+            return rec is not None and rec.error() is None
+
+        wait_until(
+            poll_allowed,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="Failed to consume record from allowed topic",
+        )
+        consumer.close()
+        self.logger.info("Consumed from allowed topic")
+
+        # Consume from denied topic should fail
+        denied_consumer = k_client_consumer.get_consumer(
+            extra_config={"group.id": consumer_group_id}
+        )
+        denied_consumer.subscribe([denied_topic])
+
+        rec = denied_consumer.poll(timeout=5)
+        denied_consumer.close()
+
+        assert rec is not None, "Expected error when consuming from denied topic"
+        err = rec.error()
+        assert err is not None, "Expected error when consuming from denied topic"
+        assert err.code() == KafkaError.TOPIC_AUTHORIZATION_FAILED, (
+            f"Expected TOPIC_AUTHORIZATION_FAILED, got {err}"
+        )
+        self.logger.info("Denied topic consumption correctly denied with auth error")
 
 class RedpandaOIDCTest(RedpandaOIDCTestMethods):
     def __init__(self, test_context, **kwargs):
