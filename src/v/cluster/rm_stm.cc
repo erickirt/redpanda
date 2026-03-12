@@ -2469,7 +2469,7 @@ void rm_stm_factory::create(
       _producer_state_manager,
       tcfg ? tcfg->properties.mpx_virtual_cluster_id : std::nullopt);
 
-    raft->log()->stm_manager()->add_stm(stm);
+    raft->log()->stm_hookset()->add_stm(stm);
 }
 
 } // namespace cluster
