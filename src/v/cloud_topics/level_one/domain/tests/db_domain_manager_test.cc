@@ -15,6 +15,7 @@
 #include "cloud_topics/level_one/common/object_id.h"
 #include "cloud_topics/level_one/common/object_utils.h"
 #include "cloud_topics/level_one/domain/db_domain_manager.h"
+#include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/level_one/metastore/lsm/state_reader.h"
 #include "cloud_topics/level_one/metastore/lsm/state_update.h"
 #include "cloud_topics/level_one/metastore/lsm/stm.h"
@@ -222,13 +223,17 @@ void flush_as_manifest(
   chunked_vector<new_object> new_objects,
   term_state_update_t new_terms) {
     auto domain_prefix = cloud_storage_clients::object_key{
-      fmt::format("{}", uuid)};
+      domain_cloud_prefix(uuid)};
     temporary_dir tmp("test");
     auto cloud_db = lsm::database::open(
                       {.database_epoch = db_epoch},
                       lsm::io::persistence{
                         .data = lsm::io::open_cloud_data_persistence(
-                                  tmp.get_path(), remote, bucket, domain_prefix)
+                                  tmp.get_path(),
+                                  remote,
+                                  bucket,
+                                  domain_prefix,
+                                  ss::sstring(uuid()))
                                   .get(),
                         .metadata = lsm::io::open_cloud_metadata_persistence(
                                       remote, bucket, domain_prefix)

@@ -10,6 +10,7 @@
 #include "cloud_topics/level_one/domain/db_domain_manager.h"
 
 #include "cloud_topics/level_one/common/object_id.h"
+#include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/level_one/metastore/lsm/garbage_collector.h"
 #include "cloud_topics/level_one/metastore/lsm/keys.h"
 #include "cloud_topics/level_one/metastore/lsm/state_reader.h"
@@ -1508,7 +1509,7 @@ db_domain_manager::restore_domain(rpc::restore_domain_request req) {
     }
 
     cloud_storage_clients::object_key domain_prefix{
-      fmt::format("{}", req.new_uuid)};
+      domain_cloud_prefix(req.new_uuid)};
     auto meta_persist = co_await lsm::io::open_cloud_metadata_persistence(
       remote_, bucket_, domain_prefix);
 

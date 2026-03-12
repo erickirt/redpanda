@@ -9,6 +9,7 @@
  */
 
 #include "cloud_storage/remote_label.h"
+#include "cloud_topics/level_one/metastore/domain_uuid.h"
 #include "cloud_topics/level_one/metastore/manifest_io.h"
 #include "cloud_topics/level_one/metastore/metastore_manifest.h"
 #include "cloud_topics/level_one/metastore/replicated_metastore.h"
@@ -86,7 +87,7 @@ private:
         // Create a database using cloud metadata persistence pointing at the
         // LSM state's domain prefix in the bucket.
         auto domain_prefix = cloud_storage_clients::object_key{
-          fmt::format("{}", lsm_st.domain_uuid)};
+          domain_cloud_prefix(lsm_st.domain_uuid)};
         auto meta_persist = lsm::io::open_cloud_metadata_persistence(
                               remote, bucket_name, domain_prefix)
                               .get();
