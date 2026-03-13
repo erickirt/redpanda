@@ -1,6 +1,30 @@
 load("//bazel:build.bzl", "redpanda_cc_library")
 
 redpanda_cc_library(
+    name = "debug_serde",
+    srcs = [
+        "debug_serde.cc",
+    ],
+    hdrs = [
+        "debug_serde.h",
+    ],
+    implementation_deps = [
+        ":keys",
+        ":values",
+        "//src/v/cloud_topics/level_one/metastore:state",
+        "//src/v/serde",
+        "//src/v/utils:uuid",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto/redpanda/core/admin/internal/cloud_topics/v1:metastore_redpanda_proto",
+        "//src/v/utils:detailed_error",
+        "@fmt",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "keys",
     srcs = [
         "keys.cc",
