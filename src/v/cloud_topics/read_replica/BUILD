@@ -12,6 +12,7 @@ redpanda_cc_library(
     ],
     implementation_deps = [
         "//src/v/cloud_topics:logger",
+        "//src/v/model:batch_builder",
         "//src/v/serde",
         "//src/v/ssx:future_util",
     ],
