@@ -419,6 +419,10 @@ class Redpanda:
         self.extra_args = extra_args
         self.env = env
 
+    def cpuset(self) -> str:
+        base_core = self.cores * self.node_meta.index
+        return ",".join(str(base_core + core) for core in range(self.cores))
+
     def stop(self) -> None:
         print(f"node-{self.node_meta.index}: dev_cluster stop requested")
         assert self.process
@@ -435,9 +439,7 @@ class Redpanda:
         if not has_arg("-c", "--smp"):
             # Caller is required to pass a finite core count
             assert self.cores > 0
-            base_core = self.cores * self.node_meta.index
-
-            cores_args = f"--cpuset {base_core}-{base_core + self.cores - 1}"
+            cores_args = f"--cpuset {self.cpuset()}"
         else:
             cores_args = ""
 
