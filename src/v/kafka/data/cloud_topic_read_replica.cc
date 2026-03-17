@@ -78,7 +78,9 @@ partition_proxy::partition_proxy(
   : partition_(std::move(partition))
   , stm_(std::move(stm))
   , metadata_provider_(state->get_rr_metadata_provider())
-  , snapshot_provider_(state->get_rr_snapshot_provider()) {}
+  , snapshot_provider_(state->get_rr_snapshot_provider())
+  , l1_reader_probe_(state->get_l1_reader_probe())
+  , l1_reader_cache_(state->get_l1_reader_cache()) {}
 
 const model::ntp& partition_proxy::ntp() const { return partition_->ntp(); }
 
@@ -180,7 +182,9 @@ ss::future<storage::translating_reader> partition_proxy::make_reader(
       partition_->ntp(),
       snap.metadata.tidp,
       snap.metastore.get(),
-      snap.io);
+      snap.io,
+      l1_reader_probe_,
+      l1_reader_cache_);
 
     // Create an owning reader that keeps metastore alive for the reader
     // lifetime.
