@@ -103,6 +103,9 @@ public:
 
     void setup_metrics_for_tests() { _probe.setup_metrics(); }
     const reconciler_probe& get_probe_for_tests() const { return _probe; }
+    size_t topic_scheduler_count_for_tests() const {
+        return _topic_schedulers.size();
+    }
 
     void attach_partition(
       const model::ntp&,

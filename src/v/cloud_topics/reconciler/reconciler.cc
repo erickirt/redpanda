@@ -331,12 +331,23 @@ ss::future<> reconciler<Clock>::reconcile() {
     auto now = Clock::now();
     chunked_vector<chunked_vector<ss::shared_ptr<source>>> due_topics;
 
+    // No yield points between the source copy and here, so the scheduler
+    // map must be in sync with sources: one scheduler per distinct topic.
+    vassert(
+      topics.size() == _topic_schedulers.size(),
+      "Topic scheduler count ({}) doesn't match source topic count ({})",
+      _topic_schedulers.size(),
+      topics.size());
+
     for (auto& topic_sources : topics) {
         vassert(!topic_sources.empty(), "Empty topic source set");
         auto topic_id = topic_sources.front()->topic_id_partition().topic_id;
-        auto& scheduler_state = get_or_create_topic_scheduler(topic_id);
-        auto next_due = scheduler_state.last_reconciled
-                        + scheduler_state.scheduler.current_interval();
+        auto sched_it = _topic_schedulers.find(topic_id);
+        if (sched_it == _topic_schedulers.end()) {
+            continue;
+        }
+        auto next_due = sched_it->second.last_reconciled
+                        + sched_it->second.scheduler.current_interval();
 
         if (now >= next_due) {
             due_topics.push_back(std::move(topic_sources));
@@ -374,10 +385,13 @@ ss::future<> reconciler<Clock>::reconcile() {
           // Update the topic's scheduler state. Adapt based on max object
           // size produced. Note that we slow down if there's nothing to
           // reconcile or if all objects failed. This is a sort of retry
-          // with backoff mechanism.
-          auto& scheduler_state = get_or_create_topic_scheduler(topic_id);
-          scheduler_state.scheduler.adapt(bytes);
-          scheduler_state.last_reconciled = now;
+          // with backoff mechanism. The scheduler may have been removed
+          // if sources were detached during reconciliation.
+          auto sched_it = _topic_schedulers.find(topic_id);
+          if (sched_it != _topic_schedulers.end()) {
+              sched_it->second.scheduler.adapt(bytes);
+              sched_it->second.last_reconciled = now;
+          }
       });
 }
 
