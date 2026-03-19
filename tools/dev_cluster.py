@@ -245,6 +245,7 @@ class Prometheus:
         listen_address: str = "127.0.0.1",
         port: int = 3001,
         redpanda_admin_ports: list[int] = [],
+        scrape_interval: str = "5s",
     ) -> None:
         self.binary = binary
         self.directory = directory
@@ -252,6 +253,7 @@ class Prometheus:
         self.listen_address = listen_address
         self.port = port
         self.redpanda_admin_ports = redpanda_admin_ports
+        self.scrape_interval = scrape_interval
         self.process: asyncio.subprocess.Process
 
     def stop(self) -> None:
@@ -267,10 +269,10 @@ class Prometheus:
         data_dir.mkdir(parents=True, exist_ok=True)
 
         # Create a basic Prometheus configuration
-        config = {
+        config: dict[str, Any] = {
             "global": {
-                "scrape_interval": "5s",
-                "evaluation_interval": "5s",
+                "scrape_interval": self.scrape_interval,
+                "evaluation_interval": self.scrape_interval,
             },
             "scrape_configs": [
                 {
@@ -664,6 +666,12 @@ async def main() -> None:
         default=True,
     )
     parser.add_argument(
+        "--scrape-interval",
+        type=str,
+        help="prometheus scrape interval (e.g. '1s', '5s', '15s')",
+        default="5s",
+    )
+    parser.add_argument(
         "--grafana",
         type=Path,
         help="path to grafana executable",
@@ -817,6 +825,7 @@ async def main() -> None:
             prometheus_dir,
             args.listen_address,
             redpanda_admin_ports=[args.base_admin_port + i for i in range(args.nodes)],
+            scrape_interval=args.scrape_interval,
         )
         prometheus_task = asyncio.create_task(prometheus.run())
 
