@@ -64,6 +64,8 @@ private:
     even_topic_distribution_constraint _topic_distribution_constraint;
     even_shard_load_constraint _shard_load_constraint;
 
+    std::optional<pinning_constraint> _pinning_constraint;
+
     chunked_vector<reassignment> _pending_moves;
     size_t _next_pending{0};
     size_t _node_count;

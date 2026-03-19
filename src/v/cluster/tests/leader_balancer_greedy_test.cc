@@ -9,8 +9,10 @@
  * by the Apache License, Version 2.0
  */
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "cluster/scheduling/leader_balancer_greedy.h"
+#include "config/leaders_preference.h"
 #include "leader_balancer_test_utils.h"
 
 #include <gtest/gtest.h>
@@ -50,7 +52,9 @@ std::tuple<index_type, topic_leaders, group_locations, greedy_strategy_ptr>
 make_strategy_from_partitions(
   const std::vector<model::broker_shard>& broker_shards,
   const std::vector<partition_spec>& partitions,
-  const absl::flat_hash_set<int>& muted_node_ids = {}) {
+  const absl::flat_hash_set<int>& muted_node_ids = {},
+  std::optional<cluster::leader_balancer_types::preference_index> preference_idx
+  = std::nullopt) {
     index_type index;
     cluster::leader_balancer_types::group_id_to_topic_id group_to_topic;
     topic_leaders current_leaders;
@@ -95,7 +99,7 @@ make_strategy_from_partitions(
       std::move(index),
       std::move(group_to_topic),
       cluster::leader_balancer_types::muted_index{muted_nodes, {}},
-      std::nullopt);
+      std::move(preference_idx));
 
     return std::make_tuple(
       std::move(copied_index),
@@ -226,6 +230,23 @@ void expect_combined_shard_counts(
               << "broker=" << broker << " shard=" << shard;
         }
     }
+}
+
+/// Build a preference_index with unordered rack preference and a node-to-rack
+/// mapping. `node_racks` maps node_id -> rack name. `preferred_racks` lists
+/// the rack names that should be preferred for leadership.
+cluster::leader_balancer_types::preference_index make_rack_preference(
+  const std::vector<std::pair<int, std::string>>& node_racks,
+  const std::vector<std::string>& preferred_racks) {
+    cluster::leader_balancer_types::preference_index pref;
+    pref.default_preference.type = config::leaders_preference::type_t::racks;
+    for (const auto& rack : preferred_racks) {
+        pref.default_preference.racks.emplace_back(rack);
+    }
+    for (const auto& [node, rack] : node_racks) {
+        pref.node2rack[model::node_id{node}] = model::rack_id{rack};
+    }
+    return pref;
 }
 
 } // namespace
@@ -522,8 +543,99 @@ TEST(GreedyLeaderBalancerTest, TwoTopicsSixBrokersTwoShardsRfThree) {
       std::array<std::array<int, 2>, 6>{
         {{{2, 2}}, {{2, 1}}, {{1, 2}}, {{1, 1}}, {{1, 2}}, {{2, 1}}}});
     expect_combined_shard_counts(
-    // Not perfect
+      // Not perfect
       balanced_leaders,
       std::array<std::array<int, 2>, 6>{
         {{{4, 3}}, {{3, 3}}, {{3, 3}}, {{2, 3}}, {{3, 3}}, {{3, 3}}}});
+}
+
+TEST(GreedyLeaderBalancerTest, SkippedMoveDoesNotDesyncIndex) {
+    // 4 partitions on topic 0, all led by broker 0, RF=3 across 4 brokers.
+    // g4's replica set includes b3 instead of b2 so that the greedy planner
+    // assigns each partition to a distinct broker and produces three moves:
+    //   g2→b1 (index 0), g3→b2 (index 1), g4→b3 (index 2).
+    // When the first move is skipped, apply_movement must advance
+    // _next_pending past the actually-applied move so that subsequent
+    // find_movement calls do not re-return already-applied moves.
+    [[maybe_unused]] auto [index, leaders, locations_by_group, balancer]
+      = make_strategy_from_partitions(
+        {bs(0, 0), bs(1, 0), bs(2, 0), bs(3, 0)},
+        {
+          {1, 0, {bs(0, 0), bs(1, 0), bs(2, 0)}},
+          {2, 0, {bs(0, 0), bs(1, 0), bs(2, 0)}},
+          {3, 0, {bs(0, 0), bs(1, 0), bs(2, 0)}},
+          {4, 0, {bs(0, 0), bs(1, 0), bs(3, 0)}},
+        });
+
+    cluster::leader_balancer_types::muted_groups_t skip;
+    skip.add(static_cast<uint64_t>(2));
+
+    // First call skips g2 (index 0), returns g3 (index 1).
+    auto move1 = balancer->find_movement(skip);
+    ASSERT_TRUE(move1.has_value());
+    EXPECT_EQ(move1->group, raft::group_id{3});
+    EXPECT_EQ(move1->to.node_id, model::node_id{2});
+    balancer->apply_movement(*move1);
+
+    // Second call must return g4 (index 2), NOT g3 again.
+    auto move2 = balancer->find_movement(skip);
+    ASSERT_TRUE(move2.has_value());
+    EXPECT_EQ(move2->group, raft::group_id{4});
+    EXPECT_EQ(move2->to.node_id, model::node_id{3});
+    balancer->apply_movement(*move2);
+
+    // No more moves (g2 is still skipped).
+    EXPECT_FALSE(balancer->find_movement(skip).has_value());
+}
+
+TEST(GreedyLeaderBalancerTest, PinningRejectsMovesToNonPreferredRack) {
+    // 2 groups on topic 0, both led by broker 0 (rack A).
+    // Greedy wants to move g2 to broker 1 (rack B), but rack preference
+    // pins leadership to rack A. The move should be suppressed.
+    auto pref = make_rack_preference({{0, "A"}, {1, "B"}}, {"A"});
+    [[maybe_unused]] auto [index, leaders, locations_by_group, balancer]
+      = make_strategy_from_partitions(
+        {bs(0, 0), bs(1, 0)},
+        {{1, 0, {bs(0, 0), bs(1, 0)}}, {2, 0, {bs(0, 0), bs(1, 0)}}},
+        {},
+        std::move(pref));
+    expect_no_move(*balancer);
+}
+
+TEST(GreedyLeaderBalancerTest, PinningAllowsMovesToPreferredRack) {
+    // 2 groups on topic 0, both led by broker 0 (rack A).
+    // Greedy wants to move g2 to broker 1 (rack B). Rack preference
+    // includes both A and B, so the move is allowed.
+    auto pref = make_rack_preference({{0, "A"}, {1, "B"}}, {"A", "B"});
+    [[maybe_unused]] auto [index, leaders, locations_by_group, balancer]
+      = make_strategy_from_partitions(
+        {bs(0, 0), bs(1, 0)},
+        {{1, 0, {bs(0, 0), bs(1, 0)}}, {2, 0, {bs(0, 0), bs(1, 0)}}},
+        {},
+        std::move(pref));
+    expect_move(
+      index,
+      *balancer,
+      raft::group_id{2},
+      model::node_id{0},
+      model::node_id{1});
+}
+
+TEST(GreedyLeaderBalancerTest, PinningAllowsMovesFromNonPreferredRack) {
+    // 2 groups on topic 0, both led by broker 0 (rack B, non-preferred).
+    // Greedy wants to move g2 to broker 1 (rack A, preferred). This
+    // improves pinning compliance and should be allowed.
+    auto pref = make_rack_preference({{0, "B"}, {1, "A"}}, {"A"});
+    [[maybe_unused]] auto [index, leaders, locations_by_group, balancer]
+      = make_strategy_from_partitions(
+        {bs(0, 0), bs(1, 0)},
+        {{1, 0, {bs(0, 0), bs(1, 0)}}, {2, 0, {bs(0, 0), bs(1, 0)}}},
+        {},
+        std::move(pref));
+    expect_move(
+      index,
+      *balancer,
+      raft::group_id{2},
+      model::node_id{0},
+      model::node_id{1});
 }

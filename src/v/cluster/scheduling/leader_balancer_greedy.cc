@@ -25,12 +25,17 @@ greedy_topic_aware_strategy::greedy_topic_aware_strategy(
   index_type index,
   group_id_to_topic_id group_to_topic,
   muted_index muted_index_value,
-  std::optional<preference_index> /* preference_idx */)
+  std::optional<preference_index> preference_idx)
   : _muted_index(std::move(muted_index_value))
   , _group_to_topic(std::move(group_to_topic))
   , _shard_index(std::move(index))
   , _topic_distribution_constraint(_group_to_topic, _shard_index, _muted_index)
-  , _shard_load_constraint(_shard_index, _muted_index) {
+  , _shard_load_constraint(_shard_index, _muted_index)
+  , _node_count(node_count) {
+    if (preference_idx) {
+        _pinning_constraint.emplace(
+          _group_to_topic, std::move(*preference_idx));
+    }
     build_target_assignment();
 }
 
@@ -54,6 +59,11 @@ greedy_topic_aware_strategy::find_movement(
             continue;
         }
 
+        if (_pinning_constraint && _pinning_constraint->evaluate(move) < 0) {
+            continue;
+        }
+
+        _next_pending = i;
         return move;
     }
 

@@ -242,6 +242,7 @@ redpanda_cc_gtest(
     deps = [
         ":leader_balancer_test_utils",
         "//src/v/cluster",
+        "//src/v/config",
         "//src/v/test_utils:gtest",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/container:flat_hash_set",
