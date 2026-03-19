@@ -16,6 +16,7 @@ import time
 from typing import Any, TypedDict, cast
 
 from ducktape.mark import matrix
+from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cat import KafkaCat
@@ -156,26 +157,20 @@ class LeadershipTransferTest(RedpandaTest):
                 )
 
 
-class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
-    def __init__(self, test_context: Any) -> None:
-        extra_rp_conf = dict(
+class TopicAwareRebalanceTestBase(RedpandaTest):
+    def __init__(
+        self, test_context: TestContext, mode: str, topic_specs: list[TopicSpec]
+    ):
+        extra_rp_conf: dict[str, Any] = dict(
             leader_balancer_idle_timeout=20000,
-            leader_balancer_mode="random_hill_climbing",
+            leader_balancer_mode=mode,
         )
 
-        super(MultiTopicAutomaticLeadershipBalancingTest, self).__init__(
-            test_context=test_context, extra_rp_conf=extra_rp_conf
-        )
-        self.topics = [
-            TopicSpec(partition_count=61, replication_factor=3),
-            TopicSpec(partition_count=151, replication_factor=3),
-        ]
-        if not self.debug_mode:
-            self.topics.append(TopicSpec(partition_count=263, replication_factor=3))
+        super().__init__(test_context=test_context, extra_rp_conf=extra_rp_conf)
+        self.topics = topic_specs
 
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_topic_aware_rebalance(self) -> None:
-        def all_partitions_present(nodes: int) -> bool:
+    def _do_test_topic_aware_rebalance(self, num_nodes: int = 3):
+        def all_partitions_present(nodes: int):
             for t in self.topics:
                 tps = self.redpanda.partitions(t.name)
                 total_leaders = sum(1 if t.leader else 0 for t in tps)
@@ -240,19 +235,19 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
 
         def topic_leadership_evenly_distributed() -> bool:
             for t in self.topics:
-                expected_leaders_per_node = int(0.8 * (t.partition_count / 3))
+                expected_leaders_per_node = int(0.8 * (t.partition_count / num_nodes))
                 self.logger.info(
                     f"for topic {t} expecting {expected_leaders_per_node} leaders"
                 )
 
-                if not has_leader_count(t.name, expected_leaders_per_node, 3):
+                if not has_leader_count(t.name, expected_leaders_per_node, num_nodes):
                     return False
 
             return True
 
         self.logger.info("initial stabilization")
         wait_until(
-            lambda: all_partitions_present(3),
+            lambda: all_partitions_present(num_nodes),
             timeout_sec=30,
             backoff_sec=2,
             err_msg="Leadership did not stablize",
@@ -262,7 +257,7 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
         self.redpanda.stop_node(node)
         self.logger.info("stabilization post stop")
         wait_until(
-            lambda: all_partitions_present(2),
+            lambda: all_partitions_present(num_nodes - 1),
             timeout_sec=30,
             backoff_sec=2,
             err_msg="Leadership did not stablize",
@@ -300,6 +295,43 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
 
         self.logger.info("stabilization post start")
         wait_for_topics_evenly_distributed(30)
+
+
+class MultiTopicAutomaticLeadershipBalancingTest(TopicAwareRebalanceTestBase):
+    def __init__(self, test_context: TestContext):
+        topics = [
+            TopicSpec(partition_count=61, replication_factor=3),
+            TopicSpec(partition_count=151, replication_factor=3),
+        ]
+        super().__init__(
+            test_context,
+            mode="random_hill_climbing",
+            topic_specs=topics,
+        )
+        # Avoid the largest topic in debug builds where it is slow.
+        if not self.debug_mode:
+            assert isinstance(self.topics, list)
+            self.topics.append(TopicSpec(partition_count=263, replication_factor=3))
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_topic_aware_rebalance(self):
+        self._do_test_topic_aware_rebalance()
+
+
+class GreedyLeaderBalancingTest(TopicAwareRebalanceTestBase):
+    def __init__(self, test_context: TestContext):
+        super().__init__(
+            test_context,
+            mode="greedy",
+            topic_specs=[
+                TopicSpec(partition_count=9, replication_factor=3),
+                TopicSpec(partition_count=9, replication_factor=3),
+            ],
+        )
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_greedy_rebalance(self):
+        self._do_test_topic_aware_rebalance()
 
 
 class AutomaticLeadershipBalancingTest(RedpandaTest):
