@@ -667,7 +667,7 @@ void version_set::finalize(version* v) {
     internal::level best_level = 0_level;
     double best_score = static_cast<double>(v->_files[0_level].size())
                         / static_cast<double>(
-                          _options->default_level_one_compaction_trigger);
+                          _options->level_one_compaction_trigger);
     // While level 0 compaction score is based on number of files, other levels
     // are based on number of bytes in the level.
     for (auto level = 1_level; level < _options->max_level(); ++level) {
