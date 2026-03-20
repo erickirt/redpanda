@@ -159,7 +159,13 @@ class LeadershipTransferTest(RedpandaTest):
 
 class TopicAwareRebalanceTestBase(RedpandaTest):
     def __init__(
-        self, test_context: TestContext, mode: str, topic_specs: list[TopicSpec]
+        self,
+        test_context: TestContext,
+        mode: str,
+        topic_specs: list[TopicSpec],
+        leaders_per_node_ratio: float = 0.8,
+        improvement_deadline: int = 30,
+        require_even_distribution: bool = False,
     ):
         extra_rp_conf: dict[str, Any] = dict(
             leader_balancer_idle_timeout=20000,
@@ -168,6 +174,9 @@ class TopicAwareRebalanceTestBase(RedpandaTest):
 
         super().__init__(test_context=test_context, extra_rp_conf=extra_rp_conf)
         self.topics = topic_specs
+        self._leaders_per_node_ratio = leaders_per_node_ratio
+        self._improvement_deadline = improvement_deadline
+        self._require_even_distribution = require_even_distribution
 
     def _do_test_topic_aware_rebalance(self, num_nodes: int = 3):
         def all_partitions_present(nodes: int):
@@ -235,7 +244,9 @@ class TopicAwareRebalanceTestBase(RedpandaTest):
 
         def topic_leadership_evenly_distributed() -> bool:
             for t in self.topics:
-                expected_leaders_per_node = int(0.8 * (t.partition_count / num_nodes))
+                expected_leaders_per_node = int(
+                    self._leaders_per_node_ratio * (t.partition_count / num_nodes)
+                )
                 self.logger.info(
                     f"for topic {t} expecting {expected_leaders_per_node} leaders"
                 )
@@ -294,7 +305,9 @@ class TopicAwareRebalanceTestBase(RedpandaTest):
             return False
 
         self.logger.info("stabilization post start")
-        wait_for_topics_evenly_distributed(30)
+        balanced = wait_for_topics_evenly_distributed(self._improvement_deadline)
+        if self._require_even_distribution:
+            assert balanced
 
 
 class MultiTopicAutomaticLeadershipBalancingTest(TopicAwareRebalanceTestBase):
@@ -327,6 +340,9 @@ class GreedyLeaderBalancingTest(TopicAwareRebalanceTestBase):
                 TopicSpec(partition_count=9, replication_factor=3),
                 TopicSpec(partition_count=9, replication_factor=3),
             ],
+            leaders_per_node_ratio=1.0,
+            improvement_deadline=60,
+            require_even_distribution=True,
         )
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
