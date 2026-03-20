@@ -17,9 +17,11 @@ from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.multi_cluster_services import SecondaryClusterArgs
 from rptest.services.redpanda import (
+    CLOUD_TOPICS_CONFIG_STR,
     LoggingConfig,
     SchemaRegistryConfig,
     SecurityConfig,
+    SISettings,
     TLSProvider,
 )
 from rptest.services.tls import CertificateAuthority, Certificate, TLSCertManager
@@ -28,7 +30,7 @@ from rptest.tests.cluster_linking_test_base import (
     ShadowLinkTestBase,
 )
 from rptest.tests.schema_registry_test import SchemaRegistryRedpandaClient
-from rptest.util import expect_exception, wait_until
+from rptest.util import expect_exception, expect_timeout, wait_until
 from typing import Any
 
 import ducktape.errors
@@ -1617,3 +1619,107 @@ class ClusterLinkingStorageModeSync(ClusterLinkingTopicSyncingTestBase):
             backoff_sec=1,
             err_msg="Storage mode change not synced to target cluster",
         )
+
+
+class ClusterLinkingCloudTopicSync(ShadowLinkTestBase):
+    """
+    Tests that cloud topics (redpanda.storage.mode=cloud) are not
+    mirrored to the target cluster via cluster linking.
+    """
+
+    def __init__(self, test_context, *args: Any, **kwargs: Any):
+        si_settings = SISettings(
+            test_context,
+            cloud_storage_max_connections=10,
+            cloud_storage_enable_remote_read=False,
+            cloud_storage_enable_remote_write=False,
+            fast_uploads=True,
+        )
+
+        super().__init__(
+            test_context,
+            si_settings=si_settings,
+            extra_rp_conf={
+                CLOUD_TOPICS_CONFIG_STR: True,
+                "enable_cluster_metadata_upload_loop": False,
+            },
+            secondary_cluster_args=SecondaryClusterArgs(
+                si_settings=si_settings,
+                extra_rp_conf={
+                    CLOUD_TOPICS_CONFIG_STR: True,
+                    "enable_shadow_linking": True,
+                    "enable_cluster_metadata_upload_loop": False,
+                },
+                log_config=LoggingConfig(
+                    "info",
+                    logger_levels={
+                        "cluster": "trace",
+                        "shadow_link": "trace",
+                        "kafka/client": "trace",
+                        "kafka": "trace",
+                    },
+                ),
+            ),
+            *args,
+            **kwargs,
+        )
+
+    @cluster(num_nodes=6)
+    def test_cloud_topic_not_mirrored(self):
+        """
+        A source topic with redpanda.storage.mode=cloud should not be
+        created on the target cluster. A non-cloud topic created alongside
+        it should still be mirrored normally.
+        """
+        cloud_topic = TopicSpec(
+            name="cloud-topic", partition_count=3, replication_factor=1
+        )
+        normal_topic = TopicSpec(
+            name="normal-topic", partition_count=3, replication_factor=1
+        )
+
+        source_rpk = RpkTool(self.source_cluster.service)
+
+        # Create a cloud topic and a normal topic on the source
+        source_rpk.create_topic(
+            topic=cloud_topic.name,
+            partitions=cloud_topic.partition_count,
+            replicas=cloud_topic.replication_factor,
+            config={
+                TopicSpec.PROPERTY_STORAGE_MODE: TopicSpec.STORAGE_MODE_CLOUD,
+            },
+        )
+        source_rpk.create_topic(
+            topic=normal_topic.name,
+            partitions=normal_topic.partition_count,
+            replicas=normal_topic.replication_factor,
+        )
+
+        # Verify the source cloud topic actually has cloud storage mode
+        source_configs = source_rpk.describe_topic_configs(cloud_topic.name)
+        assert (
+            source_configs[TopicSpec.PROPERTY_STORAGE_MODE][0]
+            == TopicSpec.STORAGE_MODE_CLOUD
+        ), (
+            f"Source topic storage mode: {source_configs[TopicSpec.PROPERTY_STORAGE_MODE]}"
+        )
+
+        self.create_link("test-link")
+
+        # The normal topic should appear on the target
+        target_rpk = RpkTool(self.target_cluster.service)
+        wait_until(
+            lambda: normal_topic.name in target_rpk.list_topics(),
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"Normal topic {normal_topic.name} not found in target cluster",
+        )
+
+        # The cloud topic should NOT appear on the target.
+        with expect_timeout():
+            wait_until(
+                lambda: cloud_topic.name in target_rpk.list_topics(),
+                timeout_sec=15,
+                backoff_sec=1,
+                err_msg=f"Cloud topic {cloud_topic.name} should not be mirrored",
+            )
