@@ -1095,7 +1095,8 @@ db_domain_manager::set_partitions_empty(
 
     // Process one batch of work for the first non-empty partition, then
     // return so the caller can bound work per RPC.
-    for (size_t i = 0; i < partitions_res.value().size(); ++i) {
+    const auto num_partitions = partitions_res.value().size();
+    for (size_t i = 0; i < num_partitions; ++i) {
         const auto& pid = partitions_res.value()[i];
         model::topic_id_partition tidp(tid, pid);
 
@@ -1119,7 +1120,8 @@ db_domain_manager::set_partitions_empty(
             if (set_offset_reply.ec != rpc::errc::ok) {
                 co_return std::unexpected(set_offset_reply.ec);
             }
-            co_return set_partitions_empty_result{.has_more = true};
+            co_return set_partitions_empty_result{
+              .has_more = i < (num_partitions - 1)};
         }
     }
 
