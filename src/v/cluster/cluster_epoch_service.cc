@@ -340,9 +340,9 @@ ss::future<> cluster_epoch_service<Clock>::invalidate_epoch_cache(
           // epoch and we need to refetch the epoch).
           if (s._cached_epoch <= epoch_causing_monotonicity_violation) {
               s._cached_epoch_time = Clock::time_point::min();
-              // Force this to be a blocking update so we don't get another
-              // sequence violation from the async update.
-              s._epoch_updated_time = Clock::time_point::min();
+              // We can't set the update time because we only advance that if
+              // the epoch changes, so we may run into a situation where we
+              // don't update the epoch and that causes epoch requests to fail
           }
       });
 }
@@ -537,7 +537,9 @@ bool cluster_epoch_service<Clock>::cache_entry_expired() const noexcept {
 }
 template<typename Clock>
 bool cluster_epoch_service<Clock>::cache_entry_needs_updated() const noexcept {
-    return Clock::now() > (_epoch_updated_time + max_same_epoch_cache_duration);
+    return Clock::now() > (_epoch_updated_time + max_same_epoch_cache_duration)
+           || Clock::now()
+                > (_cached_epoch_time + max_same_epoch_cache_duration);
 }
 
 template class cluster_epoch_service<ss::lowres_clock>;

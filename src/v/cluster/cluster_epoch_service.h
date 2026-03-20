@@ -22,6 +22,7 @@
 #include <seastar/core/gate.hh>
 
 #include <expected>
+#include <limits>
 
 namespace cluster {
 
@@ -137,7 +138,7 @@ private:
     fetch_leader_epoch(ss::abort_source*);
 
     // The currently cached epoch
-    int64_t _cached_epoch{-1};
+    int64_t _cached_epoch{std::numeric_limits<int64_t>::min()};
     // The last time the epoch was cached
     Clock::time_point _cached_epoch_time{Clock::time_point::min()};
     // The last time the epoch actually ratcheted forward
