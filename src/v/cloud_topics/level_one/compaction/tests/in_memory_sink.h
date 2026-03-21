@@ -34,6 +34,10 @@ public:
     ss::future<ss::stop_iteration>
     operator()(model::record_batch, model::compression) final;
     ss::future<> finalize(bool) final;
+    ss::future<> prepare_iteration(kafka::offset) final { co_return; }
+    ss::future<> finish_iteration(kafka::offset, kafka::offset) final {
+        co_return;
+    }
 
 private:
     bool needs_roll() const;

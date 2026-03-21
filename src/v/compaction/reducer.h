@@ -81,6 +81,8 @@ public:
         virtual ss::future<ss::stop_iteration>
         operator()(model::record_batch, model::compression) = 0;
         virtual ss::future<> finalize(bool) = 0;
+        virtual ss::future<> prepare_iteration(kafka::offset) = 0;
+        virtual ss::future<> finish_iteration(kafka::offset, kafka::offset) = 0;
     };
 
     // The source of data for compaction.
