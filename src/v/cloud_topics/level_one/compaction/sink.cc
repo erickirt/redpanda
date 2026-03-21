@@ -394,7 +394,7 @@ ss::future<> compaction_sink::compact_objects_with_update(
     }
 }
 
-ss::future<> compaction_sink::finalize() {
+ss::future<> compaction_sink::finalize(bool /*success*/) {
     if (!_metadata_builder) {
         co_return;
     }

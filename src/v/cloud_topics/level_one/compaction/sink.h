@@ -55,7 +55,7 @@ public:
     ss::future<ss::stop_iteration>
     operator()(model::record_batch, model::compression) final;
 
-    ss::future<> finalize() final;
+    ss::future<> finalize(bool success) final;
 
 private:
     // The target maximum L1 object size that will be built.
