@@ -140,6 +140,9 @@ private:
     // `map_deduplication_iteration`.
     chunked_vector<metastore::compaction_update::cleaned_range>
       _new_cleaned_ranges;
+
+private:
+    friend class throwing_compaction_sink;
 };
 
 } // namespace cloud_topics::l1
