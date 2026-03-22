@@ -531,6 +531,16 @@ add_objects_db_update::validate_inputs() const {
         }
         auto expected_next = extents.begin()->base_offset;
         for (const auto& extent : extents) {
+            if (extent.base_offset > extent.last_offset) {
+                return std::unexpected(db_update_error(
+                  invalid_input,
+                  fmt::format(
+                    "Input object has inverted extent for partition {}: "
+                    "base_offset {} > last_offset {}",
+                    tidp,
+                    extent.base_offset,
+                    extent.last_offset)));
+            }
             if (extent.base_offset != expected_next) {
                 return std::unexpected(db_update_error(
                   invalid_input,
