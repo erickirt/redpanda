@@ -388,6 +388,19 @@ replace_objects_update::can_apply(const state& state) {
         }
         o.collect_extents_by_tidp(&new_extents_by_tp);
     }
+    for (const auto& [tidp, extents] : new_extents_by_tp) {
+        for (const auto& extent : extents) {
+            if (extent.base_offset > extent.last_offset) {
+                return std::unexpected(stm_update_error(
+                  fmt::format(
+                    "Input object has inverted extent for partition {}: "
+                    "base_offset {} > last_offset {}",
+                    tidp,
+                    extent.base_offset,
+                    extent.last_offset)));
+            }
+        }
+    }
 
     auto contiguous_intervals_by_tp = contiguous_intervals_for_extents(
       new_extents_by_tp);
