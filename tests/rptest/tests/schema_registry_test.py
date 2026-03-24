@@ -6823,6 +6823,36 @@ class SchemaRegistryContextTest(SchemaRegistryEndpoints):
             result = self.sr_client.set_mode_subject(subject=subject, data=mode_data)
             self.assert_not_equal(result.status_code, 422)
 
+    @cluster(num_nodes=4)
+    def test_context_name_strategy(self):
+        """
+        Verify that a Confluent Java serializer configured with
+        context.name.strategy registers schemas under the correct
+        context-qualified subject and can round-trip produce/consume.
+        """
+        topic = "serde-topic-context-strategy"
+        context = "myctx"
+        self._create_topic(topic=topic)
+
+        client = self._get_serde_client(
+            SchemaType.AVRO,
+            SerdeClientType.Java,
+            topic,
+            5,
+            context_name_strategy="com.redpanda.TopicContextNameStrategy",
+            context_name=context,
+        )
+        client.start()
+        client.wait()
+
+        # Verify the schema was registered under the context-qualified subject
+        result = self.sr_client.get_subjects()
+        subjects = result.json()
+        expected_subject = f":.{context}:{topic}-value"
+        assert expected_subject in subjects, (
+            f"Expected subject {expected_subject} not found in {subjects}"
+        )
+
 
 class SchemaRegistryBasicAuthTest(SchemaRegistryEndpoints):
     """
