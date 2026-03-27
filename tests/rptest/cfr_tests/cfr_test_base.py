@@ -49,11 +49,11 @@ long_timeout = TimeoutConfig(timeout_s=120, backoff_s=10)
 really_long_timeout = TimeoutConfig(timeout_s=300, backoff_s=10)
 
 
-class ControllerForceReconfigurationTestBase(RedpandaTest):
+class ControllerForcedReconfigurationTestBase(RedpandaTest):
     def __init__(
         self, test_context: TestContext, cluster_size: int, *args: Any, **kwargs: Any
     ):
-        super(ControllerForceReconfigurationTestBase, self).__init__(
+        super(ControllerForcedReconfigurationTestBase, self).__init__(
             test_context,
             num_brokers=cluster_size,
             *args,

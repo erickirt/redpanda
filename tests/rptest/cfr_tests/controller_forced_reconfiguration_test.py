@@ -17,7 +17,7 @@ from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
 from rptest.cfr_tests.cfr_test_base import (
-    ControllerForceReconfigurationTestBase as _CfrTestBase,
+    ControllerForcedReconfigurationTestBase,
     NTP,
     TimeoutConfig,
     long_timeout,
@@ -51,8 +51,8 @@ class Scenario(str, Enum):
     RandomMoves = "RandomMoves"
 
 
-class ControllerForceReconfigurationTestBase(
-    _CfrTestBase,
+class ControllerForcedReconfigurationApiTestBase(
+    ControllerForcedReconfigurationTestBase,
 ):
     """Adds the API-specific CFR helpers (protobuf invocation, partition
     recovery checks, etc.) on top of the shared base."""
@@ -312,7 +312,7 @@ class ControllerForceReconfigurationTestBase(
 
 
 class ControllerForcedReconfiguration_SmokeTest(
-    ControllerForceReconfigurationTestBase, PartitionMovementMixin
+    ControllerForcedReconfigurationApiTestBase, PartitionMovementMixin
 ):
     cluster_size: int = 3
 
@@ -452,7 +452,7 @@ class ControllerForcedReconfiguration_SmokeTest(
 
 
 class ControllerForcedReconfiguration_Size5(
-    ControllerForceReconfigurationTestBase, PartitionMovementMixin
+    ControllerForcedReconfigurationApiTestBase, PartitionMovementMixin
 ):
     """
     This is a set of tests for controller forced reconfiguration which make sense for clusters 5+
@@ -723,7 +723,7 @@ class ControllerForcedReconfiguration_Size5(
 
 
 class ControllerForcedReconfiguration_Size6(
-    ControllerForceReconfigurationTestBase, PartitionMovementMixin
+    ControllerForcedReconfigurationApiTestBase, PartitionMovementMixin
 ):
     cluster_size: int = 6
 
