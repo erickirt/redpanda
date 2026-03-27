@@ -31,10 +31,10 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var cfg produceConfig
 
 	cmd := &cobra.Command{
-		Use:    "produce",
-		Short:  "Run a Kafka produce benchmark",
-		Long:   "Load testing tool which stresses the broker by sending small batches with high request rate",
-		Args:   cobra.NoArgs,
+		Use:   "produce",
+		Short: "Run a Kafka produce benchmark",
+		Long:  "Load testing tool which stresses the broker by sending small batches with high request rate",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runProduceBenchmark(fs, p, cmd, cfg)
 		},
@@ -88,23 +88,14 @@ func runProduceBenchmark(fs afero.Fs, p *config.Params, cmd *cobra.Command, cfg 
 		}
 	}()
 
-	if cfg.useExistingTopic {
-		fmt.Printf(
-			"mode=produce topic=%s clients=%d record_size=%d use_existing_topic=true\n",
-			cfg.topic,
-			cfg.clients,
-			cfg.recordSize,
-		)
-	} else {
-		fmt.Printf(
-			"mode=produce topic=%s clients=%d partitions=%d record_size=%d replication_factor=%d\n",
-			cfg.topic,
-			cfg.clients,
-			cfg.partitions,
-			cfg.recordSize,
-			cfg.replicas,
-		)
-	}
+	fmt.Printf(
+		"mode=produce topic=%s clients=%d partitions=%d record_size=%d replication_factor=%d\n",
+		cfg.topic,
+		cfg.clients,
+		cfg.partitions,
+		cfg.recordSize,
+		cfg.replicas,
+	)
 	if run.timing.warmup > 0 {
 		fmt.Printf("warming up for %ds...\n", cfg.warmupS)
 	}
