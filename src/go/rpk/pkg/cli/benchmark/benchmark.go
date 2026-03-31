@@ -46,6 +46,7 @@ type benchmarkConfig struct {
 	partitions             int32
 	replicas               int16
 	clients                int
+	reset                  bool
 	warmupS                int
 	durationS              int
 	metricsJSON            string
@@ -81,6 +82,7 @@ func (cfg *benchmarkConfig) addFlags(cmd *cobra.Command) {
 	cmd.Flags().Int32VarP(&cfg.partitions, "partitions", "p", 18, "Number of partitions for benchmark topic creation")
 	cmd.Flags().Int16VarP(&cfg.replicas, "replicas", "r", 3, "Replication factor for benchmark topic creation")
 	cmd.Flags().IntVar(&cfg.clients, "clients", 16, "Number of benchmark client connections")
+	cmd.Flags().BoolVar(&cfg.reset, "reset-topic", false, "Delete the benchmark topic first if it already exists")
 	cmd.Flags().IntVar(&cfg.warmupS, "warmup", 10, "Warmup duration in seconds")
 	cmd.Flags().IntVar(&cfg.durationS, "duration", 60, "Measurement duration in seconds")
 	cmd.Flags().StringVar(&cfg.metricsJSON, "metrics-json", "", "Optional path to write final metrics JSON")
@@ -158,7 +160,7 @@ func newBenchmarkRun(fs afero.Fs, p *config.Params, cmd *cobra.Command, cfg benc
 
 	run.ctx, run.cancel = setupSignalContext(cmd)
 
-	err = createBenchmarkTopic(run.ctx, run.adm, cfg.topic, cfg.partitions, cfg.replicas)
+	err = setupBenchmarkTopic(run.ctx, run.adm, cfg.topic, cfg.partitions, cfg.replicas, cfg.reset)
 	if err != nil {
 		return nil, err
 	}
@@ -302,12 +304,28 @@ func createBenchmarkTopic(ctx context.Context, adm *kadm.Client, topic string, p
 		return fmt.Errorf("missing create topic response for %q", topic)
 	}
 	if errors.Is(resp.Err, kerr.TopicAlreadyExists) {
-		return fmt.Errorf("benchmark topic %q already exists; choose a unique --topic", topic)
+		return fmt.Errorf("benchmark topic %q already exists; choose a unique --topic or pass --reset-topic to recreate it (destructive) - error: %w", topic, resp.Err)
 	}
 	if resp.Err != nil {
 		return resp.Err
 	}
 	return nil
+}
+
+func setupBenchmarkTopic(
+	ctx context.Context,
+	adm *kadm.Client,
+	topic string,
+	partitions int32,
+	replicas int16,
+	reset bool,
+) error {
+	if reset {
+		if err := deleteBenchmarkTopic(ctx, adm, topic); err != nil {
+			return fmt.Errorf("unable to reset benchmark topic %q: %w", topic, err)
+		}
+	}
+	return createBenchmarkTopic(ctx, adm, topic, partitions, replicas)
 }
 
 func deleteBenchmarkTopic(ctx context.Context, adm *kadm.Client, topic string) error {
@@ -321,7 +339,9 @@ func deleteBenchmarkTopic(ctx context.Context, adm *kadm.Client, topic string) e
 	if !ok {
 		return fmt.Errorf("missing delete topic response for %q", topic)
 	}
-	if resp.Err != nil {
+	if errors.Is(resp.Err, kerr.UnknownTopicOrPartition) {
+		return nil
+	} else if resp.Err != nil {
 		return resp.Err
 	}
 	return nil
