@@ -398,7 +398,7 @@ func (pw *ProducerWorker) produceInner(n int64) (int64, []BadOffset, error) {
 		if pw.transactionsEnabled {
 			willEnd := pw.transactionSTM.WillEndTransaction()
 
-			_, err := pw.transactionSTM.BeforeMessageSent()
+			err := pw.transactionSTM.BeforeMessageSent()
 			if err != nil {
 				log.Errorf("Transaction error %v", err)
 				errored = true
