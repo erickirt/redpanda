@@ -1413,8 +1413,6 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
             std::rethrow_exception(fut.get_exception());
         }
     }
-
-    _probe->set_compaction_ratio(_compaction_ratio.get());
 }
 
 ss::future<> disk_log_impl::do_compact(
