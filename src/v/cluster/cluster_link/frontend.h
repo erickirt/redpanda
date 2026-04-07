@@ -175,6 +175,11 @@ public:
         cluster::cluster_link::errc validate_metadata_mirroring_config(
           const ::cluster_link::model::topic_metadata_mirroring_config& config)
           const;
+        cluster::cluster_link::errc validate_mirror_topic_status_update(
+          ::cluster_link::model::id_t link_id,
+          const model::topic& topic,
+          ::cluster_link::model::mirror_topic_status target_status,
+          bool force_update) const;
 
     private:
         table* _table;

@@ -789,52 +789,15 @@ errc frontend::validator::validate_mutation(const cluster_link_cmd& cmd) const {
           return errc::success;
       },
       [this](const cluster::cluster_link_update_mirror_topic_status_cmd& cmd) {
-          auto ec = model::validate_kafka_topic_name(cmd.value.topic);
-          if (ec) {
-              vlog(cluster::clusterlog.warn, "Invalid topic name: {}", ec);
-              return errc::mirror_topic_name_invalid;
-          }
           auto meta = _table->find_link_by_id(cmd.key);
           if (!meta) {
               return errc::does_not_exist;
           }
-          auto id = _table->find_id_by_topic(cmd.value.topic);
-          if (!id.has_value()) {
-              vlog(
-                cluster::clusterlog.warn,
-                "Topic '{}' is not being mirrored",
-                cmd.value.topic);
-              return errc::topic_not_being_mirrored;
-          } else if (id.value() != cmd.key) {
-              vlog(
-                cluster::clusterlog.warn,
-                "Topic '{}' is being mirrored by another link",
-                cmd.value.topic);
-              return errc::topic_being_mirrored_by_other_link;
-          }
-          auto status = _table->find_mirror_topic_status(cmd.value.topic);
-          if (!status) {
-              vlog(
-                cluster::clusterlog.warn,
-                "Topic '{}' is not being mirrored",
-                cmd.value.topic);
-              return errc::topic_not_being_mirrored;
-          }
-          // If not a force update, ensure a valid status transition
-          if (
-            !cmd.value.force_update
-            && !::cluster_link::model::is_valid_status_transition(
-              *status, cmd.value.status)) {
-              vlog(
-                cluster::clusterlog.warn,
-                "Attempting to change state of mirror topic {} from {} to "
-                "invalid state {}",
-                cmd.value.topic,
-                *status,
-                cmd.value.status);
-              return errc::invalid_update;
-          }
-          return errc::success;
+          return validate_mirror_topic_status_update(
+            cmd.key,
+            cmd.value.topic,
+            cmd.value.status,
+            bool(cmd.value.force_update));
       },
       [this](
         const cluster::cluster_link_update_mirror_topic_properties_cmd& cmd) {
@@ -1082,6 +1045,50 @@ errc frontend::validator::validate_metadata_mirroring_config(
         }
     }
 
+    return errc::success;
+}
+
+errc frontend::validator::validate_mirror_topic_status_update(
+  ::cluster_link::model::id_t link_id,
+  const model::topic& topic,
+  ::cluster_link::model::mirror_topic_status target_status,
+  bool force_update) const {
+    auto ec = model::validate_kafka_topic_name(topic);
+    if (ec) {
+        vlog(cluster::clusterlog.warn, "Invalid topic name: {}", ec);
+        return errc::mirror_topic_name_invalid;
+    }
+    auto id = _table->find_id_by_topic(topic);
+    if (!id.has_value()) {
+        vlog(
+          cluster::clusterlog.warn, "Topic '{}' is not being mirrored", topic);
+        return errc::topic_not_being_mirrored;
+    } else if (id.value() != link_id) {
+        vlog(
+          cluster::clusterlog.warn,
+          "Topic '{}' is being mirrored by another link",
+          topic);
+        return errc::topic_being_mirrored_by_other_link;
+    }
+    auto status = _table->find_mirror_topic_status(topic);
+    if (!status) {
+        vlog(
+          cluster::clusterlog.warn, "Topic '{}' is not being mirrored", topic);
+        return errc::topic_not_being_mirrored;
+    }
+    if (
+      !force_update
+      && !::cluster_link::model::is_valid_status_transition(
+        *status, target_status)) {
+        vlog(
+          cluster::clusterlog.warn,
+          "Attempting to change state of mirror topic {} from {} to "
+          "invalid state {}",
+          topic,
+          *status,
+          target_status);
+        return errc::invalid_update;
+    }
     return errc::success;
 }
 
