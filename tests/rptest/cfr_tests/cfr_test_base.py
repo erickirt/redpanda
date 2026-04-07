@@ -14,19 +14,24 @@ API-level CFR tests and the CLI-script CFR tests can share the same cluster
 lifecycle helpers.
 """
 
+import socket
 from dataclasses import dataclass
-from random import shuffle
 from typing import Any, Optional
 
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
+from random import shuffle
 
-from rptest.clients.types import TopicSpec
+from rptest.services import tls as tls_mod
 from rptest.services.admin import PartitionDetails, Replica
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import TLSProvider
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
+
+# Sentinel returned by the admin API when no leader exists for a partition.
+NO_LEADER = -1
 
 
 @dataclass
@@ -49,17 +54,51 @@ LONG_TIMEOUT = TimeoutConfig(timeout_s=120, backoff_s=2)
 REALLY_LONG_TIMEOUT = TimeoutConfig(timeout_s=300, backoff_s=10)
 
 
+class SimpleTLSProvider(TLSProvider):
+    """Minimal TLS provider that creates broker and service-client certs
+    from a shared TLSCertManager.
+
+    Equivalent to the MTLSProvider found in acls_test.py / audit_log_test.py,
+    consolidated here so CFR tests (and potentially others) can share it.
+    """
+
+    def __init__(self, tls_cert_manager: tls_mod.TLSCertManager) -> None:
+        self.tls = tls_cert_manager
+
+    @property
+    def ca(self) -> tls_mod.CertificateAuthority:
+        return self.tls.ca
+
+    def create_broker_cert(
+        self,
+        service: Service,
+        node: ClusterNode,
+    ) -> tls_mod.Certificate:
+        assert node in service.nodes
+        return self.tls.create_cert(node.name)
+
+    def create_service_client_cert(
+        self,
+        service: Service,
+        name: str,
+    ) -> tls_mod.Certificate:
+        return self.tls.create_cert(socket.gethostname(), name=name, common_name=name)
+
+
 class ControllerForcedReconfigurationTestBase(RedpandaTest):
     def __init__(
         self, test_context: TestContext, cluster_size: int, *args: Any, **kwargs: Any
     ):
+        self.cluster_size = cluster_size
+        self.majority_to_kill = cluster_size // 2 + 1
+        self._next_node_id_counter = cluster_size + 1
+
         super().__init__(
             test_context,
             num_brokers=cluster_size,
             *args,
             **kwargs,
         )
-        self._next_node_id_counter = cluster_size + 1
 
     def _next_node_id(self) -> int:
         """this test kills nodes, cleans them, then reboots with a new node_id, keep track of the node id"""
@@ -133,6 +172,25 @@ class ControllerForcedReconfigurationTestBase(RedpandaTest):
             backoff_sec=timeout.backoff_s,
             err_msg="Partition has a leader",
         )
+
+    def _controller_recovered(self, killed_ids: list[int]) -> bool:
+        """True when a controller leader exists that is NOT one of the
+        killed nodes.  Uses the authenticated admin client."""
+        admin = self.redpanda._admin
+        for node in self.redpanda.started_nodes():
+            try:
+                info = admin.get_partitions(
+                    namespace="redpanda",
+                    topic="controller",
+                    partition=0,
+                    node=node,
+                )
+                leader_id = info.get("leader_id", NO_LEADER)
+                if leader_id != NO_LEADER and leader_id not in killed_ids:
+                    return True
+            except Exception:
+                continue
+        return False
 
     def _split_cluster(
         self, ntp: NTP, timeout: TimeoutConfig, replication: int = 5
