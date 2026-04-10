@@ -56,7 +56,8 @@ direct_table_creator::ensure_table(
     std::optional<shared_resolved_type_t> val_type;
     if (comps.val_identifier) {
         auto type_res = co_await type_resolver_.resolve_identifier(
-          comps.val_identifier.value());
+          comps.val_identifier.value(),
+          pandaproxy::schema_registry::default_context);
         if (type_res.has_error()) {
             co_return errc::failed;
         }

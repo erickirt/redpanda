@@ -17,6 +17,7 @@
 #include "datalake/coordinator/state_update.h"
 #include "datalake/logger.h"
 #include "datalake/partition_spec_parser.h"
+#include "datalake/record_schema_resolver.h"
 #include "datalake/record_translator.h"
 #include "datalake/table_id_provider.h"
 #include "model/fundamental.h"
@@ -401,8 +402,10 @@ coordinator::do_ensure_table_exists(
 
 struct coordinator::main_table_schema_provider
   : public coordinator::table_schema_provider {
-    explicit main_table_schema_provider(coordinator& parent)
-      : parent(parent) {}
+    main_table_schema_provider(
+      coordinator& parent, pandaproxy::schema_registry::context ctx)
+      : parent(parent)
+      , ctx_(std::move(ctx)) {}
 
     iceberg::table_identifier
     get_table_id(const model::topic& topic) const final {
@@ -414,7 +417,7 @@ struct coordinator::main_table_schema_provider
         std::optional<shared_resolved_type_t> val_type;
         if (comps.val_identifier) {
             auto type_res = co_await parent.type_resolver_.resolve_identifier(
-              comps.val_identifier.value());
+              comps.val_identifier.value(), ctx_);
             if (type_res.has_error()) {
                 co_return errc::failed;
             }
@@ -432,6 +435,7 @@ struct coordinator::main_table_schema_provider
     }
 
     const coordinator& parent;
+    pandaproxy::schema_registry::context ctx_;
 };
 
 ss::future<checked<std::nullopt_t, coordinator::errc>>
@@ -447,12 +451,20 @@ coordinator::sync_ensure_table_exists(
     if (waiter_fut.has_value()) {
         co_return co_await std::move(*waiter_fut);
     }
+    auto topic_md = topic_table_.get_topic_metadata_ref(
+      model::topic_namespace_view{model::kafka_namespace, topic});
+    auto sr_ctx = topic_md ? topic_md->get()
+                               .get_configuration()
+                               .properties.schema_registry_context.value_or(
+                                 pandaproxy::schema_registry::default_context)
+                           : pandaproxy::schema_registry::default_context;
+
     auto res_fut = co_await ss::coroutine::as_future(do_ensure_table_exists(
       topic,
       topic_revision,
       std::move(comps),
       "sync_ensure_table_exists",
-      main_table_schema_provider{*this}));
+      main_table_schema_provider{*this, std::move(sr_ctx)}));
 
     if (res_fut.failed()) {
         // NOTE: we don't expect any exceptions given we're using result types,
