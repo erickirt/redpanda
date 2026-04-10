@@ -4857,6 +4857,12 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       128,
       {.min = 0, .max = 10000})
+  , code_hugepages_enabled(
+      *this,
+      "code_hugepages_enabled",
+      "Map the binary into hugepages",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , development_feature_property_testing_only(
       *this,
       "development_feature_property_testing_only",
