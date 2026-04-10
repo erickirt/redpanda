@@ -124,7 +124,6 @@ level_one_log_reader_impl::read_some(
               _next_offset,
               _config.max_offset);
             set_end_of_stream();
-            co_await close_current_stream();
             co_return model::record_batch_reader::storage_t{};
         }
 
@@ -177,7 +176,6 @@ level_one_log_reader_impl::read_some(
                 _next_offset = kafka::next_offset(
                   model::offset_cast(batches.back().last_offset()));
             }
-            co_await close_current_stream();
             co_return batches;
         }
 
@@ -193,9 +191,6 @@ level_one_log_reader_impl::read_some(
         _next_offset = kafka::next_offset(
           model::offset_cast(batches.back().last_offset()));
 
-        // Close the stream — it will be reopened on the next fetch.
-        // (Cross-fetch caching is added in a follow-up commit.)
-        co_await close_current_stream();
         co_return batches;
     }
 }
@@ -508,9 +503,41 @@ bool level_one_log_reader_impl::is_end_of_stream() const {
     return _end_of_stream;
 }
 
+ss::future<> level_one_log_reader_impl::finally() noexcept {
+    return close_current_stream();
+}
+
+std::optional<level_one_log_reader_impl::private_flags>
+level_one_log_reader_impl::get_flags() const {
+    return private_flags{
+      .is_reusable = is_reusable(),
+      .was_cached = _was_cached,
+    };
+}
+
+void level_one_log_reader_impl::reset_config(
+  const cloud_topic_log_reader_config& cfg) {
+    vassert(
+      cfg.start_offset == _next_offset,
+      "reset_config: start_offset {} != next_offset {}",
+      cfg.start_offset,
+      _next_offset);
+    _config = cfg;
+    _end_of_stream = false;
+    _bytes_consumed = 0;
+    _was_cached = true;
+}
+
+bool level_one_log_reader_impl::is_reusable() const {
+    return _current_stream.has_value() || !_lookahead_buffer.empty();
+}
+
 bool level_one_log_reader_impl::is_over_limit_with_bytes(size_t size) const {
-    return (_config.strict_max_bytes || _bytes_consumed > 0)
-           && (_bytes_consumed + size) > _config.max_bytes;
+    // Always accept the first batch to guarantee progress.
+    if (_bytes_consumed == 0) {
+        return false;
+    }
+    return (_bytes_consumed + size) > _config.max_bytes;
 }
 
 } // namespace cloud_topics

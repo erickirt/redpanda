@@ -90,6 +90,23 @@ public:
 
     fmt::iterator format_to(fmt::iterator it) const final;
 
+    std::optional<private_flags> get_flags() const final;
+
+    ss::future<> finally() noexcept final;
+
+    /// Reset the reader for reuse from the cache. The new config's
+    /// start_offset must equal next_read_lower_bound().
+    void reset_config(const cloud_topic_log_reader_config& cfg);
+
+    /// The next offset this reader will produce data from.
+    kafka::offset next_read_lower_bound() const { return _next_offset; }
+
+    /// Whether the reader has state worth preserving in the cache.
+    bool is_reusable() const;
+
+    const model::ntp& ntp() const { return _ntp; }
+    const model::topic_id_partition& tidp() const { return _tidp; }
+
 private:
     struct object_info {
         l1::object_id oid;
@@ -184,6 +201,7 @@ private:
     level_one_reader_probe* _probe;
     prefix_logger _log;
     size_t _bytes_consumed{0};
+    bool _was_cached{false};
 
     // Open stream for the current object. Non-null while the reader is
     // positioned within an object; null before the first read, when

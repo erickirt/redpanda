@@ -232,11 +232,11 @@ TEST_F(l1_reader_test, read_with_strict_max_bytes) {
     make_l1_objects(std::move(tidp_batches)).get();
 
     {
-        // Set tiny max bytes to check we get no batches
+        // Set tiny max bytes — still returns one batch for progress.
         auto reader = make_reader(
           ntp, tidp, kafka::offset::min(), kafka::offset::max(), 1, true);
         auto result = read_all(std::move(reader));
-        EXPECT_TRUE(result.empty());
+        EXPECT_EQ(result.size(), 1);
     }
 
     {
