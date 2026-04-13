@@ -925,8 +925,7 @@ struct batch_update_mirror_topic_status_cmd
 
     friend bool operator==(
       const batch_update_mirror_topic_status_cmd&,
-      const batch_update_mirror_topic_status_cmd&)
-      = default;
+      const batch_update_mirror_topic_status_cmd&) = default;
 
     auto serde_fields() { return std::tie(status, topics); }
 };

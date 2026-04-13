@@ -3596,8 +3596,7 @@ struct batch_update_mirror_topic_status_request
 
     friend bool operator==(
       const batch_update_mirror_topic_status_request&,
-      const batch_update_mirror_topic_status_request&)
-      = default;
+      const batch_update_mirror_topic_status_request&) = default;
 
     auto serde_fields() { return std::tie(link_id, cmd, timeout); }
 };
@@ -3611,8 +3610,7 @@ struct batch_update_mirror_topic_status_response
 
     friend bool operator==(
       const batch_update_mirror_topic_status_response&,
-      const batch_update_mirror_topic_status_response&)
-      = default;
+      const batch_update_mirror_topic_status_response&) = default;
 
     auto serde_fields() { return std::tie(ec); }
 };
