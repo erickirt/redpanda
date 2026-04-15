@@ -121,22 +121,28 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 				Token: a.AuthToken,
 			}).AsMechanism()))
 		} else {
-			a := scram.Auth{
-				User: k.SASL.User,
-				Pass: k.SASL.Password,
-			}
 			switch name := strings.ToUpper(k.SASL.Mechanism); name {
 			case "SCRAM-SHA-256", "": // we default to SCRAM-SHA-256 -- people commonly specify user & pass without --sasl-mechanism
+				a := scram.Auth{User: k.SASL.User, Pass: k.SASL.Password}
 				opts = append(opts, kgo.SASL(a.AsSha256Mechanism()))
 			case "SCRAM-SHA-512":
+				a := scram.Auth{User: k.SASL.User, Pass: k.SASL.Password}
 				opts = append(opts, kgo.SASL(a.AsSha512Mechanism()))
 			case "PLAIN":
 				opts = append(opts, kgo.SASL((&plain.Auth{
 					User: k.SASL.User,
 					Pass: k.SASL.Password,
 				}).AsMechanism()))
+			case "OAUTHBEARER":
+				token := oauthBearerToken(k.SASL.Password)
+				if token == "" {
+					return nil, fmt.Errorf("OAUTHBEARER requires a token passed via --sasl-password")
+				}
+				opts = append(opts, kgo.SASL((koauth.Auth{
+					Token: token,
+				}).AsMechanism()))
 			default:
-				return nil, fmt.Errorf("unknown SASL mechanism %q, supported: [SCRAM-SHA-256, SCRAM-SHA-512, PLAIN]", name)
+				return nil, fmt.Errorf("unknown SASL mechanism %q, supported: [SCRAM-SHA-256, SCRAM-SHA-512, PLAIN, OAUTHBEARER]", name)
 			}
 		}
 	}
@@ -152,6 +158,15 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 	opts = append(opts, extraOpts...)
 
 	return kgo.NewClient(opts...)
+}
+
+// oauthBearerToken extracts the bearer token from the SASL password field.
+// It accepts both "token:<TOKEN>" format and a raw token string.
+func oauthBearerToken(password string) string {
+	if t, ok := strings.CutPrefix(password, "token:"); ok {
+		return t
+	}
+	return password
 }
 
 // NewAdmin returns a franz-go admin client.

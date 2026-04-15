@@ -871,7 +871,7 @@ func (p *Params) InstallSASLFlags(cmd *cobra.Command) {
 
 	pf.StringVar(&p.user, FlagSASLUser, "", "SASL user to be used for authentication")
 	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
-	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
+	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER)")
 
 	pf.MarkHidden(FlagSASLUser)
 	pf.MarkHidden("password")
