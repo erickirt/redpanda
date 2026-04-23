@@ -143,6 +143,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveDataDirStructure(ps, bp.y),
 		saveDf(ctx, ps),
 		saveDiskUsage(ctx, ps, bp.y),
+		saveProcFileSampled(ctx, ps, "/proc/diskstats", "diskstats", bp.metricsInterval, bp.metricsSampleCount),
 		saveDmidecode(ctx, ps),
 		saveFree(ctx, ps),
 		saveIP(ctx, ps),

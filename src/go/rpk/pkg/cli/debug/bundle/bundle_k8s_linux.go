@@ -78,6 +78,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveDataDirStructure(ps, bp.y),
 		saveDf(ctx, ps),
 		saveDiskUsage(ctx, ps, bp.y),
+		saveProcFileSampled(ctx, ps, "/proc/diskstats", "diskstats", bp.metricsInterval, bp.metricsSampleCount),
 		saveProcFileSampled(ctx, ps, "/proc/interrupts", "interrupts", bp.metricsInterval, bp.metricsSampleCount),
 		saveKafkaMetadata(ctx, ps, bp.cl),
 		saveKernelSymbols(ps),
