@@ -116,7 +116,6 @@ func TestPrintOffsetDeleteResults(t *testing.T) {
 	b := &strings.Builder{}
 	printOffsetDeleteResults(f, results, b)
 	require.Equal(t, [][]string{
-		{"TOPIC", "PARTITION", "STATUS"},
 		{"apple", "0", "OK"},
 		{"apple", "1", "some", "error"},
 		{"zebra", "0", "OK"},

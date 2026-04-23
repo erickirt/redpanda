@@ -67,7 +67,7 @@ func printOffsetDeleteResults(f config.OutFormatter, results []offsetDeleteResul
 		fmt.Fprintln(w, t)
 		return
 	}
-	tw := out.NewTableTo(w, "TOPIC", "PARTITION", "STATUS")
+	tw := out.NewTabWriterTo(w)
 	defer tw.Flush()
 	for _, r := range results {
 		tw.Print(r.Topic, r.Partition, r.Status)
