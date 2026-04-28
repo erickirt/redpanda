@@ -1331,6 +1331,20 @@ ss::future<result<raft::replicate_result>> frontend::replicate_at_offset(
       timeout,
       as);
 
+    auto enqueued_fut = co_await ss::coroutine::as_future(
+      std::move(stages.request_enqueued));
+    if (enqueued_fut.failed()) {
+        auto ex = enqueued_fut.get_exception();
+        vlogl(
+          cd_log,
+          ssx::is_shutdown_exception(ex) ? ss::log_level::debug
+                                         : ss::log_level::warn,
+          "Failed to enqueue replicate request for ntp {}: {}",
+          ntp(),
+          ex);
+        // fallthrough - we expect the finish command to throw if this one did
+        // and we don't want to abandon the replicate_finished future
+    }
     co_return co_await std::move(stages.replicate_finished);
 }
 
