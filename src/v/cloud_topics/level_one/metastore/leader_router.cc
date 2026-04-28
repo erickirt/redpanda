@@ -38,6 +38,18 @@ ss::future<rpc::add_objects_reply> do_add_objects(
     co_return co_await domain_mgr->add_objects(std::move(req));
 }
 
+ss::future<rpc::replace_objects_no_compact_reply> do_replace_objects_no_compact(
+  domain_supervisor& domain_supervisor,
+  const model::ntp& ntp,
+  rpc::replace_objects_no_compact_request req) {
+    auto domain_mgr = domain_supervisor.get(ntp);
+    if (!domain_mgr) {
+        co_return rpc::replace_objects_no_compact_reply{
+          .ec = rpc::errc::not_leader};
+    }
+    co_return co_await domain_mgr->replace_objects_no_compact(std::move(req));
+}
+
 ss::future<rpc::replace_objects_reply> do_replace_objects(
   domain_supervisor& domain_supervisor,
   const model::ntp& ntp,
@@ -344,6 +356,16 @@ template ss::future<rpc::replace_objects_reply> leader_router::process<
   &leader_router::replace_objects_locally,
   &leader_router::client::replace_objects>(rpc::replace_objects_request, bool);
 
+template ss::future<rpc::replace_objects_no_compact_reply>
+  leader_router::remote_dispatch<
+    &leader_router::client::replace_objects_no_compact>(
+    rpc::replace_objects_no_compact_request, model::node_id);
+template ss::future<rpc::replace_objects_no_compact_reply>
+leader_router::process<
+  &leader_router::replace_objects_no_compact_locally,
+  &leader_router::client::replace_objects_no_compact>(
+  rpc::replace_objects_no_compact_request, bool);
+
 template ss::future<rpc::get_first_offset_ge_reply>
   leader_router::remote_dispatch<&leader_router::client::get_first_offset_ge>(
     rpc::get_first_offset_ge_request, model::node_id);
@@ -522,6 +544,30 @@ ss::future<rpc::replace_objects_reply> leader_router::replace_objects(
     co_return co_await process<
       &leader_router::replace_objects_locally,
       &client::replace_objects>(std::move(request), bool(local_only_exec));
+}
+
+ss::future<rpc::replace_objects_no_compact_reply>
+leader_router::replace_objects_no_compact_locally(
+  rpc::replace_objects_no_compact_request request,
+  const model::ntp& metastore_ntp,
+  ss::shard_id shard) {
+    auto m = _probe.auto_measure_replace_objects_no_compact();
+    co_return co_await container().invoke_on(
+      shard,
+      [&metastore_ntp, req = std::move(request)](leader_router& fe) mutable {
+          return do_replace_objects_no_compact(
+            *(fe._domain_supervisor), metastore_ntp, std::move(req));
+      });
+}
+
+ss::future<rpc::replace_objects_no_compact_reply>
+leader_router::replace_objects_no_compact(
+  rpc::replace_objects_no_compact_request request, local_only local_only_exec) {
+    auto holder = _gate.hold();
+    co_return co_await process<
+      &leader_router::replace_objects_no_compact_locally,
+      &client::replace_objects_no_compact>(
+      std::move(request), bool(local_only_exec));
 }
 
 ss::future<rpc::get_first_offset_ge_reply>

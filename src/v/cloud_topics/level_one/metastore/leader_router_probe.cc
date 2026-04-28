@@ -34,6 +34,13 @@ void leader_router_probe::setup_metrics() {
           [this] { return _replace_objects.internal_histogram_logform(); },
           sm::description("Latency of local replace_objects requests")),
         sm::make_histogram(
+          "replace_objects_no_compact_duration_microseconds",
+          [this] {
+              return _replace_objects_no_compact.internal_histogram_logform();
+          },
+          sm::description(
+            "Latency of local replace_objects_no_compact requests")),
+        sm::make_histogram(
           "get_first_offset_ge_duration_microseconds",
           [this] { return _get_first_offset_ge.internal_histogram_logform(); },
           sm::description("Latency of local get_first_offset_ge requests")),

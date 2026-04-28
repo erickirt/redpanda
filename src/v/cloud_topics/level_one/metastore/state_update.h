@@ -29,6 +29,7 @@ enum class update_key : uint8_t {
     remove_topics = 4,
     preregister_objects = 5,
     expire_preregistered_objects = 6,
+    replace_objects_no_compact = 7,
 };
 
 using stm_update_error = named_type<ss::sstring, struct update_error_tag>;
@@ -171,6 +172,41 @@ struct replace_objects_update
       compaction_updates;
 };
 
+struct replace_objects_no_compact_update
+  : public serde::envelope<
+      replace_objects_no_compact_update,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    friend bool operator==(
+      const replace_objects_no_compact_update&,
+      const replace_objects_no_compact_update&) = default;
+    auto serde_fields() { return std::tie(new_objects, expected_epochs); }
+
+    static constexpr auto key{update_key::replace_objects_no_compact};
+    static std::expected<replace_objects_no_compact_update, stm_update_error>
+    build(
+      const state&,
+      chunked_vector<new_object>,
+      chunked_hash_map<
+        model::topic_id_partition,
+        partition_state::compaction_epoch_t>);
+
+    std::expected<std::monostate, stm_update_error> can_apply(const state&);
+    std::expected<std::monostate, stm_update_error> apply(state&);
+
+    chunked_vector<new_object> new_objects;
+    // Per-partition expected compaction epoch. Every partition whose
+    // extents appear in new_objects MUST have an entry here; the build
+    // and can_apply enforce this. apply increments each partition's
+    // compaction_epoch by 1.
+    chunked_hash_map<
+      model::topic_id,
+      chunked_hash_map<
+        model::partition_id,
+        partition_state::compaction_epoch_t>>
+      expected_epochs;
+};
+
 struct set_start_offset_update
   : public serde::envelope<
       set_start_offset_update,
@@ -297,6 +333,9 @@ struct fmt::formatter<cloud_topics::l1::update_key> final
         case cloud_topics::l1::update_key::expire_preregistered_objects:
             return formatter<string_view>::format(
               "expire_preregistered_objects", ctx);
+        case cloud_topics::l1::update_key::replace_objects_no_compact:
+            return formatter<string_view>::format(
+              "replace_objects_no_compact", ctx);
         }
     }
 };

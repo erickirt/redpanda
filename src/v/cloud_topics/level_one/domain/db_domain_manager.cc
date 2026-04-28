@@ -341,6 +341,91 @@ db_domain_manager::add_objects(rpc::add_objects_request req) {
     };
 }
 
+ss::future<rpc::replace_objects_no_compact_reply>
+db_domain_manager::replace_objects_no_compact(
+  rpc::replace_objects_no_compact_request req) {
+    // Collect topics and partitions upfront.
+    absl::btree_set<model::topic_id> topics;
+    absl::btree_set<model::topic_id_partition> partitions;
+    collect_topics_and_partitions(req.new_objects, topics, partitions);
+    for (const auto& [tp, _] : req.expected_epochs) {
+        topics.insert(tp.topic_id);
+        partitions.insert(tp);
+    }
+
+    // Acquire topic and partition locks only — no object locks yet.
+    auto locks_res = co_await gate_and_open_writes({
+      .topic_read_locks = std::move(topics),
+      .partition_locks = std::move(partitions),
+    });
+    if (!locks_res.has_value()) {
+        co_return rpc::replace_objects_no_compact_reply{
+          .ec = locks_res.error(),
+        };
+    }
+
+    chunked_hash_map<
+      model::topic_id,
+      chunked_hash_map<
+        model::partition_id,
+        partition_state::compaction_epoch_t>>
+      nested_epochs;
+    for (auto& [tp, epoch] : req.expected_epochs) {
+        const auto& t = tp.topic_id;
+        const auto& p = tp.partition;
+        nested_epochs[t][p] = epoch;
+    }
+    auto update = replace_objects_no_compact_db_update{
+      .new_objects = std::move(req.new_objects),
+      .expected_epochs = std::move(nested_epochs),
+    };
+
+    // Discover old objects being replaced, merge with new object IDs,
+    // and acquire all object locks in one sorted batch.
+    {
+        absl::btree_set<object_id> all_oids;
+        collect_object_ids(update.new_objects, all_oids);
+
+        auto discovery_reader = state_reader(db_->db().create_snapshot());
+        auto discovered_res = co_await update.discover_replaced_object_ids(
+          discovery_reader);
+        if (!discovered_res.has_value()) {
+            co_return rpc::replace_objects_no_compact_reply{
+              .ec = log_and_convert(
+                discovered_res.error(), "Error discovering replaced objects: "),
+            };
+        }
+        all_oids.merge(discovered_res.value());
+        auto obj_locks_res = co_await locks_res.value().acquire_objects(
+          std::move(all_oids));
+        if (!obj_locks_res.has_value()) {
+            co_return rpc::replace_objects_no_compact_reply{
+              .ec = obj_locks_res.error(),
+            };
+        }
+    }
+
+    // Final snapshot under full lock protection.
+    auto reader = state_reader(db_->db().create_snapshot());
+    chunked_vector<write_batch_row> rows;
+    auto build_res = co_await update.build_rows(reader, rows);
+    if (!build_res.has_value()) {
+        co_return rpc::replace_objects_no_compact_reply{
+          .ec = log_and_convert(
+            build_res.error(), "Rejecting request to replace objects: "),
+        };
+    }
+    auto apply_res = co_await write_rows(locks_res.value(), std::move(rows));
+    if (!apply_res.has_value()) {
+        co_return rpc::replace_objects_no_compact_reply{
+          .ec = apply_res.error(),
+        };
+    }
+    co_return rpc::replace_objects_no_compact_reply{
+      .ec = rpc::errc::ok,
+    };
+}
+
 ss::future<rpc::replace_objects_reply>
 db_domain_manager::replace_objects(rpc::replace_objects_request req) {
     // Collect topics and partitions upfront.

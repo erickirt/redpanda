@@ -87,6 +87,33 @@ struct replace_objects_request
       compaction_updates;
 };
 
+struct replace_objects_no_compact_reply
+  : serde::envelope<
+      replace_objects_no_compact_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    auto serde_fields() { return std::tie(ec); }
+
+    errc ec;
+};
+struct replace_objects_no_compact_request
+  : serde::envelope<
+      replace_objects_no_compact_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using resp_t = replace_objects_no_compact_reply;
+    auto serde_fields() {
+        return std::tie(metastore_partition, new_objects, expected_epochs);
+    }
+
+    model::partition_id metastore_partition;
+    chunked_vector<new_object> new_objects;
+    chunked_hash_map<
+      model::topic_id_partition,
+      partition_state::compaction_epoch_t>
+      expected_epochs;
+};
+
 struct object_metadata
   : serde::
       envelope<object_metadata, serde::version<0>, serde::compat_version<0>> {

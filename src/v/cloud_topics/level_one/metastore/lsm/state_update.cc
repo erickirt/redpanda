@@ -1060,6 +1060,102 @@ replace_objects_db_update::validate_inputs() const {
     return std::expected<void, db_update_error>{};
 }
 
+std::expected<void, db_update_error>
+replace_objects_no_compact_db_update::validate_inputs() const {
+    auto layout_res = validate_new_objects_extent_layout(new_objects);
+    if (!layout_res.has_value()) {
+        return std::unexpected(layout_res.error());
+    }
+    const auto& new_extents_by_tp = layout_res.value();
+
+    // Bidirectional invariant between expected_epochs and new_extents.
+    for (const auto& [t, p_epochs] : expected_epochs) {
+        for (const auto& [p, _] : p_epochs) {
+            model::topic_id_partition tidp{t, p};
+            if (!new_extents_by_tp.contains(tidp)) {
+                return std::unexpected(db_update_error(
+                  invalid_input,
+                  fmt::format(
+                    "expected_epochs entry for {} does not refer to a "
+                    "partition with new extents",
+                    tidp)));
+            }
+        }
+    }
+    for (const auto& [tidp, _] : new_extents_by_tp) {
+        auto t_it = expected_epochs.find(tidp.topic_id);
+        if (
+          t_it == expected_epochs.end()
+          || !t_it->second.contains(tidp.partition)) {
+            return std::unexpected(db_update_error(
+              invalid_input,
+              fmt::format(
+                "Partition {} has new extents but no expected_epochs entry",
+                tidp)));
+        }
+    }
+
+    return std::expected<void, db_update_error>{};
+}
+
+ss::future<std::expected<absl::btree_set<object_id>, db_update_error>>
+replace_objects_no_compact_db_update::discover_replaced_object_ids(
+  state_reader& state) const {
+    auto validate_res = validate_inputs();
+    if (!validate_res.has_value()) {
+        co_return std::unexpected(std::move(validate_res.error()));
+    }
+    co_return co_await discover_replaced_object_ids_for_extents(
+      state, new_objects);
+}
+
+ss::future<std::expected<void, db_update_error>>
+replace_objects_no_compact_db_update::build_rows(
+  state_reader& state, chunked_vector<write_batch_row>& out) const {
+    auto validate_res = validate_inputs();
+    if (!validate_res.has_value()) {
+        co_return std::unexpected(std::move(validate_res.error()));
+    }
+
+    /*
+     * The `updated_metadata` map tracks metadata that needs to be updated. Use
+     * the `get_metadata_for_update` helper to index into `updated_metadata`
+     * which will fetch the current metadata state if necessary.
+     */
+    chunked_hash_map<model::topic_id_partition, metadata_row_value>
+      updated_metadata;
+
+    // Per-partition expected compaction epoch validation.
+    for (const auto& [t, p_epochs] : expected_epochs) {
+        for (const auto& [p, expected_epoch] : p_epochs) {
+            model::topic_id_partition tidp{t, p};
+            auto meta = co_await get_metadata_for_update(
+              state, updated_metadata, tidp, "epoch validation");
+            if (!meta.has_value()) {
+                co_return std::unexpected(std::move(meta.error()));
+            }
+            if (meta.value()->compaction_epoch != expected_epoch) {
+                co_return std::unexpected(db_update_error(
+                  invalid_update,
+                  fmt::format(
+                    "Compaction epoch mismatch for {}: expected {}, got {}",
+                    tidp,
+                    expected_epoch,
+                    meta.value()->compaction_epoch)));
+            }
+        }
+    }
+
+    auto replacements_res = co_await validate_replacement(
+      state, new_objects, updated_metadata);
+    if (!replacements_res.has_value()) {
+        co_return std::unexpected(std::move(replacements_res.error()));
+    }
+
+    co_return co_await build_replacement_rows(
+      state, std::move(replacements_res).value(), updated_metadata, out);
+}
+
 ss::future<std::expected<void, db_update_error>>
 set_start_offset_db_update::build_rows(
   state_reader& reader,

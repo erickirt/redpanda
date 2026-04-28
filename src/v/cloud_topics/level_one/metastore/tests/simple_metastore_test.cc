@@ -474,7 +474,7 @@ TEST(StateUpdateTest, TestReplaceBasic) {
     new_os.emplace_back(
       om_builder(oid2, 100, 1100).add(tid_a, 0_o, 10_o, 2000_t, 0, 99).build());
     m.preregister_objects(chunked_vector<object_id>::single(oid2));
-    auto replace_res = m.replace_objects(new_os).get();
+    auto replace_res = m.replace_objects(new_os, make_epoch_map(new_os)).get();
     ASSERT_TRUE(replace_res.has_value());
 
     // Sanity check that replacement leaves us with expected offsets.
@@ -513,7 +513,7 @@ TEST(StateUpdateTest, TestReplaceMultipleOnePartition) {
     new_os.emplace_back(
       om_builder(oid3, 100, 1100).add(tid_a, 0_o, 20_o, 2000_t, 0, 99).build());
     m.preregister_objects(chunked_vector<object_id>::single(oid3));
-    auto replace_res = m.replace_objects(new_os).get();
+    auto replace_res = m.replace_objects(new_os, make_epoch_map(new_os)).get();
     ASSERT_TRUE(replace_res.has_value());
 
     // Replaced offsets should be served from oid3.
@@ -590,7 +590,7 @@ TEST(StateUpdateTest, TestReplaceMultipleMultiplePartitions) {
                           .add(tid_b, 11_o, 20_o, 2000_t, 0, 99)
                           .build());
     m.preregister_objects(chunked_vector<object_id>::single(oid3));
-    auto replace_res = m.replace_objects(new_os).get();
+    auto replace_res = m.replace_objects(new_os, make_epoch_map(new_os)).get();
     ASSERT_TRUE(replace_res.has_value());
 
     // Replaced offsets should be served from oid3.
@@ -646,7 +646,7 @@ TEST(StateUpdateTest, TestReplaceEmptyRequest) {
 
     // Add a replacement object that has no objects.
     om_list_t new_os;
-    auto replace_res = m.replace_objects(new_os).get();
+    auto replace_res = m.replace_objects(new_os, make_epoch_map(new_os)).get();
     ASSERT_FALSE(replace_res.has_value());
     EXPECT_EQ(replace_res.error(), metastore::errc::invalid_request);
 }
@@ -656,7 +656,8 @@ TEST(StateUpdateTest, TestReplaceEmptyState) {
     {
         // Add a replacement object that has no objects.
         om_list_t new_os;
-        auto replace_res = m.replace_objects(new_os).get();
+        auto replace_res
+          = m.replace_objects(new_os, make_epoch_map(new_os)).get();
         ASSERT_FALSE(replace_res.has_value());
         EXPECT_EQ(replace_res.error(), metastore::errc::invalid_request);
     }
@@ -667,7 +668,8 @@ TEST(StateUpdateTest, TestReplaceEmptyState) {
                               .add(tid_a, 0_o, 10_o, 2000_t, 0, 99)
                               .build());
         m.preregister_objects(chunked_vector<object_id>::single(oid1));
-        auto replace_res = m.replace_objects(new_os).get();
+        auto replace_res
+          = m.replace_objects(new_os, make_epoch_map(new_os)).get();
         ASSERT_FALSE(replace_res.has_value());
         EXPECT_EQ(replace_res.error(), metastore::errc::invalid_request);
     }
@@ -691,7 +693,8 @@ TEST(StateUpdateTest, TestReplaceMisaligned) {
                               .add(tid_a, base_o, last_o, 2000_t, 0, 99)
                               .build());
         m.preregister_objects(chunked_vector<object_id>::single(oid2));
-        auto replace_res = m.replace_objects(new_os).get();
+        auto replace_res
+          = m.replace_objects(new_os, make_epoch_map(new_os)).get();
         ASSERT_FALSE(replace_res.has_value());
         EXPECT_EQ(replace_res.error(), metastore::errc::invalid_request);
     }
@@ -716,7 +719,8 @@ TEST(StateUpdateTest, TestReplaceOneWithMultipleMisaligned) {
                               .add(tid_a, 11_o, 12_o, 2000_t, 0, 99)
                               .build());
         m.preregister_objects(chunked_vector<object_id>::single(oid2));
-        auto replace_res = m.replace_objects(new_os).get();
+        auto replace_res
+          = m.replace_objects(new_os, make_epoch_map(new_os)).get();
         ASSERT_FALSE(replace_res.has_value());
         EXPECT_EQ(replace_res.error(), metastore::errc::invalid_request);
     }
@@ -728,7 +732,8 @@ TEST(StateUpdateTest, TestReplaceOneWithMultipleMisaligned) {
                               .add(tid_b, 0_o, 10_o, 2000_t, 0, 99)
                               .build());
         m.preregister_objects(chunked_vector<object_id>::single(oid2));
-        auto replace_res = m.replace_objects(new_os).get();
+        auto replace_res
+          = m.replace_objects(new_os, make_epoch_map(new_os)).get();
         ASSERT_FALSE(replace_res.has_value());
         EXPECT_EQ(replace_res.error(), metastore::errc::invalid_request);
     }
@@ -764,7 +769,8 @@ TEST(StateUpdateTest, TestReplaceMultipleMisaligned) {
                               .add(tid_a, 0_o, 19_o, 2000_t, 0, 99)
                               .build());
         m.preregister_objects(chunked_vector<object_id>::single(oid3));
-        auto replace_res = m.replace_objects(new_os).get();
+        auto replace_res
+          = m.replace_objects(new_os, make_epoch_map(new_os)).get();
         ASSERT_FALSE(replace_res.has_value());
         EXPECT_EQ(replace_res.error(), metastore::errc::invalid_request);
     }
@@ -776,7 +782,8 @@ TEST(StateUpdateTest, TestReplaceMultipleMisaligned) {
                               .add(tid_b, 0_o, 19_o, 2000_t, 0, 99)
                               .build());
         m.preregister_objects(chunked_vector<object_id>::single(oid3));
-        auto replace_res = m.replace_objects(new_os).get();
+        auto replace_res
+          = m.replace_objects(new_os, make_epoch_map(new_os)).get();
         ASSERT_FALSE(replace_res.has_value());
         EXPECT_EQ(replace_res.error(), metastore::errc::invalid_request);
     }
@@ -1252,7 +1259,9 @@ TEST(SimpleMetastoreTest, TestUpdateWithObjectBuilder) {
         ASSERT_TRUE(add_res.has_value());
         auto fin_res = ob->finish(o_a, 0, 1000);
         ASSERT_TRUE(fin_res.has_value());
-        auto replace_obj_res = m.replace_objects(*ob).get();
+        metastore::replace_epoch_map_t replace_epochs;
+        replace_epochs[tp_a] = metastore::compaction_epoch{0};
+        auto replace_obj_res = m.replace_objects(*ob, replace_epochs).get();
         ASSERT_TRUE(replace_obj_res.has_value());
 
         auto offsets_res = m.get_offsets(tp_a).get();

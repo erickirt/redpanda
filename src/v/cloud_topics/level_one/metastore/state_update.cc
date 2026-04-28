@@ -536,6 +536,97 @@ add_objects_update::apply(state& state) {
 }
 
 std::expected<std::monostate, stm_update_error>
+replace_objects_no_compact_update::can_apply(const state& state) {
+    auto layout_res = validate_new_objects_layout(state, new_objects);
+    if (!layout_res.has_value()) {
+        return std::unexpected(layout_res.error());
+    }
+    const auto& new_extents_by_tp = layout_res.value();
+
+    // Bidirectional invariant: expected_epochs entries must match new extents.
+    for (const auto& [t, p_epochs] : expected_epochs) {
+        for (const auto& [p, _] : p_epochs) {
+            model::topic_id_partition tidp{t, p};
+            if (!new_extents_by_tp.contains(tidp)) {
+                return std::unexpected(stm_update_error(
+                  fmt::format(
+                    "expected_epochs entry for {} does not refer to a "
+                    "partition with new extents",
+                    tidp)));
+            }
+        }
+    }
+    for (const auto& [tidp, _] : new_extents_by_tp) {
+        const auto& t = tidp.topic_id;
+        const auto& p = tidp.partition;
+        auto t_it = expected_epochs.find(t);
+        if (t_it == expected_epochs.end() || !t_it->second.contains(p)) {
+            return std::unexpected(stm_update_error(
+              fmt::format(
+                "Partition {} has new extents but no expected_epochs entry",
+                tidp)));
+        }
+        // Validate epoch.
+        auto p_state = state.partition_state(tidp);
+        if (!p_state) {
+            return std::unexpected(stm_update_error(
+              fmt::format("Partition {} not tracked by state", tidp)));
+        }
+        auto expected_epoch = t_it->second.at(p);
+        const auto& current_epoch = p_state->get().compaction_epoch;
+        if (expected_epoch != current_epoch) {
+            return std::unexpected(stm_update_error(
+              fmt::format(
+                "Expected compaction epoch {} does not match the current "
+                "compaction epoch {} for {}",
+                expected_epoch,
+                current_epoch,
+                tidp)));
+        }
+    }
+
+    return std::monostate{};
+}
+
+std::expected<std::monostate, stm_update_error>
+replace_objects_no_compact_update::apply(state& state) {
+    auto allowed = can_apply(state);
+    if (!allowed.has_value()) {
+        return std::unexpected(allowed.error());
+    }
+    apply_new_objects_replacement(state, new_objects);
+
+    return std::monostate{};
+}
+
+std::expected<replace_objects_no_compact_update, stm_update_error>
+replace_objects_no_compact_update::build(
+  const state& state,
+  chunked_vector<new_object> objects,
+  chunked_hash_map<
+    model::topic_id_partition,
+    partition_state::compaction_epoch_t> flat_expected_epochs) {
+    chunked_hash_map<
+      model::topic_id,
+      chunked_hash_map<
+        model::partition_id,
+        partition_state::compaction_epoch_t>>
+      expected_epochs;
+    for (auto& [tp, epoch] : flat_expected_epochs) {
+        expected_epochs[tp.topic_id][tp.partition] = epoch;
+    }
+    replace_objects_no_compact_update update{
+      .new_objects = std::move(objects),
+      .expected_epochs = std::move(expected_epochs),
+    };
+    auto allowed = update.can_apply(state);
+    if (!allowed.has_value()) {
+        return std::unexpected(allowed.error());
+    }
+    return update;
+}
+
+std::expected<std::monostate, stm_update_error>
 replace_objects_update::can_apply(const state& state) {
     auto layout_res = validate_new_objects_layout(state, new_objects);
     if (!layout_res.has_value()) {

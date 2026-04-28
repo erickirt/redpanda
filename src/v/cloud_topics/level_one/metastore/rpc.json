@@ -17,6 +17,11 @@
             "output_type": "replace_objects_reply"
         },
         {
+            "name": "replace_objects_no_compact",
+            "input_type": "replace_objects_no_compact_request",
+            "output_type": "replace_objects_no_compact_reply"
+        },
+        {
             "name": "get_first_offset_ge",
             "input_type": "get_first_offset_ge_request",
             "output_type": "get_first_offset_ge_reply"
