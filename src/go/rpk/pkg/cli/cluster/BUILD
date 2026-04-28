@@ -12,6 +12,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/go/rpk/pkg/adminapi",
+        "//src/go/rpk/pkg/cli/cluster/brokers",
         "//src/go/rpk/pkg/cli/cluster/config",
         "//src/go/rpk/pkg/cli/cluster/connections",
         "//src/go/rpk/pkg/cli/cluster/license",

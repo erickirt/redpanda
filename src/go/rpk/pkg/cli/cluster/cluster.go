@@ -10,6 +10,7 @@
 package cluster
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/brokers"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/connections"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/license"
@@ -42,6 +43,7 @@ func NewCommand(fs afero.Fs, p *pkgconfig.Params) *cobra.Command {
 		newLogdirsCommand(fs, p),
 		newMetadataCommand(fs, p),
 
+		brokers.NewCommand(fs, p),
 		config.NewConfigCommand(fs, p),
 		license.NewLicenseCommand(fs, p),
 		maintenance.NewMaintenanceCommand(fs, p),
