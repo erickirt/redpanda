@@ -143,6 +143,11 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
               ktp.get_partition(), maybe_start_ofs.error());
         }
 
+        // TODO(CORE-12505 follow-up): route through response_leader_epoch
+        // once partition_proxy exposes a term-for-offset lookup. When
+        // the property is true and the topic is not a read replica,
+        // this should return the historical term for
+        // maybe_start_ofs.value() instead of the current leader term.
         co_return list_offsets_response::make_partition(
           ktp.get_partition(),
           model::timestamp(-1),
