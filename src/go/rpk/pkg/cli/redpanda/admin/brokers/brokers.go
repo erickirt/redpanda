@@ -12,6 +12,7 @@
 package brokers
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -25,7 +26,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
-		newListCommand(fs, p),
+		cobraext.DeprecateCmd(newListCommand(fs, p), "rpk cluster info -b --detailed"),
 		newDecommissionBroker(fs, p),
 		newDecommissionBrokerStatus(fs, p),
 		newRecommissionBroker(fs, p),
