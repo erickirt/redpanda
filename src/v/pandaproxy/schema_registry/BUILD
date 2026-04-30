@@ -82,6 +82,7 @@ redpanda_cc_library(
         "avro.h",
         "compatibility.h",
         "configuration.h",
+        "context_router.h",
         "error.h",
         "errors.h",
         "exceptions.h",
@@ -163,6 +164,7 @@ redpanda_cc_library(
         "//src/v/kafka/client:configuration",
         "//src/v/kafka/client:exceptions",
         "//src/v/pandaproxy:json",
+        "//src/v/pandaproxy:parsing",
         "@seastar",
     ],
 )
@@ -270,6 +272,7 @@ redpanda_cc_library(
         "//src/v/cluster:rpc_utils",
         "//src/v/config:startup_config",
         "//src/v/kafka/client",
+        "//src/v/utils:variant",
     ],
 )
 
