@@ -269,7 +269,7 @@ service::create_acls(create_acls_request request, rpc::streaming_context&) {
                  return _security_frontend.local().create_acls(
                    std::move(r.data.bindings), r.timeout);
              })
-      .then([](std::vector<errc> results) {
+      .then([](chunked_vector<errc> results) {
           return create_acls_reply{.results = std::move(results)};
       });
 }
