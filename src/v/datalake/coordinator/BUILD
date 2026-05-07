@@ -37,6 +37,7 @@ redpanda_cc_library(
     implementation_deps = [
         ":iceberg_snapshot_remover",
         "//src/v/datalake:catalog_schema_manager",
+        "//src/v/iceberg:field_name_comparison",
         "//src/v/datalake:logger",
         "//src/v/datalake:partition_spec_parser",
         "//src/v/datalake:record_schema_resolver",
