@@ -46,10 +46,16 @@ from rptest.services.redpanda import (
     LoggingConfig,
     MetricsEndpoint,
     PandaproxyConfig,
+    PREV_VERSION_LOG_ALLOW_LIST,
+    RESTART_LOG_ALLOW_LIST,
     RedpandaService,
     ResourceSettings,
     SchemaRegistryConfig,
     SecurityConfig,
+)
+from rptest.services.redpanda_installer import (
+    RedpandaInstaller,
+    wait_for_num_versions,
 )
 from rptest.services.redpanda_types import SaslCredentials
 from rptest.services.serde_client import SerdeClient
@@ -11680,3 +11686,249 @@ class SchemaRegistryKafkaClientTransportStressTest(SchemaRegistryTransportStress
             context,
             extra_rp_conf={"schema_registry_use_rpc": False},
         )
+
+
+class SchemaRegistryTransportCompatTest(RedpandaTest):
+    """
+    Cross-transport correctness for the _schemas topic.
+
+    General idea is to verify that RPC and kafka produce agree
+    on offset assignment.
+    """
+
+    # Last release line before the v26.2.1 SR rpc_transport gate.
+    INITIAL_LINE: tuple[int, int] = (26, 1)
+
+    def __init__(self, test_context: TestContext):
+        super().__init__(
+            test_context=test_context,
+            num_brokers=3,
+            extra_rp_conf={"auto_create_topics_enabled": False},
+            resource_settings=ResourceSettings(num_cpus=1),
+            log_config=log_config,
+            pandaproxy_config=PandaproxyConfig(),
+            schema_registry_config=SchemaRegistryConfig(),
+        )
+        self.sr_client = SchemaRegistryRedpandaClient(redpanda=self.redpanda)
+        self.installer = self.redpanda._installer
+
+    def setUp(self):
+        if self.test_context.function_name == "test_upgrade_kafka_to_rpc":
+            # released_versions is descending; first hit on INITIAL_LINE
+            # is the latest patch. We walk the list directly because dev
+            # builds report v0.0.0-dev, which makes the feature-line
+            # install path silently no-op.
+            candidates = [
+                v
+                for v in self.installer.released_versions
+                if v[:2] == self.INITIAL_LINE
+            ]
+            assert candidates, (
+                f"no v{self.INITIAL_LINE[0]}.{self.INITIAL_LINE[1]}.x in "
+                f"{self.installer.released_versions[:5]}"
+            )
+            self.initial_version: tuple[int, int, int] = candidates[0]
+            self.installer.install(self.redpanda.nodes, self.initial_version)
+        super().setUp()
+
+    def _register_schema(self, subject: str, record_name: str) -> int:
+        schema = json.dumps(
+            {
+                "schema": json.dumps(
+                    {
+                        "type": "record",
+                        "name": record_name,
+                        "fields": [{"name": "f1", "type": "string"}],
+                    }
+                )
+            }
+        )
+        r = self.sr_client.post_subjects_subject_versions(subject=subject, data=schema)
+        assert r.status_code == 200, f"register {subject}: {r.status_code} {r.text}"
+        return r.json()["id"]
+
+    def _read_schema(self, sid: int, hostname: str) -> str:
+        r = self.sr_client.get_schemas_ids_id(id=sid, hostname=hostname)
+        assert r.status_code == 200, (
+            f"read schemas/ids/{sid} on {hostname}: {r.status_code} {r.text}"
+        )
+        return r.json()["schema"]
+
+    def _wait_for_sr_responsive(self, hostname: str) -> None:
+        def ok():
+            try:
+                return (
+                    self.sr_client.get_subjects(
+                        hostname=hostname, timeout=10
+                    ).status_code
+                    == 200
+                )
+            except Exception:
+                return False
+
+        wait_until(
+            ok,
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"SR not responsive on {hostname}",
+        )
+
+    def _flip_transport(self, *, use_rpc: bool) -> None:
+        mode_log = (
+            "Schema registry in RPC mode"
+            if use_rpc
+            else "Schema registry in Kafka client mode"
+        )
+        # Snapshot per-node counts; require a strict increase after
+        # restart so a flip-back can't match an earlier boot's line.
+        pre_counts = {
+            node.name: self.redpanda.count_log_node(node, mode_log)
+            for node in self.redpanda.nodes
+        }
+        # needs_restart=yes; the rolling restart re-runs api::start.
+        self.redpanda.set_cluster_config(
+            {"schema_registry_use_rpc": use_rpc},
+            expect_restart=True,
+        )
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
+        for node in self.redpanda.nodes:
+            wait_until(
+                lambda n=node: self.redpanda.count_log_node(n, mode_log)
+                > pre_counts[n.name],
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg=f"{node.name} did not log a new {mode_log!r}",
+            )
+            self._wait_for_sr_responsive(node.account.hostname)
+
+    def _verify_phase(
+        self,
+        prior: list[tuple[int, str]],
+        prefix: str,
+        record_name: str,
+        n: int,
+    ) -> list[tuple[int, str]]:
+        """
+        Read every `prior` schema on every node (cross-transport
+        replay), write `n` new schemas with strictly greater ids,
+        then read the new ones on every node. Return prior + new.
+        """
+        for node in self.redpanda.nodes:
+            for sid, payload in prior:
+                got = self._read_schema(sid, node.account.hostname)
+                assert got == payload, (
+                    f"id {sid} on {node.name}: payload mismatch "
+                    f"(expected={payload!r}, got={got!r})"
+                )
+
+        max_prior = max((sid for sid, _ in prior), default=0)
+        host = self.redpanda.nodes[0].account.hostname
+        new_writes: list[tuple[int, str]] = []
+        for i in range(n):
+            sid = self._register_schema(f"sr-{prefix}-{i}", f"{record_name}{i}")
+            assert sid > max_prior, (
+                f"new id {sid} <= max prior {max_prior}; "
+                f"loaded_offset reconstruction regressed"
+            )
+            new_writes.append((sid, self._read_schema(sid, host)))
+
+        for node in self.redpanda.nodes:
+            for sid, payload in new_writes:
+                got = self._read_schema(sid, node.account.hostname)
+                assert got == payload, (
+                    f"new id {sid} on {node.name}: payload mismatch "
+                    f"(expected={payload!r}, got={got!r})"
+                )
+
+        return prior + new_writes
+
+    @cluster(
+        num_nodes=3,
+        log_allow_list=RESTART_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST,
+    )
+    @skip_fips_mode
+    def test_upgrade_kafka_to_rpc(self):
+        """
+        kafka-client writes from a prior version survive a rolling upgrade and
+        replay correctly under the post-upgrade rpc transport; new
+        rpc-transport writes propagate to every node.
+        """
+        initial_version_str = "v{}.{}.{}".format(*self.initial_version)
+
+        # install() silently falls back to HEAD on dev builds; verify
+        # the cluster is actually on the prior version before writing.
+        unique_versions = wait_for_num_versions(self.redpanda, 1)
+        assert initial_version_str in unique_versions, (
+            f"expected {initial_version_str}, got {unique_versions}"
+        )
+
+        for node in self.redpanda.nodes:
+            self._wait_for_sr_responsive(node.account.hostname)
+
+        num_subjects = 4
+        pre_ids = [
+            self._register_schema(f"sr-upgrade-pre-{i}", f"PreRec{i}")
+            for i in range(num_subjects)
+        ]
+
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
+        wait_for_num_versions(self.redpanda, 1)
+
+        # api::start picks the transport once at process start; rolling-
+        # restart re-runs it now that the active version is past the
+        # v26.2.1 gate.
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
+
+        for node in self.redpanda.nodes:
+            wait_until(
+                lambda n=node: self.redpanda.search_log_node(
+                    n, "Schema registry in RPC mode"
+                ),
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg=f"{node.name} did not log RPC transport mode",
+            )
+
+        for node in self.redpanda.nodes:
+            self._wait_for_sr_responsive(node.account.hostname)
+            for sid in pre_ids:
+                self._read_schema(sid, node.account.hostname)
+
+        post_ids = [
+            self._register_schema(f"sr-upgrade-post-{i}", f"PostRec{i}")
+            for i in range(num_subjects)
+        ]
+
+        # Schema ids are monotonic; collisions would mean state was lost.
+        max_pre = max(pre_ids)
+        for new_id in post_ids:
+            assert new_id > max_pre, (
+                f"post id {new_id} <= max pre {max_pre} (pre={pre_ids} post={post_ids})"
+            )
+
+        for node in self.redpanda.nodes:
+            for sid in post_ids:
+                self._read_schema(sid, node.account.hostname)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_transport_compatibility(self):
+        """
+        runtime flips between rpc and kafka client transports preserve _schemas
+        content. Cycles RPC -> kafka -> RPC -> kafka, exercising both directions
+        of cross-transport replay with writes under each transport.
+        """
+        for node in self.redpanda.nodes:
+            self._wait_for_sr_responsive(node.account.hostname)
+
+        n = 4
+        after_rpc1 = self._verify_phase([], "rpc1", "Rpc1Rec", n)
+
+        self._flip_transport(use_rpc=False)
+        after_kafka1 = self._verify_phase(after_rpc1, "kafka1", "Kafka1Rec", n)
+
+        self._flip_transport(use_rpc=True)
+        after_rpc2 = self._verify_phase(after_kafka1, "rpc2", "Rpc2Rec", n)
+
+        self._flip_transport(use_rpc=False)
+        self._verify_phase(after_rpc2, "kafka2", "Kafka2Rec", n)
