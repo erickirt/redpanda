@@ -45,23 +45,22 @@ redpanda_cc_library(
     implementation_deps = [
         "//src/v/bytes:iobuf_parser",
         "//src/v/config",
-        "//src/v/container:chunked_vector",
-        "//src/v/model",
         "//src/v/pandaproxy:error",
         "//src/v/strings:string_switch",
         "//src/v/utils:to_string",
         "@fmt",
         "@rapidjson",
-        "@seastar",
     ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/container:chunked_vector",
         "//src/v/json",
-        "//src/v/kafka/protocol",
+        "//src/v/model",
         "//src/v/utils:named_type",
         "@abseil-cpp//absl/container:btree",
         "@boost//:outcome",
+        "@seastar",
     ],
 )
 

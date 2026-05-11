@@ -14,7 +14,6 @@
 #include "absl/container/flat_hash_set.h"
 #include "base/vlog.h"
 #include "bytes/streambuf.h"
-#include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/compatibility.h"
 #include "pandaproxy/schema_registry/errors.h"
@@ -564,51 +563,47 @@ protobuf_schema_definition::raw(output_format format) const {
     return _impl->raw(format);
 }
 
-::result<ss::sstring, kafka::error_code>
+std::optional<ss::sstring>
 protobuf_schema_definition::name(const std::vector<int>& fields) const {
     auto d = descriptor(*this, fields);
-    if (d.has_error()) {
-        return d.error();
+    if (!d.has_value()) {
+        return std::nullopt;
     }
     return ss::sstring(d.value().get().full_name());
 }
 
-::result<
-  std::reference_wrapper<const google::protobuf::Descriptor>,
-  kafka::error_code>
+std::optional<std::reference_wrapper<const google::protobuf::Descriptor>>
 descriptor(
   const protobuf_schema_definition& def, const std::vector<int>& fields) {
     if (fields.empty()) {
-        return kafka::error_code::invalid_record;
+        return std::nullopt;
     }
     auto f = fields.begin();
     if (def().fd->message_type_count() <= *f) {
-        return kafka::error_code::invalid_record;
+        return std::nullopt;
     }
     auto d = def().fd->message_type(*f++);
     while (fields.end() != f && d) {
         if (d->nested_type_count() <= *f) {
-            return kafka::error_code::invalid_record;
+            return std::nullopt;
         }
         d = d->nested_type(*f++);
     }
     if (!d) {
-        return kafka::error_code::invalid_record;
+        return std::nullopt;
     }
     return *d;
 }
 
-::result<
-  std::reference_wrapper<const google::protobuf::Descriptor>,
-  kafka::error_code>
+std::optional<std::reference_wrapper<const google::protobuf::Descriptor>>
 descriptor(const protobuf_schema_definition& def, std::string_view full_name) {
     if (full_name.empty()) {
-        return kafka::error_code::invalid_record;
+        return std::nullopt;
     }
     const google::protobuf::Descriptor* d = def()._dp.FindMessageTypeByName(
       full_name);
     if (!d) {
-        return kafka::error_code::invalid_record;
+        return std::nullopt;
     }
     return *d;
 }

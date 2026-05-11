@@ -16,7 +16,6 @@
 #include "base/outcome.h"
 #include "base/seastarx.h"
 #include "container/chunked_vector.h"
-#include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "strings/string_switch.h"
 #include "utils/named_type.h"
@@ -461,8 +460,7 @@ public:
         return protobuf_schema_definition{_impl, _refs.copy(), _meta};
     }
 
-    ::result<ss::sstring, kafka::error_code>
-    name(const std::vector<int>& fields) const;
+    std::optional<ss::sstring> name(const std::vector<int>& fields) const;
 
 private:
     pimpl _impl;
