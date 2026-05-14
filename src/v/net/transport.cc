@@ -205,7 +205,6 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
         vlog(_log->trace, "Resolved address {}", resolved_address);
         ss::connected_socket fd = co_await connect_with_timeout(
           resolved_address, timeout, _log);
-        fd.set_nodelay(true);
 
         if (_proxy.has_value() && _proxy->credentials) {
             // https:// proxy: TLS-wrap to the proxy before CONNECT.
