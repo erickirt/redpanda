@@ -844,6 +844,7 @@ public:
     property<std::chrono::milliseconds>
       cloud_topics_l1_reader_cache_eviction_timeout_ms;
     bounded_property<size_t> cloud_topics_l1_reader_cache_max_size;
+    property<bool> code_hugepages_enabled;
 
     development_feature_property<int> development_feature_property_testing_only;
 
