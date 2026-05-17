@@ -139,10 +139,15 @@ redpanda_cc_library(
 
 redpanda_cc_library(
     name = "scheduler_types",
+    srcs = [
+        "scheduler_types.cc",
+    ],
     hdrs = [
         "scheduler_types.h",
     ],
-    include_prefix = "cloud_io",
+    implementation_deps = [
+        "//src/v/strings:string_switch",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
