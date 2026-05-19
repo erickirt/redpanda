@@ -27,3 +27,27 @@ redpanda_cc_library(
         "@seastar",
     ],
 )
+
+redpanda_cc_library(
+    name = "leveling_sink",
+    srcs = [
+        "leveling_sink.cc",
+    ],
+    hdrs = [
+        "leveling_sink.h",
+    ],
+    include_prefix = "cloud_topics/level_one/maintenance/leveling",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":leveling_source",
+        "//src/v/cloud_topics/level_one/common:abstract_io",
+        "//src/v/cloud_topics/level_one/maintenance:l1_object_sink",
+        "//src/v/cloud_topics/level_one/metastore",
+        "//src/v/cloud_topics/level_one/metastore:retry",
+        "//src/v/compaction:reducer",
+        "//src/v/config",
+        "//src/v/model",
+        "//src/v/utils:prefix_logger",
+        "@seastar",
+    ],
+)
