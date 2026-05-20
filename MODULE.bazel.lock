@@ -352,7 +352,7 @@
   "moduleExtensions": {
     "//bazel:extensions.bzl%non_module_dependencies": {
       "general": {
-        "bzlTransitiveDigest": "rWt8G3JLne5lK/1kx58Hoe4x8pFmgwV5uv1C1wY/kUA=",
+        "bzlTransitiveDigest": "oCPcIwHWYadGoPhUZq1q+x7FM19sLgD98HAdO3tNC4U=",
         "usagesDigest": "FEiDyZe9eAU6yEqnarZf0XMEUk+prUyYClvq1RU1J98=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -441,7 +441,8 @@
               "strip_prefix": "krb5-krb5-1.21.3-final",
               "url": "https://github.com/krb5/krb5/archive/refs/tags/krb5-1.21.3-final.tar.gz",
               "patches": [
-                "@@//bazel/thirdparty:0001-Fix-two-unlikely-memory-leaks.patch"
+                "@@//bazel/thirdparty:0001-Fix-two-unlikely-memory-leaks.patch",
+                "@@//bazel/thirdparty:0002-Fix-two-NegoEx-parsing-vulnerabilities.patch"
               ],
               "patch_args": [
                 "-p1"
