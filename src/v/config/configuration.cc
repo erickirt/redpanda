@@ -4647,13 +4647,7 @@ configuration::configuration()
       "Default timeout for RPC requests between Redpanda nodes.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
-  , cloud_topics_enabled(
-      *this,
-      true,
-      "cloud_topics_enabled",
-      "Enable cloud topics.",
-      meta{.needs_restart = needs_restart::yes, .visibility = visibility::user},
-      false)
+  , cloud_topics_enabled(*this, "cloud_topics_enabled")
   , cloud_topics_produce_batching_size_threshold(
       *this,
       "cloud_topics_produce_batching_size_threshold",

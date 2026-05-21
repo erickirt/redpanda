@@ -49,7 +49,6 @@ from rptest.services.multi_cluster_services import (
     SecondaryClusterSpec,
 )
 from rptest.services.redpanda import (
-    CLOUD_TOPICS_CONFIG_STR,
     LoggingConfig,
     SISettings,
     TLSProvider,
@@ -488,7 +487,6 @@ class ShadowLinkTestBase(PreallocNodesTest):
         if needs_cloud_topics:
             kwargs["extra_rp_conf"].update(
                 {
-                    CLOUD_TOPICS_CONFIG_STR: True,
                     "enable_cluster_metadata_upload_loop": False,
                 }
             )
@@ -504,7 +502,6 @@ class ShadowLinkTestBase(PreallocNodesTest):
                 sec_extra = dict(sec_kwargs.get("extra_rp_conf", {}))
                 sec_extra.update(
                     {
-                        CLOUD_TOPICS_CONFIG_STR: True,
                         "enable_cluster_metadata_upload_loop": False,
                     }
                 )

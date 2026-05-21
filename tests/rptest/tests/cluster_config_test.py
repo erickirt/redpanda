@@ -37,7 +37,6 @@ from rptest.services.redpanda import (
     RedpandaService,
     SISettings,
     get_cloud_storage_type,
-    CLOUD_TOPICS_CONFIG_STR,
 )
 from rptest.services.redpanda_installer import (
     RedpandaInstaller,
@@ -714,10 +713,9 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 "iceberg_rest_catalog_crl_file",
             ]
         )
-        # Cloud storage, cloud topics, and iceberg depend on properly
-        # configured cloud IO. Skip them to avoid breaking the test.
+        # Cloud storage and iceberg depend on properly configured cloud IO.
+        # Skip them to avoid breaking the test.
         exclude_settings.add("cloud_storage_enabled")
-        exclude_settings.add(CLOUD_TOPICS_CONFIG_STR)
         exclude_settings.add("iceberg_enabled")
         exclude_settings.add("default_redpanda_storage_mode")
 
