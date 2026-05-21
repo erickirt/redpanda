@@ -98,6 +98,12 @@ public:
     ss::future<>
     collect_info_for_logs(log_set_t&, log_list_t&, log_compaction_queue&) const;
 
+    // Issues a batched get_leveling_infos RPC for the provided logs and
+    // populates each log's leveling_info_and_ts field. Skips logs whose
+    // info cannot be obtained this round.
+    ss::future<>
+    collect_leveling_info(chunked_vector<log_compaction_meta_ptr> logs) const;
+
 private:
     // Returns a container of `compaction_info_spec` to sample the metastore
     // with based on the input `log_list_t`.

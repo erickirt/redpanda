@@ -343,6 +343,64 @@ void log_info_collector::populate_log_infos(
     }
 }
 
+ss::future<> log_info_collector::collect_leveling_info(
+  chunked_vector<log_compaction_meta_ptr> logs) const {
+    if (logs.empty()) {
+        co_return;
+    }
+
+    auto target_size
+      = config::shard_local_cfg().cloud_topics_reconciliation_max_object_size();
+    // TODO: Replace with cluster config.
+    constexpr double leveling_object_size_threshold = 0.5;
+    auto min_acceptable = static_cast<size_t>(
+      static_cast<double>(target_size) * leveling_object_size_threshold);
+
+    chunked_vector<metastore::leveling_info_spec> specs;
+    specs.reserve(logs.size());
+    for (const auto& log : logs) {
+        specs.emplace_back(
+          metastore::leveling_info_spec{log->tidp, min_acceptable});
+    }
+
+    auto leveling_infos_res = co_await _metastore->get_leveling_infos(specs);
+    if (!leveling_infos_res.has_value()) {
+        vlog(
+          compaction_log.warn,
+          "Failed to retrieve leveling info from metastore: {}",
+          leveling_infos_res.error());
+        co_return;
+    }
+
+    auto& leveling_infos = leveling_infos_res.value();
+    auto now = model::timestamp::now();
+    for (const auto& log : logs) {
+        auto it = leveling_infos.find(log->tidp);
+        if (it == leveling_infos.end()) {
+            continue;
+        }
+
+        auto& result = it->second;
+        if (!result.has_value()) {
+            vlog(
+              compaction_log.warn,
+              "Failed to collect leveling info for CTP {}: {}",
+              log->ntp,
+              result.error());
+            continue;
+        }
+
+        log->leveling_info_and_ts = leveling_info_and_timestamp{
+          .info = std::move(result).value(), .collected_at = now};
+
+        vlog(
+          compaction_log.debug,
+          "Leveling info for CTP {} returned {}",
+          log->ntp,
+          log->leveling_info_and_ts->info);
+    }
+}
+
 log_info_collector make_default_log_info_collector(
   metastore* metastore,
   cluster::metadata_cache* metadata_cache,
