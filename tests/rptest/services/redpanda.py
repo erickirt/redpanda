@@ -4411,6 +4411,9 @@ class RedpandaService(Service, RedpandaServiceABC):
             # not-running processes
             def check_pid(node: ClusterNode) -> tuple[ClusterNode, str] | None:
                 if not self.redpanda_pid(node):
+                    dmesg = self._capture_dmesg(node)
+                    if dmesg:
+                        self._save_dmesg_artifact(node, dmesg)
                     return (node, "Redpanda process unexpectedly stopped")
                 return None
 
@@ -4424,6 +4427,43 @@ class RedpandaService(Service, RedpandaServiceABC):
                 )
             else:
                 raise NodeCrash(crashes)
+
+    def _capture_dmesg(self, node: ClusterNode) -> str | None:
+        """Capture recent dmesg output from ``node`` for crash diagnostics."""
+        try:
+            slack_secs = 300
+            seconds_ago = int(time.time() - self._start_time) + slack_secs
+            lines: list[str] = []
+            max_lines = 1000
+            cmd = (
+                f"sudo dmesg -T --since '{seconds_ago} seconds ago' | tail -{max_lines}"
+            )
+            for line in node.account.ssh_capture(cmd, timeout_sec=10):
+                line = line.strip()
+                if line:
+                    lines.append(line)
+            return "\n".join(lines) if lines else None
+        except Exception as e:
+            self.logger.debug(
+                f"Failed to collect dmesg from {node.account.hostname}: {e}"
+            )
+            return None
+
+    def _save_dmesg_artifact(self, node: ClusterNode, dmesg: str) -> None:
+        node_dir = os.path.join(
+            TestContext.results_dir(self._context, self._context.test_index),
+            self.service_id,
+            node.account.hostname,
+        )
+        artifact_path = os.path.join(node_dir, "dmesg.txt")
+        try:
+            if not os.path.isdir(node_dir):
+                mkdir_p(node_dir)
+            self.logger.info(f"writing dmesg output to {artifact_path}")
+            with open(artifact_path, "w") as f:
+                f.write(dmesg)
+        except Exception as e:
+            self.logger.debug(f"Failed to write dmesg to {artifact_path}: {e}")
 
     def raw_metrics(
         self,
