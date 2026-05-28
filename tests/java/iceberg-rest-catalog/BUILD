@@ -22,7 +22,11 @@ genrule(
         SRC_DIR=$$(dirname $(location build.gradle))
         export GRADLE_USER_HOME=$$(mktemp -d)
         cd $$SRC_DIR
-        "$$GRADLE_BIN" --no-daemon shadowJar
+        LOG=$$(mktemp)
+        if ! "$$GRADLE_BIN" --no-daemon shadowJar >$$LOG 2>&1; then
+            cat $$LOG >&2
+            exit 1
+        fi
         cp build/libs/iceberg-rest-catalog-all.jar $$OUT_PATH
     """,
     tags = ["requires-network"],
