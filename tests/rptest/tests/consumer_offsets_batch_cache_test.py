@@ -38,7 +38,7 @@ class ConsumerOffsetsCacheTest(RedpandaTest):
         self.logger.info(f"Read metrics: {_sum_metric_value(read_metrics)}")
         return cache_read / total_read if total_read > 0 else None
 
-    def _commit_random_offsets(self, topic: str, partition: int):
+    def _commit_random_offsets(self, topic: str):
         # Create a consumer that will commit random offsets without consuming
         config = {
             "bootstrap.servers": self.redpanda.brokers(),
@@ -65,7 +65,7 @@ class ConsumerOffsetsCacheTest(RedpandaTest):
         topic = TopicSpec(name="test-topic", partition_count=1, replication_factor=3)
 
         DefaultClient(self.redpanda).create_topic(topic)
-        self._commit_random_offsets(topic.name, 0)
+        self._commit_random_offsets(topic.name)
 
         ratio_no_cache = self._consumer_offsets_cache_hit_ratio()
         assert ratio_no_cache == 0.0, (
@@ -77,7 +77,7 @@ class ConsumerOffsetsCacheTest(RedpandaTest):
             },
             expect_restart=True,
         )
-        self._commit_random_offsets(topic.name, 0)
+        self._commit_random_offsets(topic.name)
         hit_ratio = self._consumer_offsets_cache_hit_ratio()
         # hit ratio is not exactly 1.0 as the topic is read once during the
         # startup, the cache is cold during that operation
