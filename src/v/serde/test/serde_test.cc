@@ -1176,13 +1176,13 @@ SEASTAR_THREAD_TEST_CASE(variant_append_compat) {
 
     // old reader <- old writer: reads T0.
     BOOST_REQUIRE(read_old(old_writer) == old_variant{7});
-    // old reader <- new writer I0: throws, serialized size 2 != reader size 1.
-    BOOST_CHECK_THROW(read_old(new_writer_i0), serde::serde_exception);
-    // old reader <- new writer I1: throws, serialized size 2 != reader size 1.
+    // old reader <- new writer I0: reads T0 (newly allowed by the relaxation).
+    BOOST_REQUIRE(read_old(new_writer_i0) == old_variant{7});
+    // old reader <- new writer I1: throws, T1's index is unknown to old reader.
     BOOST_CHECK_THROW(read_old(new_writer_i1), serde::serde_exception);
 
-    // new reader <- old writer: throws, serialized size 1 != reader size 2.
-    BOOST_CHECK_THROW(read_new(old_writer), serde::serde_exception);
+    // new reader <- old writer: reads T0 (newly allowed by the relaxation).
+    BOOST_REQUIRE(read_new(old_writer) == new_variant{7});
     // new reader <- new writer I0: reads T0.
     BOOST_REQUIRE(read_new(new_writer_i0) == new_variant{7});
     // new reader <- new writer I1: reads T1.
