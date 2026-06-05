@@ -11,6 +11,7 @@ redpanda_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/v/base",
+        "//src/v/cloud_topics/level_one/maintenance:keyed_priority_queue",
         "//src/v/cloud_topics/level_one/maintenance:meta",
         "//src/v/container:chunked_hash_map",
         "//src/v/container:chunked_vector",

@@ -1,6 +1,21 @@
 load("//bazel:test.bzl", "redpanda_cc_gtest", "redpanda_test_cc_library")
 
 redpanda_cc_gtest(
+    name = "keyed_priority_queue_test",
+    timeout = "short",
+    srcs = [
+        "keyed_priority_queue_test.cc",
+    ],
+    cpu = 1,
+    deps = [
+        "//src/v/cloud_topics/level_one/maintenance:keyed_priority_queue",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_gtest(
     name = "worker_manager_test",
     timeout = "short",
     srcs = [

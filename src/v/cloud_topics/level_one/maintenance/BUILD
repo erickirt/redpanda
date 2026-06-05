@@ -108,6 +108,20 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "keyed_priority_queue",
+    hdrs = [
+        "keyed_priority_queue.h",
+    ],
+    visibility = [
+        "//src/v/cloud_topics/level_one:__subpackages__",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/container:chunked_hash_map",
+    ],
+)
+
+redpanda_cc_library(
     name = "log_collector",
     srcs = [
         "log_collector.cc",
