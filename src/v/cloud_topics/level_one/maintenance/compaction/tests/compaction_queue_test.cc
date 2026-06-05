@@ -29,30 +29,30 @@ model::topic_id_partition tidp(int p) {
     return model::topic_id_partition(test_topic, model::partition_id(p));
 }
 
-// Builds a meta for partition `p`, carrying `ratio` as its compaction score.
-log_compaction_meta_ptr mk_meta(int p, double ratio) {
+// Builds a compaction job for partition `p`, carrying `ratio` as its score.
+compaction_job_ptr mk_job(int p, double ratio) {
     auto ntp = model::ntp(
       model::ns("test"), model::topic("t"), model::partition_id(p));
     auto meta = ss::make_lw_shared<log_compaction_meta>(
       tidp(p), std::move(ntp));
-    meta->compaction.info_and_ts = compaction_info_and_timestamp{
-      .info = {.dirty_ratio = ratio},
-      .collected_at = model::timestamp::now(),
-      .max_compactible_offset = kafka::offset::max(),
-    };
-    return meta;
+    return ss::make_lw_shared<compaction_job>(
+      std::move(meta),
+      compaction_info_and_timestamp{
+        .info = {.dirty_ratio = ratio},
+        .collected_at = model::timestamp::now(),
+        .max_compactible_offset = kafka::offset::max(),
+      });
 }
 
 compaction_cmp_t by_dirty_ratio() {
-    return
-      [](const log_compaction_meta_ptr& a, const log_compaction_meta_ptr& b) {
-          return a->compaction.info_and_ts->info.dirty_ratio
-                 < b->compaction.info_and_ts->info.dirty_ratio;
-      };
+    return [](const compaction_job_ptr& a, const compaction_job_ptr& b) {
+        return a->info_and_ts.info.dirty_ratio
+               < b->info_and_ts.info.dirty_ratio;
+    };
 }
 
 double top_ratio(const compaction_queue& q) {
-    return q.top()->compaction.info_and_ts->info.dirty_ratio;
+    return q.top()->info_and_ts.info.dirty_ratio;
 }
 
 TEST(CompactionQueueTest, EmptyQueue) {
@@ -67,9 +67,9 @@ TEST(CompactionQueueTest, EmptyQueue) {
 
 TEST(CompactionQueueTest, OrdersHighestRatioFirst) {
     compaction_queue q(by_dirty_ratio());
-    q.push(mk_meta(0, 0.1));
-    q.push(mk_meta(1, 0.9));
-    q.push(mk_meta(2, 0.5));
+    q.push(mk_job(0, 0.1));
+    q.push(mk_job(1, 0.9));
+    q.push(mk_job(2, 0.5));
     EXPECT_EQ(q.size(), 3u);
 
     std::vector<double> got;
@@ -85,14 +85,14 @@ TEST(CompactionQueueTest, OrdersHighestRatioFirst) {
 // duplicate: the queue holds at most one entry per `topic_id_partition`.
 TEST(CompactionQueueTest, PushSameCtpUpdatesInPlace) {
     compaction_queue q(by_dirty_ratio());
-    q.push(mk_meta(0, 0.5));
+    q.push(mk_job(0, 0.5));
     EXPECT_EQ(q.size(), 1u);
 
-    q.push(mk_meta(0, 0.9)); // same CTP, higher ratio
+    q.push(mk_job(0, 0.9)); // same CTP, higher ratio
     EXPECT_EQ(q.size(), 1u);
     EXPECT_DOUBLE_EQ(top_ratio(q), 0.9);
 
-    q.push(mk_meta(0, 0.1)); // same CTP, lower ratio
+    q.push(mk_job(0, 0.1)); // same CTP, lower ratio
     EXPECT_EQ(q.size(), 1u);
     EXPECT_DOUBLE_EQ(top_ratio(q), 0.1);
 
@@ -124,8 +124,8 @@ TEST(CompactionQueueTest, RepushReprioritizesAmongOtherCtps) {
 
 TEST(CompactionQueueTest, ClearEvictsQueuedCtp) {
     compaction_queue q(by_dirty_ratio());
-    q.push(mk_meta(0, 0.9));
-    q.push(mk_meta(1, 0.1));
+    q.push(mk_job(0, 0.9));
+    q.push(mk_job(1, 0.1));
     EXPECT_EQ(q.size(), 2u);
 
     q.clear(tidp(0));
@@ -138,7 +138,7 @@ TEST(CompactionQueueTest, ClearEvictsQueuedCtp) {
 
 TEST(CompactionQueueTest, ClearAbsentCtpIsNoop) {
     compaction_queue q(by_dirty_ratio());
-    q.push(mk_meta(0, 0.5));
+    q.push(mk_job(0, 0.5));
     EXPECT_EQ(q.size(), 1u);
 
     q.clear(tidp(7)); // never queued
@@ -150,9 +150,9 @@ TEST(CompactionQueueTest, ClearAbsentCtpIsNoop) {
 // backing set), with ties broken by `topic_id_partition`.
 TEST(CompactionQueueTest, EqualRatiosRetainedAndTieBrokenByTidp) {
     compaction_queue q(by_dirty_ratio());
-    q.push(mk_meta(0, 0.5));
-    q.push(mk_meta(1, 0.5));
-    q.push(mk_meta(2, 0.5));
+    q.push(mk_job(0, 0.5));
+    q.push(mk_job(1, 0.5));
+    q.push(mk_job(2, 0.5));
     EXPECT_EQ(q.size(), 3u);
 
     // Among equal ratios the largest tidp (largest partition id) is the top.
@@ -167,12 +167,12 @@ TEST(CompactionQueueTest, EqualRatiosRetainedAndTieBrokenByTidp) {
 
 TEST(CompactionQueueTest, ReusableAfterDrainingToEmpty) {
     compaction_queue q(by_dirty_ratio());
-    q.push(mk_meta(0, 0.5));
+    q.push(mk_job(0, 0.5));
     q.pop();
     EXPECT_TRUE(q.empty());
 
     // Re-queuing the same CTP after it drained behaves like a fresh insert.
-    q.push(mk_meta(0, 0.3));
+    q.push(mk_job(0, 0.3));
     EXPECT_EQ(q.size(), 1u);
     EXPECT_TRUE(q.contains(tidp(0)));
     EXPECT_DOUBLE_EQ(top_ratio(q), 0.3);

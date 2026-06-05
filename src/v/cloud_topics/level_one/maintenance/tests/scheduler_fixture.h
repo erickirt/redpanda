@@ -79,8 +79,9 @@ public:
     void enqueue_for_compaction(const model::topic_id_partition& tidp) {
         auto it = scheduler->_logs.find(tidp);
         vassert(it != scheduler->_logs.end(), "CTP {} is not managed", tidp);
-        (*it)->compaction.s = l1::log_compaction_state::status::queued;
-        scheduler->_compaction_queue.push(*it);
+        scheduler->_compaction_queue.push(
+          ss::make_lw_shared<l1::compaction_job>(
+            *it, l1::compaction_info_and_timestamp{}));
     }
 
     bool compaction_queue_contains(const model::topic_id_partition& tidp) {

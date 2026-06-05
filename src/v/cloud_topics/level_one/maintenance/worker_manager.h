@@ -57,14 +57,14 @@ public:
     // be invoked during application shutdown.
     ss::future<> stop();
 
-    // Returns the top entry of `_compaction_queue`, if it is not empty, and
-    // sets inflight state for the provided shard & CTP. Returns `std::nullopt`
+    // Returns the top job of `_compaction_queue`, if it is not empty, and marks
+    // the provided shard as compacting that job's CTP. Returns `std::nullopt`
     // if the `_compaction_queue` is empty.
-    std::optional<foreign_log_compaction_meta_ptr>
+    std::optional<foreign_compaction_job_ptr>
       try_acquire_compaction_work(ss::shard_id);
 
-    // Resets inflight state for the provided CTP.
-    void complete_compaction_work(log_compaction_meta*);
+    // Clears the inflight shard for the completed job's CTP.
+    void complete_compaction_work(compaction_job*);
 
     // If an inflight compaction job for the provided log exists, a signal is
     // sent to the worker shard on which the job is occurring to request an

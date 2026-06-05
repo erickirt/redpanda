@@ -26,7 +26,7 @@ namespace cloud_topics::l1 {
 namespace {
 
 inline bool needs_compaction(
-  const log_compaction_meta& log,
+  const metastore::compaction_info_response& info,
   const cluster::topic_configuration& topic_cfg) {
     auto& topic_mcdr = topic_cfg.properties.min_cleanable_dirty_ratio;
     auto min_cleanable_dirty_ratio
@@ -39,9 +39,9 @@ inline bool needs_compaction(
           ? topic_mcl.value()
           : config::shard_local_cfg().max_compaction_lag_ms();
     return compaction::log_needs_compaction(
-      log.compaction.info_and_ts->info.dirty_ratio,
+      info.dirty_ratio,
       min_cleanable_dirty_ratio,
-      log.compaction.info_and_ts->info.earliest_dirty_ts,
+      info.earliest_dirty_ts,
       max_compaction_lag_ms);
 }
 
@@ -181,7 +181,7 @@ log_info_collector::build_compaction_specs(
     specs.reserve(size);
 
     for (const auto& log : logs_list) {
-        if (log.compaction.s == log_compaction_state::status::inflight) {
+        if (log.compaction.inflight_shard.has_value()) {
             // No need to sample inflight logs
             vlog(
               compaction_log.debug,
@@ -241,7 +241,7 @@ void log_info_collector::populate_logs_with_compaction_info(
     ntp_to_max_compactible_offset,
   model::timestamp collection_timestamp) const {
     for (auto& log : logs_list) {
-        if (log.compaction.s == log_compaction_state::status::inflight) {
+        if (log.compaction.inflight_shard.has_value()) {
             // Don't step on compaction info that is actively being used.
             continue;
         }
@@ -284,7 +284,7 @@ void log_info_collector::populate_logs_with_compaction_info(
         auto max_compactible_offset = offset_it->second;
 
         log.has_seen_reconciled_data = true;
-        log.compaction.info_and_ts = compaction_info_and_timestamp{
+        auto info_and_ts = compaction_info_and_timestamp{
           .info = std::move(compaction_info).value(),
           .collected_at = collection_timestamp,
           .max_compactible_offset = max_compactible_offset};
@@ -294,13 +294,8 @@ void log_info_collector::populate_logs_with_compaction_info(
           "Compaction info for CTP {} returned {} with max_compactible_offset: "
           "{}",
           log.ntp,
-          log.compaction.info_and_ts->info,
+          info_and_ts.info,
           max_compactible_offset);
-
-        if (log.compaction.s != log_compaction_state::status::idle) {
-            // We don't need to queue an already queued log.
-            continue;
-        }
 
         auto topic_cfg_opt = _topic_metadata_provider->get_topic_cfg(
           model::topic_namespace_view(log.ntp));
@@ -311,13 +306,22 @@ void log_info_collector::populate_logs_with_compaction_info(
 
         const auto& topic_cfg = topic_cfg_opt.value().get();
 
-        if (needs_compaction(log, topic_cfg)) {
-            auto ptr_it = logs_set.find(log.tidp);
-            if (ptr_it != logs_set.end()) {
-                log.compaction.s = log_compaction_state::status::queued;
-                compaction_queue.push(*ptr_it);
-            }
+        if (!needs_compaction(info_and_ts.info, topic_cfg)) {
+            continue;
         }
+
+        auto ptr_it = logs_set.find(log.tidp);
+        if (ptr_it == logs_set.end()) {
+            continue;
+        }
+
+        // (Re)build the job from this fresh sample and enqueue it. If the CTP
+        // is already queued, `push` replaces its job in place at the new
+        // priority; an inflight CTP is skipped above, so its job is never
+        // disturbed.
+        auto job = ss::make_lw_shared<compaction_job>(
+          *ptr_it, std::move(info_and_ts));
+        compaction_queue.push(std::move(job));
     }
 }
 

@@ -85,18 +85,13 @@ public:
       std::unique_ptr<topic_cfg_provider>,
       std::unique_ptr<max_compactible_offset_provider>);
 
-    // Populates `compaction.info_and_ts` within `log_compaction_meta`s from
-    // the provided `log_list_t` by collecting each log's compaction info from
-    // the metastore. It is not guaranteed that every log present in
-    // `log_list_t` will have its `compaction.info_and_ts` set e.g. due to
-    // concurrent removal or metastore errors. If a log already has
-    // `compaction.info_and_ts` set, it will not be collected again until an
-    // interval has elapsed and the current `compaction.info_and_ts` is
-    // determined stale. Additionally, logs that have an inflight compaction in
-    // process do not need to be collected. Logs that have their information
-    // collected and deemed eligible for compaction will also have their
-    // `lw_shared_ptr` copied into the `compaction_queue` for future
-    // compaction.
+    // Collects each managed log's compaction info from the metastore and, for
+    // every log deemed eligible for compaction, enqueues a `compaction_job`
+    // carrying that sample into the `compaction_queue`. Re-queuing a log that
+    // is already queued replaces its job in place with the fresher sample. Not
+    // every log in `log_list_t` is sampled or enqueued e.g. due to concurrent
+    // removal, metastore errors, the metastore's own sampling interval, or the
+    // log being skipped because it has an inflight compaction.
     ss::future<>
     collect_compaction_info(log_set_t&, log_list_t&, compaction_queue&) const;
 

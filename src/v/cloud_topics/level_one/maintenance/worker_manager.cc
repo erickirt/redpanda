@@ -50,7 +50,7 @@ ss::future<> worker_manager::stop() {
     co_await _workers.stop();
 }
 
-std::optional<foreign_log_compaction_meta_ptr>
+std::optional<foreign_compaction_job_ptr>
 worker_manager::try_acquire_compaction_work(ss::shard_id shard) {
     vassert(
       ss::this_shard_id() == worker_manager_shard,
@@ -63,30 +63,28 @@ worker_manager::try_acquire_compaction_work(ss::shard_id shard) {
         return std::nullopt;
     }
 
-    auto log = _compaction_queue.top();
+    auto job = _compaction_queue.top();
     _compaction_queue.pop();
 
-    if (!log) {
+    if (!job) {
         return std::nullopt;
     }
 
     // An unmanaged CTP is evicted from the queue by
-    // `compaction_scheduler::unmanage_partition`, so a queued entry is always
-    // still linked into the scheduler's managed-log list.
+    // `compaction_scheduler::unmanage_partition`, so a queued job's meta is
+    // always still linked into the scheduler's managed-log list.
     dassert(
-      log->link.is_linked(),
+      job->meta->link.is_linked(),
       "Acquired compaction work for an unmanaged CTP {}",
-      log->ntp);
+      job->meta->ntp);
 
-    dassert(
-      log->compaction.s == log_compaction_state::status::queued,
-      "Expected log state to be queued when acquiring work");
-    log->compaction.s = log_compaction_state::status::inflight;
-    log->compaction.inflight_shard = shard;
-    return ss::make_foreign(log);
+    // Marking the CTP inflight (and skipping inflight CTPs during sampling)
+    // is how a CTP is kept out of the queue while being compacted.
+    job->meta->compaction.inflight_shard = shard;
+    return ss::make_foreign(job);
 }
 
-void worker_manager::complete_compaction_work(log_compaction_meta* log) {
+void worker_manager::complete_compaction_work(compaction_job* job) {
     vassert(
       ss::this_shard_id() == worker_manager_shard,
       "Expected calls to worker_manager::complete_compaction_work() to always "
@@ -95,11 +93,10 @@ void worker_manager::complete_compaction_work(log_compaction_meta* log) {
       worker_manager_shard);
 
     dassert(
-      log->compaction.s == log_compaction_state::status::inflight,
-      "Expected log state to be inflight when completing work");
-    log->compaction.s = log_compaction_state::status::idle;
-    log->compaction.inflight_shard.reset();
-    log->compaction.info_and_ts.reset();
+      job->meta->compaction.inflight_shard.has_value(),
+      "Expected CTP {} to be inflight when completing work",
+      job->meta->ntp);
+    job->meta->compaction.inflight_shard.reset();
 
     _probe.log_compacted();
 }
