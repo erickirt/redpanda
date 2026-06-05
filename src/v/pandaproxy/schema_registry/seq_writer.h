@@ -69,6 +69,12 @@ public:
     ss::future<sharded_store::insert_result>
     write_subject_version(stored_schema schema);
 
+    /// Internal sync path for importing a subject version with caller-supplied
+    /// schema ID, version, and deleted state. Bypasses client write guards
+    /// such as read-only mode and mode_mutability.
+    ss::future<sharded_store::insert_result>
+    write_subject_version_imported(stored_schema schema);
+
     ss::future<bool>
     write_config(context_subject ctx_sub, compatibility_level compat);
 
@@ -101,6 +107,10 @@ private:
 
     ss::future<std::optional<sharded_store::insert_result>>
     do_write_subject_version(stored_schema schema, model::offset write_at);
+
+    ss::future<std::optional<sharded_store::insert_result>>
+    do_write_subject_version_imported(
+      stored_schema schema, model::offset write_at);
 
     ss::future<std::optional<bool>> do_write_config(
       context_subject ctx_sub,

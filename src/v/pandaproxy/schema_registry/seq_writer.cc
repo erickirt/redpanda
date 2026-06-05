@@ -25,7 +25,9 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 
+#include <algorithm>
 #include <exception>
+#include <limits>
 #include <optional>
 
 using namespace std::chrono_literals;
@@ -280,6 +282,122 @@ seq_writer::write_subject_version(stored_schema schema) {
     co_return co_await sequenced_write(
       [&schema](model::offset write_at, seq_writer& seq) {
           return seq.do_write_subject_version(schema.share(), write_at);
+      });
+}
+
+ss::future<std::optional<sharded_store::insert_result>>
+seq_writer::do_write_subject_version_imported(
+  stored_schema schema, model::offset write_at) {
+    // schema.schema is moved below; keep an owning subject copy.
+    const auto sub = schema.schema.sub();
+
+    // Imported ids and versions are external input; the store later
+    // computes id + 1 and version + 1, which must stay representable.
+    constexpr auto max_imported_id = schema_id{
+      std::numeric_limits<schema_id::type>::max() - 1};
+    if (schema.id < schema_id{1} || schema.id > max_imported_id) {
+        throw as_exception(invalid_schema(
+          fmt::format("Imported schema id {} is not valid", schema.id())));
+    }
+    constexpr auto max_imported_version = schema_version{
+      std::numeric_limits<schema_version::type>::max() - 1};
+    if (
+      schema.version < schema_version{1}
+      || schema.version > max_imported_version) {
+        throw as_exception(
+          error_info{
+            error_code::schema_version_invalid,
+            fmt::format(
+              "Imported schema version {} is not valid", schema.version())});
+    }
+
+    const auto ctx_id = context_schema_id{sub.ctx, schema.id};
+    auto existing_definition = co_await _store.maybe_get_schema_definition(
+      ctx_id);
+    if (
+      existing_definition.has_value()
+      && existing_definition.value() != schema.schema.def()) {
+        throw as_exception(overwrite_schema_with_id_not_permitted(schema.id));
+    }
+
+    auto versions = co_await _store.get_subject_versions(
+      sub, include_deleted::yes);
+    auto existing_version = std::ranges::find(
+      versions, schema.version, &subject_version_entry::version);
+    if (existing_version != versions.end()) {
+        if (existing_version->id != schema.id) {
+            throw as_exception(
+              error_info{
+                error_code::subject_version_schema_id_already_exists,
+                fmt::format(
+                  "Subject {} version {} is already registered with schema "
+                  "id {}, not imported schema id {}",
+                  sub,
+                  schema.version(),
+                  existing_version->id(),
+                  schema.id())});
+        }
+        if (
+          existing_definition.has_value()
+          && existing_version->deleted == schema.deleted) {
+            co_return sharded_store::insert_result{
+              .version = schema.version, .id = schema.id, .inserted = false};
+        }
+    }
+
+    auto canonical = std::move(schema.schema);
+    const auto version = schema.version;
+    const auto id = schema.id;
+    const auto deleted = schema.deleted;
+
+    vlog(
+      srlog.debug,
+      "seq_writer::write_subject_version_imported offset={} subject={} "
+      "schema={} version={} deleted={}",
+      write_at,
+      sub,
+      id,
+      version,
+      static_cast<bool>(deleted));
+
+    batch_builder rb(write_at);
+    auto record_offset = write_at;
+
+    if (
+      auto is_materialized = co_await _store.is_context_materialized(sub.ctx);
+      !is_materialized) {
+        vlog(srlog.debug, "Writing CONTEXT record for ctx={}", sub.ctx);
+        auto ctx_key = context_key{
+          .seq{record_offset}, .node{_node_id}, .ctx{sub.ctx}};
+        auto ctx_value = context_value{.ctx{sub.ctx}};
+        rb(std::move(ctx_key), std::move(ctx_value));
+        ++record_offset;
+    }
+
+    auto key = schema_key{
+      .seq{record_offset}, .node{_node_id}, .sub{sub}, .version{version}};
+    auto value = schema_value{
+      .schema{std::move(canonical)},
+      .version{version},
+      .id{id},
+      .deleted = deleted};
+    rb(std::move(key), std::move(value));
+
+    if (co_await produce_and_apply(write_at, std::move(rb).build())) {
+        co_return sharded_store::insert_result{
+          .version = version,
+          .id = id,
+          .inserted = existing_version == versions.end()};
+    }
+    co_return std::nullopt;
+}
+
+ss::future<sharded_store::insert_result>
+seq_writer::write_subject_version_imported(stored_schema schema) {
+    co_return co_await sequenced_write(
+      [&schema](model::offset write_at, seq_writer& seq) {
+          return seq.do_write_subject_version_imported(
+            schema.share(), write_at);
       });
 }
 
