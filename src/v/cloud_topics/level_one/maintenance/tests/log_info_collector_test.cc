@@ -104,10 +104,10 @@ TEST_F(LogInfoCollectorTestFixture, TestInfoCollector) {
 
     std::vector<tidp_batches_t> tidp_batches;
     l1::log_set_t logs;
-    l1::log_compaction_queue cached_metadata(
-      [](
-        const l1::log_compaction_meta_ptr& a,
-        const l1::log_compaction_meta_ptr& b) { return a->ntp < b->ntp; });
+    l1::compaction_queue cached_metadata(
+      [](const l1::compaction_job_ptr& a, const l1::compaction_job_ptr& b) {
+          return a->meta->ntp < b->meta->ntp;
+      });
     l1::log_list_t logs_list;
     for (const auto& [ntp, tidp] : ntidps) {
         auto [it, success] = logs.emplace(
@@ -125,10 +125,8 @@ TEST_F(LogInfoCollectorTestFixture, TestInfoCollector) {
     while (!cached_metadata.empty()) {
         auto sample = cached_metadata.top();
         cached_metadata.pop();
-        ASSERT_TRUE(sample->compaction.info_and_ts.has_value());
-        ASSERT_FLOAT_EQ(sample->compaction.info_and_ts->info.dirty_ratio, 1.0);
-        ASSERT_TRUE(
-          sample->compaction.info_and_ts->info.earliest_dirty_ts.has_value());
+        ASSERT_FLOAT_EQ(sample->info_and_ts.info.dirty_ratio, 1.0);
+        ASSERT_TRUE(sample->info_and_ts.info.earliest_dirty_ts.has_value());
     }
 }
 
@@ -174,10 +172,6 @@ TEST_F(LogInfoCollectorTestFixture, TestSampleLevelingInfo) {
 
     log_info_collector.collect_leveling_info(logs_set, logs_list, queue).get();
 
-    ASSERT_TRUE(log_ptr->leveling.info_and_ts.has_value());
-    // info.ranges is cleared after queueing; only the timestamp cookie is
-    // retained for the next tick.
-    ASSERT_TRUE(log_ptr->leveling.info_and_ts->info.ranges.empty());
     ASSERT_GT(queue.size(), 0u);
     size_t total_size_bytes = 0;
     while (!queue.empty()) {

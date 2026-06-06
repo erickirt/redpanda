@@ -12,6 +12,7 @@
 
 #include "cloud_topics/level_one/common/file_io.h"
 #include "cloud_topics/level_one/frontend_reader/level_one_reader_probe.h"
+#include "cloud_topics/level_one/maintenance/compaction/compaction_queue.h"
 #include "cloud_topics/level_one/maintenance/log_collector.h"
 #include "cloud_topics/level_one/maintenance/log_info_collector.h"
 #include "cloud_topics/level_one/maintenance/meta.h"
@@ -126,10 +127,9 @@ private:
     // compaction jobs for.
     log_list_t _logs_list;
 
-    // Container of pointers to logs in `_logs/_logs_list` which have sampled
-    // metadata available and are available for compaction- i.e
-    // `log->compaction.info_and_ts` is guaranteed to have a value.
-    log_compaction_queue _compaction_queue;
+    // Jobs for logs in `_logs/_logs_list` that have a sampled metastore info
+    // and are eligible for compaction, ordered by the scheduling policy.
+    compaction_queue _compaction_queue;
 
     // TODO: remove this once more cluster objects speak `topic_id_partition`.
     chunked_hash_map<model::ntp, model::topic_id_partition> _ntp_to_tidp;

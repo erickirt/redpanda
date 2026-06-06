@@ -113,19 +113,19 @@ private:
     // `paused`, this function is a no-op.
     ss::future<> do_resume_worker();
 
-    // Requests a compaction of the provided CTP and its `compaction_offsets`
-    // as obtained from the `metastore`.
-    ss::future<> compact_log(log_compaction_meta*);
+    // Requests a compaction of the provided job's CTP against the metastore
+    // sample it carries.
+    ss::future<> compact_log(compaction_job*);
 
     // Retrieves a job from the `_worker_manager`, if there is one available.
-    ss::future<std::optional<foreign_log_compaction_meta_ptr>>
+    ss::future<std::optional<foreign_compaction_job_ptr>>
     try_acquire_compaction_work_from_manager();
 
     // After completing a compaction job, go back to the `worker_manager` shard
-    // to mark the work as "complete" (i.e reset the `meta->inflight` value to
+    // to mark the work as "complete" (i.e reset the CTP's `inflight_shard` to
     // indicate there is no longer an in-process compaction occurring).
     ss::future<>
-      complete_compaction_work_on_manager(foreign_log_compaction_meta_ptr);
+      complete_compaction_work_on_manager(foreign_compaction_job_ptr);
 
     // Performs lazy initialization of the `compaction::key_offset_map` using
     // its reserved memory, if it is uninitialized.

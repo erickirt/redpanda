@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_topics/level_one/maintenance/compaction/compaction_queue.h"
 #include "cloud_topics/level_one/maintenance/leveling/leveling_queue.h"
 #include "cloud_topics/level_one/maintenance/meta.h"
 #include "cloud_topics/level_one/metastore/metastore.h"
@@ -84,28 +85,20 @@ public:
       std::unique_ptr<topic_cfg_provider>,
       std::unique_ptr<max_compactible_offset_provider>);
 
-    // Populates `compaction.info_and_ts` within `log_compaction_meta`s from
-    // the provided `log_list_t` by collecting each log's compaction info from
-    // the metastore. It is not guaranteed that every log present in
-    // `log_list_t` will have its `compaction.info_and_ts` set e.g. due to
-    // concurrent removal or metastore errors. If a log already has
-    // `compaction.info_and_ts` set, it will not be collected again until an
-    // interval has elapsed and the current `compaction.info_and_ts` is
-    // determined stale. Additionally, logs that have an inflight compaction in
-    // process do not need to be collected. Logs that have their information
-    // collected and deemed eligible for compaction will also have their
-    // `lw_shared_ptr` copied into the `log_compaction_queue` for future
-    // compaction.
-    ss::future<> collect_compaction_info(
-      log_set_t&, log_list_t&, log_compaction_queue&) const;
+    // Collects each managed log's compaction info from the metastore and, for
+    // every log deemed eligible for compaction, enqueues a `compaction_job`
+    // carrying that sample into the `compaction_queue`. Re-queuing a log that
+    // is already queued replaces its job in place with the fresher sample. Not
+    // every log in `log_list_t` is sampled or enqueued e.g. due to concurrent
+    // removal, metastore errors, the metastore's own sampling interval, or the
+    // log being skipped because it has an inflight compaction.
+    ss::future<>
+    collect_compaction_info(log_set_t&, log_list_t&, compaction_queue&) const;
 
-    // Populates `leveling.info_and_ts` within `log_compaction_meta`s from the
-    // provided `log_list_t` by collecting each log's leveling info from the
-    // metastore. Logs are skipped if `leveling.info_and_ts` is still fresh.
-    // For each freshly-sampled log, its queue in the `leveling_queue` is
-    // overwritten from the newly collected ranges, skipping any that overlap a
-    // range already inflight for the CTP. The transient `info.ranges` is
-    // cleared after queueing.
+    // Collects each managed log's leveling info from the metastore. For each
+    // freshly-sampled log, its existing jobs in the `leveling_queue` are
+    // dropped and rebuilt from the newly collected ranges, skipping any that
+    // overlap a range already inflight for the CTP.
     ss::future<>
     collect_leveling_info(log_set_t&, log_list_t&, leveling_queue&) const;
 
@@ -122,12 +115,12 @@ private:
 
     // Sets compaction info state within the input logs per the
     // `compaction_info_map` collected from the metastore and pushes logs
-    // eligible for compaction to the provided `log_compaction_queue`.
+    // eligible for compaction to the provided `compaction_queue`.
     void populate_logs_with_compaction_info(
       metastore::compaction_info_map&,
       log_set_t&,
       log_list_t&,
-      log_compaction_queue&,
+      compaction_queue&,
       const chunked_hash_map<model::ntp, kafka::offset>&,
       model::timestamp) const;
 

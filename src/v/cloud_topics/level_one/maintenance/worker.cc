@@ -114,7 +114,7 @@ ss::future<> compaction_worker::compaction_work_loop() {
 
             auto work = std::move(maybe_work).value();
 
-            auto ntp = work->ntp;
+            auto ntp = work->meta->ntp;
 
             auto compact_fut = co_await ss::coroutine::as_future(
               compact_log(work.get()));
@@ -143,7 +143,7 @@ ss::future<> compaction_worker::clear_work_fut() {
     }
 }
 
-ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
+ss::future<> compaction_worker::compact_log(compaction_job* job) {
     if (!is_active()) {
         co_return;
     }
@@ -157,43 +157,32 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
         co_return;
     }
 
-    if (!log) {
+    if (!job) {
         co_return;
     }
 
-    if (!log->link.is_linked()) {
+    if (!job->meta->link.is_linked()) {
         co_return;
     }
 
-    auto tidp = log->tidp;
-    auto ntp = log->ntp;
+    auto tidp = job->meta->tidp;
+    auto ntp = job->meta->ntp;
 
     auto ctxlog = prefix_logger(compaction_log, fmt::format("{}", ntp));
-
-    if (!log->compaction.info_and_ts.has_value()) {
-        vlog(
-          ctxlog.error,
-          "Log in compaction process did not have metastore information "
-          "set. Concurrency issue?");
-        co_return;
-    }
 
     vlog(ctxlog.info, "Compacting CTP");
 
     _compaction_job_state = compaction_job_state::running;
     _inflight_ntp = ntp;
 
+    const auto& info_and_ts = job->info_and_ts;
     auto compaction_offsets = metastore::compaction_offsets_response{
-      .dirty_ranges
-      = log->compaction.info_and_ts->info.offsets_response.dirty_ranges,
+      .dirty_ranges = info_and_ts.info.offsets_response.dirty_ranges,
       .removable_tombstone_ranges
-      = log->compaction.info_and_ts->info.offsets_response
-          .removable_tombstone_ranges};
-    auto expected_compaction_epoch
-      = log->compaction.info_and_ts->info.compaction_epoch;
-    auto start_offset = log->compaction.info_and_ts->info.start_offset;
-    auto max_compactible_offset
-      = log->compaction.info_and_ts->max_compactible_offset;
+      = info_and_ts.info.offsets_response.removable_tombstone_ranges};
+    auto expected_compaction_epoch = info_and_ts.info.compaction_epoch;
+    auto start_offset = info_and_ts.info.start_offset;
+    auto max_compactible_offset = info_and_ts.max_compactible_offset;
 
     // Lazy initialization of offset map.
     if (!_map) {
@@ -278,7 +267,7 @@ ss::future<> compaction_worker::compact_log(log_compaction_meta* log) {
     _inflight_ntp.reset();
 }
 
-ss::future<std::optional<foreign_log_compaction_meta_ptr>>
+ss::future<std::optional<foreign_compaction_job_ptr>>
 compaction_worker::try_acquire_compaction_work_from_manager() {
     co_return co_await ss::smp::submit_to(
       worker_manager::worker_manager_shard,
@@ -288,12 +277,12 @@ compaction_worker::try_acquire_compaction_work_from_manager() {
 }
 
 ss::future<> compaction_worker::complete_compaction_work_on_manager(
-  foreign_log_compaction_meta_ptr log) {
+  foreign_compaction_job_ptr job) {
     co_return co_await ss::smp::submit_to(
-      worker_manager::worker_manager_shard, [this, log = std::move(log)] {
-          _worker_manager->complete_compaction_work(log.get());
+      worker_manager::worker_manager_shard, [this, job = std::move(job)] {
+          _worker_manager->complete_compaction_work(job.get());
           // Destruct foreign_ptr on owning shard by moving it into closure.
-          std::ignore = std::move(log);
+          std::ignore = std::move(job);
       });
 }
 
