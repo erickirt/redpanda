@@ -232,6 +232,7 @@ redpanda_cc_btest(
     cpu = 1,
     deps = [
         ":utils",
+        "//src/v/bytes:iobuf_parser",
         "//src/v/model",
         "//src/v/pandaproxy/schema_registry:avro",
         "//src/v/pandaproxy/schema_registry:seq_writer",
