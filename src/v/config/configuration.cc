@@ -5012,6 +5012,16 @@ configuration::configuration()
       "behind and writes are being throttled.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5min)
+  , cloud_topics_metastore_max_pre_open_fibers(
+      *this,
+      "cloud_topics_metastore_max_pre_open_fibers",
+      "If non-zero, the number of fibers used to pre-open every SST file in "
+      "the L1 metastore LSM database at open time (broker restart or "
+      "partition leadership transfer), populating caches before the first "
+      "read. Set to 0 to open SSTs lazily.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      10,
+      {.min = 0, .max = 1024})
   , cloud_topics_parallel_fetch_enabled(
       *this,
       "cloud_topics_parallel_fetch_enabled",
