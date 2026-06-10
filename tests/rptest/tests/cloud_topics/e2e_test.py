@@ -813,3 +813,176 @@ class EndToEndCloudTopicsLevelingTest(EndToEndCloudTopicsBase):
         # Read all records back to verify data integrity.
         self.consume()
 
+
+class EndToEndCloudTopicsMaintenanceToggleTest(EndToEndCloudTopicsBase):
+    """Rapidly flip the compaction and leveling configs
+    (`cloud_topics_compaction_disabled` / `cloud_topics_leveling_disabled`)
+    on and off while a rate-limited producer keeps a compacted topic busy.
+    """
+
+    topics = (
+        TopicSpec(
+            name=EndToEndCloudTopicsBase.s3_topic_name,
+            partition_count=4,
+            replication_factor=3,
+            cleanup_policy=TopicSpec.CLEANUP_COMPACT,
+            min_cleanable_dirty_ratio=0.0,
+            delete_retention_ms=3000,
+        ),
+    )
+
+    kgo_producer: KgoVerifierProducer
+    kgo_consumer: KgoVerifierSeqConsumer
+
+    COMPACTION_INTERVAL_MS = 2000
+    LEVELING_INTERVAL_MS = 2000
+    MAX_CONCURRENT = 4
+    MIN_EXTENT_RATIO = 0.8
+    RECONCILIATION_MAX_OBJECT_SIZE = 4 * 1024 * 1024
+    TARGET_FILL_RATIO = 0.2
+
+    def __init__(self, test_context):
+        extra_rp_conf = {
+            "cloud_topics_compaction_interval_ms": self.COMPACTION_INTERVAL_MS,
+            "cloud_topics_compaction_key_map_memory": 128 * 1024 * 1024,
+            "cloud_topics_leveling_interval_ms": self.LEVELING_INTERVAL_MS,
+            "cloud_topics_max_concurrent_leveling_jobs_per_shard": self.MAX_CONCURRENT,
+            "cloud_topics_leveling_min_extent_size_ratio": self.MIN_EXTENT_RATIO,
+            "cloud_topics_reconciliation_max_object_size": self.RECONCILIATION_MAX_OBJECT_SIZE,
+            "cloud_topics_reconciliation_target_fill_ratio": self.TARGET_FILL_RATIO,
+        }
+        environment = {"__REDPANDA_TEST_DISABLE_BOUNDED_PROPERTY_CHECKS": "ON"}
+        super(EndToEndCloudTopicsMaintenanceToggleTest, self).__init__(
+            test_context,
+            extra_rp_conf,
+            environment,
+        )
+        self.msg_size = 4096
+        # Size the workload (with the rate limit) so the producer is still
+        # sending throughout the toggle window, while keeping the key count
+        # low enough that the topic can fully compact afterwards.
+        self.msg_count = 20_000
+        self.key_set_cardinality = 100
+        self.tombstone_probability = 0.5
+        self.rate_limit_bps = 1024 * 1024  # 1 MB/s (~256 msg/s)
+        self.toggle_duration_sec = 75
+        self.toggle_interval_sec = 2
+
+    def set_maintenance_configs(
+        self, compaction_disabled: bool, leveling_disabled: bool
+    ):
+        assert self.redpanda
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_topics_compaction_disabled": compaction_disabled,
+                "cloud_topics_leveling_disabled": leveling_disabled,
+            }
+        )
+
+    def consume(self, traffic_node):
+        assert self.redpanda
+        assert self.topic
+        self.kgo_consumer = KgoVerifierSeqConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            self.msg_size,
+            loop=False,
+            compacted=True,
+            validate_latest_values=True,
+            nodes=[traffic_node],
+        )
+        try:
+            self.kgo_consumer.start(clean=False)
+            self.kgo_consumer.wait()
+        finally:
+            self.kgo_consumer.stop()
+
+    @cluster(num_nodes=4)
+    def test_toggle_maintenance(self):
+        assert self.redpanda is not None
+        assert self.topic is not None
+
+        self.kgo_producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_size=self.msg_size,
+            msg_count=self.msg_count,
+            key_set_cardinality=self.key_set_cardinality,
+            tombstone_probability=self.tombstone_probability,
+            rate_limit_bps=self.rate_limit_bps,
+            validate_latest_values=True,
+            tolerate_failed_produce=True,
+        )
+        producer = self.kgo_producer
+        try:
+            producer.start()
+            producer.wait_for_latest_value_map()
+
+            # Flip the two kill switches on independent cadences (every tick
+            # for compaction, every third tick for leveling) so every
+            # combination of enabled/disabled is hit while work is inflight.
+            start = time.time()
+            i = 0
+            while time.time() - start < self.toggle_duration_sec:
+                time.sleep(self.toggle_interval_sec)
+                compaction_disabled = (i % 2) == 0
+                leveling_disabled = (i % 3) == 0
+                self.set_maintenance_configs(compaction_disabled, leveling_disabled)
+                self.logger.info(
+                    f"toggled kill switches: compaction_disabled="
+                    f"{compaction_disabled}, leveling_disabled={leveling_disabled} "
+                    f"(acked={producer.produce_status.acked})"
+                )
+                i += 1
+
+            # Re-enable both kinds so maintenance can drain, then let the
+            # producer run to completion. Stop it before consuming so the
+            # consumer can reuse the (single) traffic node.
+            self.set_maintenance_configs(
+                compaction_disabled=False, leveling_disabled=False
+            )
+            producer.wait(timeout_sec=10 * 60)
+            self.logger.info(
+                f"producer finished with acked={producer.produce_status.acked}, "
+                f"bad_offsets={producer.produce_status.bad_offsets}"
+            )
+            traffic_node = producer.nodes[0]
+        finally:
+            producer.stop()
+
+        # Both kinds had enabled phases during the toggle window, so the
+        # cumulative counters must be nonzero: the toggling never wedged
+        # maintenance outright.
+        assert self.get_log_compactions() > 0, "no compaction rounds ran"
+        assert self.get_leveling_completed() > 0, "no leveling ranges completed"
+
+        # With both kinds re-enabled and the workload finished, maintenance
+        # must converge: drain whatever eligible work remains and stop making
+        # progress. The producer may finish well before the toggle window does
+        # (tombstones halve the average message size under the byte rate
+        # limit), so demanding progress beyond a post-re-enable baseline would
+        # race with maintenance having already drained all eligible work
+        # during the enabled phases of the window; quiescence is the property
+        # the final re-enable actually guarantees.
+        self.wait_for_compaction_quiesce()
+        self.wait_for_leveling_quiesce()
+
+        # Reading the whole compacted log back with latest-value validation
+        # only succeeds once compaction has fully de-duplicated each key, so
+        # retry until the post-chaos topic converges. This both proves data
+        # integrity and that compaction recovers after the toggling.
+        def consumed_latest_values():
+            try:
+                self.consume(traffic_node)
+                return True
+            except Exception:
+                return False
+
+        wait_until(
+            consumed_latest_values,
+            timeout_sec=360,
+            backoff_sec=1,
+            err_msg="Did not see a fully compacted CTP log after toggling",
+        )
