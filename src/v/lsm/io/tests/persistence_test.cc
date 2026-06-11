@@ -68,7 +68,7 @@ TEST_P(PersistenceTest, CanWriteAndReadAFile) {
         w->append(iobuf::from("world")).get();
     }
     {
-        auto maybe_r = persistence->open_random_access_reader({}).get();
+        auto maybe_r = persistence->open_random_access_reader({}, 0).get();
         ASSERT_TRUE(bool(maybe_r));
         auto r = std::move(*maybe_r);
         auto _ = ss::defer([&r] { r->close().get(); });
@@ -114,7 +114,7 @@ TEST_P(PersistenceTest, DuplicateWritePreservesOriginal) {
     } catch (...) {
         // Expected for backends that use O_EXCL.
     }
-    auto maybe_r = persistence->open_random_access_reader({}).get();
+    auto maybe_r = persistence->open_random_access_reader({}, 0).get();
     ASSERT_TRUE(bool(maybe_r));
     auto r = std::move(*maybe_r);
     auto _ = ss::defer([&r] { r->close().get(); });
@@ -124,7 +124,7 @@ TEST_P(PersistenceTest, DuplicateWritePreservesOriginal) {
 }
 
 TEST_P(PersistenceTest, ReadNonExisting) {
-    auto maybe_r = persistence->open_random_access_reader({}).get();
+    auto maybe_r = persistence->open_random_access_reader({}, 0).get();
     EXPECT_FALSE(bool(maybe_r));
 }
 
@@ -156,7 +156,7 @@ TEST_P(PersistenceTest, RandomAccessReaderComprehensive) {
     }
 
     // Open reader for all tests
-    auto maybe_r = persistence->open_random_access_reader({}).get();
+    auto maybe_r = persistence->open_random_access_reader({}, 0).get();
     ASSERT_TRUE(bool(maybe_r));
     auto r = std::move(*maybe_r);
 
@@ -285,8 +285,9 @@ public:
     }
 
     ss::future<optional_pointer<random_access_file_reader>>
-    open_random_access_reader(lsm_internal::file_handle handle) override {
-        return impl_->open_random_access_reader(handle);
+    open_random_access_reader(
+      lsm_internal::file_handle handle, uint64_t file_size) override {
+        return impl_->open_random_access_reader(handle, file_size);
     }
 
     ss::future<> remove_file(lsm_internal::file_handle handle) override {

@@ -247,7 +247,8 @@ public:
       , _gid(gid) {}
 
     ss::future<optional_pointer<random_access_file_reader>>
-    open_random_access_reader(internal::file_handle h) override {
+    open_random_access_reader(
+      internal::file_handle h, uint64_t /*file_size*/) override {
         _as.check();
         auto _ = _gate.hold();
         auto filename = internal::sst_file_name(h);
