@@ -64,6 +64,7 @@ redpanda_cc_gtest(
         "utf8_sanitize_test.cc",
     ],
     deps = [
+        "//src/v/base",
         "//src/v/bytes:iobuf",
         "//src/v/strings:utf8",
         "@googletest//:gtest",
