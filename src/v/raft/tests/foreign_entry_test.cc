@@ -152,8 +152,10 @@ extract_configuration(model::record_batch_reader&& rdr) {
         int end_of_stream() { return 0; }
     };
 
+    auto batches = co_await model::consume_reader_to_chunked_vector(
+      std::move(rdr), model::no_timeout);
     auto [_, cfgs] = co_await raft::details::for_each_ref_extract_configuration(
-      model::offset(0), std::move(rdr), noop_consumer{}, model::no_timeout);
+      model::offset(0), std::move(batches), noop_consumer{});
     BOOST_REQUIRE(!cfgs.empty());
     co_return cfgs.begin()->cfg;
 }

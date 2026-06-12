@@ -2952,27 +2952,10 @@ ss::future<storage::append_result> consensus::disk_append(
       storage::log_append_config::fsync::no,
       model::timeout_clock::now() + _disk_timeout()};
 
-    class consumer {
-    public:
-        consumer(storage::log_appender appender)
-          : _appender(std::move(appender)) {}
-
-        ss::future<ss::stop_iteration> operator()(model::record_batch& batch) {
-            auto ret = co_await _appender(batch);
-            co_return ret;
-        }
-
-        auto end_of_stream() { return _appender.end_of_stream(); }
-
-    private:
-        storage::log_appender _appender;
-    };
-
     return details::for_each_ref_extract_configuration(
              _log->offsets().dirty_offset,
-             model::make_chunked_memory_record_batch_reader(std::move(batches)),
-             consumer(_log->make_appender(cfg)),
-             cfg.timeout)
+             std::move(batches),
+             _log->make_appender(cfg))
       .then([this, should_update_last_quorum_idx](
               std::tuple<ret_t, chunked_vector<offset_configuration>> t) {
           auto& [ret, configurations] = t;
