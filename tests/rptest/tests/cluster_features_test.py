@@ -1166,6 +1166,264 @@ class ManualFinalizationTest(FeaturesTestBase):
         ]
 
 
+# The `features_auto_finalization` knob was backported to v26.1.9, so the real
+# upgrade below must start from a released patch that already has it. The knob
+# lets a cluster opt out of auto-finalization *before* upgrading to a HEAD build
+# that ships the gating logic and the admin v2 RPCs.
+MANUAL_FINALIZE_MIN_OLD_RELEASE = (26, 1, 9)
+
+# How long to dwell after the cluster reports READY_TO_FINALIZE before
+# re-checking that the active version is still held. Guards against a late,
+# incorrect advance on a subsequent gating-loop tick.
+MANUAL_FINALIZE_HOLD_DWELL_SEC = 20
+
+
+class ManualFinalizationUpgradeTest(FeaturesTestBase):
+    """
+    Real-upgrade counterpart to ManualFinalizationTest.
+
+    ManualFinalizationTest fakes the version bump with
+    `__REDPANDA_LATEST_LOGICAL_VERSION`; this test performs an actual binary
+    upgrade from the latest released patch of the prior feature line (which must
+    include the backported `features_auto_finalization` knob, i.e.
+    >= v26.1.9) up to the HEAD build that ships the manual-finalization gating
+    logic and the admin v2 RPCs.
+
+    It mirrors three ManualFinalizationTest scenarios end to end:
+      - auto-finalization disabled blocks the post-upgrade advance,
+      - an explicit FinalizeUpgrade drives the advance, and
+      - GetUpgradeStatus reports the finalization lifecycle.
+
+    The old release has neither the gating logic nor the v2 RPCs, so the opt-out
+    is set on the old binary (which also exercises the backported knob) and the
+    status/finalize RPCs are only invoked once every node is on HEAD.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, num_brokers=3, **kwargs)
+        self.admin_v2 = AdminV2(self.redpanda)
+        # Logical versions are discovered from the running binaries at runtime
+        # rather than hard-coded as in the synthetic test.
+        self.old_logical = None
+        self.new_logical = None
+
+    def setUp(self):
+        # Defer cluster start: the old release must be installed before the
+        # first boot. FeaturesTestBase.setUp assumes a HEAD cluster (it asserts
+        # active == latest == original), so we deliberately skip it.
+        pass
+
+    def _start_at_old(self):
+        """Install and boot the whole cluster on the old released version."""
+        old_release = self.installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD
+        )
+        assert old_release >= MANUAL_FINALIZE_MIN_OLD_RELEASE, (
+            f"prior feature version {old_release} predates the "
+            f"features_auto_finalization backport "
+            f"{MANUAL_FINALIZE_MIN_OLD_RELEASE}; cannot opt out before upgrade"
+        )
+        self.logger.info(f"Starting cluster on old release {old_release}")
+        self.installer.install(self.redpanda.nodes, old_release)
+        self.redpanda.start()
+
+        self.old_logical = self.admin.get_features()["cluster_version"]
+        self.logger.info(
+            f"Old release {old_release} reports logical version {self.old_logical}"
+        )
+
+    def _restart_at_new(self, nodes):
+        """Upgrade `nodes` to the HEAD build and restart them in place."""
+        self.installer.install(nodes, RedpandaInstaller.HEAD)
+        self.redpanda.restart_nodes(nodes)
+        self._wait_for_cluster_settled()
+
+        self.new_logical = self._node_latest_logical_version(nodes[0])
+        self.logger.info(f"HEAD build reports logical version {self.new_logical}")
+        assert self.new_logical > self.old_logical, (
+            f"expected HEAD logical version {self.new_logical} to exceed the old "
+            f"version {self.old_logical}; the upgrade did not raise the version"
+        )
+
+    def _node_latest_logical_version(self, node):
+        """Read a (possibly just-restarted) node's latest logical version,
+        tolerating the brief window before it is serving the admin API."""
+
+        def query():
+            return self.admin.get_features(node=node).get("node_latest_version")
+
+        return wait_until_result(
+            query,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="node did not report node_latest_version after upgrade",
+        )
+
+    def _wait_for_cluster_settled(self, timeout_sec=90):
+        """Wait for the cluster to settle after a restart: every broker has
+        rejoined and no under-replicated partitions remain. `start_node` only
+        waits for per-node readiness (the v1 ready probe), not cluster
+        convergence -- so without this a "did not advance" assertion could pass
+        merely because the controller has not yet observed the upgrade."""
+        self.redpanda.wait_for_membership(first_start=False)
+        wait_until(
+            self.redpanda.healthy,
+            timeout_sec=timeout_sec,
+            backoff_sec=2,
+            err_msg="cluster did not become healthy after restart",
+        )
+
+    def _disable_auto_finalization(self):
+        self.redpanda.set_cluster_config({"features_auto_finalization": False})
+
+    def _call_with_leader_retry(self, call, timeout_sec=30):
+        """Retry a controller-leader-routed admin v2 call through the transient
+        UNAVAILABLE window after restarts/leadership changes. See the identical
+        helper in ManualFinalizationTest for the rationale."""
+        deadline = time.time() + timeout_sec
+        while True:
+            try:
+                return call()
+            except ConnectError as e:
+                if e.code != ConnectErrorCode.UNAVAILABLE or time.time() >= deadline:
+                    raise
+                time.sleep(1)
+
+    def _finalize(self):
+        return self._call_with_leader_retry(
+            lambda: self.admin_v2.features().finalize_upgrade(
+                features_pb2.FinalizeUpgradeRequest()
+            )
+        )
+
+    def _get_upgrade_status(self):
+        return self._call_with_leader_retry(
+            lambda: self.admin_v2.features().get_upgrade_status(
+                features_pb2.GetUpgradeStatusRequest()
+            )
+        )
+
+    def _wait_for_status_state(self, state, timeout_sec=30):
+        """Wait until GetUpgradeStatus reports `state`; return that status."""
+        wait_until(
+            lambda: self._get_upgrade_status().state == state,
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+        )
+        return self._get_upgrade_status()
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_auto_finalization_disabled_blocks_advance(self):
+        """
+        Real-upgrade analogue of
+        ManualFinalizationTest.test_auto_finalization_disabled_blocks_advance.
+
+        With `features_auto_finalization=false` set on the old release before
+        the upgrade, a completed rolling upgrade to HEAD must not auto-advance
+        cluster_version. The opt-out, written on the old binary, has to survive
+        the version boundary and be honored by the HEAD gating logic.
+        """
+        self._start_at_old()
+        self._disable_auto_finalization()
+
+        self._restart_at_new(self.redpanda.nodes)
+
+        # Reaching READY_TO_FINALIZE is positive proof that the controller
+        # observed every node at the new version and chose to defer the advance,
+        # rather than a fixed sleep that could pass before the gating loop has
+        # even run. The active version is held at the old (downgrade floor)
+        # version, with the uniform higher version available to finalize.
+        status = self._wait_for_status_state(
+            features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+        )
+        assert self.admin.get_features()["cluster_version"] == self.old_logical
+        assert status.active_version == self.old_logical
+        assert status.version_after_finalization == self.new_logical
+        assert not status.auto_finalization_enabled
+
+        # Dwell and re-check: the version must stay held across subsequent
+        # gating-loop ticks, not advance late.
+        time.sleep(MANUAL_FINALIZE_HOLD_DWELL_SEC)
+        assert self.admin.get_features()["cluster_version"] == self.old_logical
+        assert (
+            self._get_upgrade_status().state
+            == features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+        )
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_manual_request_triggers_advance(self):
+        """
+        Real-upgrade analogue of
+        ManualFinalizationTest.test_manual_request_triggers_advance.
+
+        After a real upgrade with auto-finalization off, an explicit
+        FinalizeUpgrade RPC drives cluster_version forward to the version
+        reported uniformly by all members.
+        """
+        self._start_at_old()
+        self._disable_auto_finalization()
+
+        self._restart_at_new(self.redpanda.nodes)
+
+        # Confirm the cluster reached the deferred state before triggering:
+        # READY_TO_FINALIZE proves the controller saw the completed upgrade and
+        # held the version rather than advancing it.
+        ready = self._wait_for_status_state(
+            features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+        )
+        assert self.admin.get_features()["cluster_version"] == self.old_logical
+        assert ready.version_after_finalization == self.new_logical
+
+        self._finalize()
+
+        self._wait_for_version_everywhere(self.new_logical)
+
+        # Once the advance lands, the status flips to finalized and the active
+        # version (the downgrade floor) catches up to the binaries.
+        finalized = self._wait_for_status_state(
+            features_pb2.FINALIZATION_STATE_FINALIZED
+        )
+        assert finalized.active_version == self.new_logical
+        assert finalized.version_after_finalization == self.new_logical
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_get_upgrade_status_reports_lifecycle(self):
+        """
+        Real-upgrade analogue of
+        ManualFinalizationTest.test_get_upgrade_status_reports_lifecycle.
+
+        The old release has no v2 RPCs, so (unlike the synthetic test) the
+        FINALIZED-at-rest state cannot be observed before the upgrade; the
+        lifecycle is observed from READY_TO_FINALIZE (post-upgrade) through
+        FINALIZED.
+        """
+        self._start_at_old()
+        self._disable_auto_finalization()
+
+        # Roll every node to HEAD. Auto-finalization is off, so the active
+        # version holds and the cluster becomes READY_TO_FINALIZE.
+        self._restart_at_new(self.redpanda.nodes)
+
+        status = self._wait_for_status_state(
+            features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+        )
+        assert status.active_version == self.old_logical
+        assert status.version_after_finalization == self.new_logical
+        assert len(status.members) == len(self.redpanda.nodes)
+        assert all(m.version_known and m.alive for m in status.members)
+        assert all(m.logical_version == self.new_logical for m in status.members)
+        # release_version is plumbed through from the per-node health report.
+        assert all(m.release_version for m in status.members)
+
+        # Finalize: the active version catches up; no downgrade after this.
+        self._finalize()
+        self._wait_for_version_everywhere(self.new_logical)
+
+        status = self._wait_for_status_state(features_pb2.FINALIZATION_STATE_FINALIZED)
+        assert status.active_version == self.new_logical
+        assert status.version_after_finalization == self.new_logical
+
+
 class ManualFinalizationLicenseTest(RedpandaTest):
     """
     Verifies that disabling `features_auto_finalization` is rejected by the
