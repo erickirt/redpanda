@@ -1172,6 +1172,11 @@ class ManualFinalizationTest(FeaturesTestBase):
 # that ships the gating logic and the admin v2 RPCs.
 MANUAL_FINALIZE_MIN_OLD_RELEASE = (26, 1, 9)
 
+# The same knob was also backported to v25.3.15, the oldest release from which a
+# multi-hop upgrade (v25.3 -> v26.1 -> HEAD) can carry the opt-out through every
+# hop with the flag set only once.
+MANUAL_FINALIZE_MIN_OLDEST_RELEASE = (25, 3, 15)
+
 # How long to dwell after the cluster reports READY_TO_FINALIZE before
 # re-checking that the active version is still held. Guards against a late,
 # incorrect advance on a subsequent gating-loop tick.
@@ -1258,6 +1263,25 @@ class ManualFinalizationUpgradeTest(FeaturesTestBase):
             backoff_sec=1,
             err_msg="node did not report node_latest_version after upgrade",
         )
+
+    def _upgrade_all_to(self, version):
+        """Install `version` on every node, restart in place, and return the
+        binary's latest logical version."""
+        self.installer.install(self.redpanda.nodes, version)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self._wait_for_cluster_settled()
+        return self._node_latest_logical_version(self.redpanda.nodes[0])
+
+    def _wait_for_cluster_version(self, target, timeout_sec=60):
+        """Wait until every node reports cluster_version == target."""
+
+        def check():
+            return all(
+                self.admin.get_features(node=n)["cluster_version"] == target
+                for n in self.redpanda.nodes
+            )
+
+        wait_until(check, timeout_sec=timeout_sec, backoff_sec=1)
 
     def _wait_for_cluster_settled(self, timeout_sec=90):
         """Wait for the cluster to settle after a restart: every broker has
@@ -1422,6 +1446,92 @@ class ManualFinalizationUpgradeTest(FeaturesTestBase):
         status = self._wait_for_status_state(features_pb2.FINALIZATION_STATE_FINALIZED)
         assert status.active_version == self.new_logical
         assert status.version_after_finalization == self.new_logical
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_config_passes_through_multi_hop_upgrade(self):
+        """
+        Lock in that `features_auto_finalization`, set once on the oldest
+        release, survives a multi-hop upgrade (v25.3.x -> v26.1.x -> HEAD) and
+        is still honored by the final binary's gating logic.
+
+        The knob was backported to both v25.3.15 and v26.1.9, so every
+        intermediate binary recognizes the property and carries it through the
+        controller log unchanged. Only HEAD consumes the knob, so the
+        deferred-advance behavior appears only after the final hop -- the
+        intermediate v26.1 hop advances the active version normally.
+        """
+        oldest, _ = self.installer.latest_for_line((25, 3))
+        assert oldest >= MANUAL_FINALIZE_MIN_OLDEST_RELEASE, (
+            f"latest v25.3 patch {oldest} predates the features_auto_finalization "
+            f"backport {MANUAL_FINALIZE_MIN_OLDEST_RELEASE}"
+        )
+        mid, _ = self.installer.latest_for_line((26, 1))
+        assert mid >= MANUAL_FINALIZE_MIN_OLD_RELEASE, (
+            f"latest v26.1 patch {mid} predates the backport "
+            f"{MANUAL_FINALIZE_MIN_OLD_RELEASE}"
+        )
+
+        # Hop 0: boot the oldest release and opt out of auto-finalization once.
+        # Setting the flag here is a convenience (set-it-once-early), NOT a
+        # guarantee of multi-hop downgradability: a multi-hop upgrade does not
+        # preserve the ability to downgrade across every hop. Only the gated hop
+        # (to HEAD) keeps its downgrade open -- see the assertions below.
+        self.logger.info(f"Booting oldest release {oldest}")
+        self.installer.install(self.redpanda.nodes, oldest)
+        self.redpanda.start()
+        self._disable_auto_finalization()
+
+        # Hop 1: upgrade to the latest v26.1 patch. v26.1 has the knob but not
+        # the gating logic, so it auto-advances the active version to its own
+        # latest; the flag rides along in the controller log untouched.
+        self.logger.info(f"Upgrading to intermediate release {mid}")
+        mid_logical = self._upgrade_all_to(mid)
+        self._wait_for_cluster_version(mid_logical)
+        held_version = mid_logical
+
+        # The v26.1 hop was NOT gated, so the active version -- which doubles as
+        # the downgrade floor -- has advanced to the v26.1 logical version.
+        # Downgrade back to v25.3 is no longer possible from here: the flag set
+        # on v25.3 did not (and cannot) protect this ungated hop.
+        assert self.admin.get_features()["cluster_version"] == held_version
+
+        # Hop 2: upgrade to HEAD, which DOES consume the knob. Because the flag
+        # survived both hops, the final advance must be deferred.
+        self.logger.info("Upgrading to HEAD")
+        head_logical = self._upgrade_all_to(RedpandaInstaller.HEAD)
+        assert head_logical > held_version, (
+            f"HEAD logical {head_logical} should exceed the held version {held_version}"
+        )
+
+        # READY_TO_FINALIZE proves HEAD observed the completed upgrade and
+        # deferred the advance (stronger than a fixed sleep that could pass
+        # before the gating loop runs).
+        status = self._wait_for_status_state(
+            features_pb2.FINALIZATION_STATE_READY_TO_FINALIZE
+        )
+        # The active version (downgrade floor) is held at the v26.1 version, so
+        # downgrade from v26.2 back to v26.1 IS preserved: this gated hop is the
+        # only one whose downgrade the flag keeps open.
+        assert self.admin.get_features()["cluster_version"] == held_version
+        assert status.active_version == held_version
+        assert status.version_after_finalization == head_logical
+        # The decisive passthrough check: HEAD sees auto-finalization as
+        # disabled even though the flag was set only once, on the oldest release.
+        assert not status.auto_finalization_enabled
+
+        # Dwell and re-check: the version must stay held across subsequent
+        # gating-loop ticks, not advance late.
+        time.sleep(MANUAL_FINALIZE_HOLD_DWELL_SEC)
+        assert self.admin.get_features()["cluster_version"] == held_version
+
+        # The explicit finalize still drives the advance to the head version.
+        self._finalize()
+        self._wait_for_version_everywhere(head_logical)
+        finalized = self._wait_for_status_state(
+            features_pb2.FINALIZATION_STATE_FINALIZED
+        )
+        assert finalized.active_version == head_logical
+        assert finalized.version_after_finalization == head_logical
 
 
 class ManualFinalizationLicenseTest(RedpandaTest):
