@@ -779,11 +779,116 @@ func adminSchemaRegistrySyncToCfg(opts *adminv2.SchemaRegistrySyncOptions) *Sche
 	cfg := &SchemaRegistrySyncOptions{}
 
 	// Handle schema_registry_shadowing_mode oneof
-	if _, ok := opts.GetSchemaRegistryShadowingMode().(*adminv2.SchemaRegistrySyncOptions_ShadowSchemaRegistryTopic_); ok {
+	switch mode := opts.GetSchemaRegistryShadowingMode().(type) {
+	case *adminv2.SchemaRegistrySyncOptions_ShadowSchemaRegistryTopic_:
 		cfg.ShadowSchemaRegistryTopic = &ShadowSchemaRegistryTopic{}
+	case *adminv2.SchemaRegistrySyncOptions_ShadowSchemaRegistryApi_:
+		cfg.ShadowSchemaRegistryAPI = adminShadowSchemaRegistryAPIToCfg(mode.ShadowSchemaRegistryApi)
 	}
 
 	return cfg
+}
+
+func adminShadowSchemaRegistryAPIToCfg(api *adminv2.SchemaRegistrySyncOptions_ShadowSchemaRegistryApi) *ShadowSchemaRegistryAPI {
+	if api == nil {
+		return nil
+	}
+
+	cfg := &ShadowSchemaRegistryAPI{
+		SourceURL:                      api.GetSourceUrl(),
+		MaxSourceRequestsPerSecond:     api.GetMaxSourceRequestsPerSecond(),
+		AuthOptions:                    adminSchemaRegistryAuthToCfg(api.GetAuthOptions()),
+		SourceFilter:                   adminSchemaRegistrySourceFilterToCfg(api.GetSourceFilter()),
+		Destination:                    adminSchemaRegistryDestinationToCfg(api.GetDestination()),
+		UnsupportedSchemaFeaturePolicy: adminUnsupportedSchemaFeaturePolicyToCfg(api.GetUnsupportedSchemaFeaturePolicy()),
+	}
+
+	if api.GetTlsSettings() != nil {
+		cfg.TLSSettings = adminTLSToCfg(api.GetTlsSettings())
+	}
+
+	if api.GetTailInterval() != nil {
+		cfg.TailInterval = api.GetTailInterval().AsDuration()
+	}
+
+	if api.GetFullSyncInterval() != nil {
+		cfg.FullSyncInterval = api.GetFullSyncInterval().AsDuration()
+	}
+
+	return cfg
+}
+
+func adminSchemaRegistryAuthToCfg(auth *adminv2.SchemaRegistryAuthOptions) *SchemaRegistryAuthOptions {
+	if auth == nil {
+		return nil
+	}
+
+	if basic := auth.GetBasic(); basic != nil {
+		return &SchemaRegistryAuthOptions{
+			Basic: &HTTPBasicAuthOptions{
+				Username: basic.GetUsername(),
+				Password: basic.GetPassword(),
+				// password_set and password_set_at are output-only
+			},
+		}
+	}
+
+	return nil
+}
+
+func adminSchemaRegistrySourceFilterToCfg(filter *adminv2.SchemaRegistrySourceFilter) *SchemaRegistrySourceFilter {
+	if filter == nil {
+		return nil
+	}
+
+	return &SchemaRegistrySourceFilter{
+		Contexts: filter.GetContexts(),
+		Subjects: filter.GetSubjects(),
+	}
+}
+
+func adminSchemaRegistryDestinationToCfg(dest *adminv2.SchemaRegistryContextDestination) *SchemaRegistryContextDestination {
+	if dest == nil {
+		return nil
+	}
+
+	cfg := &SchemaRegistryContextDestination{}
+
+	// Handle mapping oneof
+	switch mapping := dest.GetMapping().(type) {
+	case *adminv2.SchemaRegistryContextDestination_Identity:
+		cfg.Identity = &SchemaRegistryIdentityContextMapping{}
+	case *adminv2.SchemaRegistryContextDestination_Exact:
+		exact := &SchemaRegistryExactContextMappings{}
+		for _, m := range mapping.Exact.GetMappings() {
+			exact.Mappings = append(exact.Mappings, adminSchemaRegistryContextMapToCfg(m))
+		}
+		cfg.Exact = exact
+	}
+
+	return cfg
+}
+
+func adminSchemaRegistryContextMapToCfg(m *adminv2.SchemaRegistryContextMap) *SchemaRegistryContextMap {
+	if m == nil {
+		return nil
+	}
+
+	return &SchemaRegistryContextMap{
+		Source:      m.GetSource(),
+		Destination: m.GetDestination(),
+	}
+}
+
+func adminUnsupportedSchemaFeaturePolicyToCfg(p adminv2.UnsupportedSchemaFeaturePolicy) UnsupportedSchemaFeaturePolicy {
+	switch p {
+	case adminv2.UnsupportedSchemaFeaturePolicy_UNSUPPORTED_SCHEMA_FEATURE_POLICY_FAIL:
+		return UnsupportedSchemaFeaturePolicyFail
+	case adminv2.UnsupportedSchemaFeaturePolicy_UNSUPPORTED_SCHEMA_FEATURE_POLICY_REMOVE:
+		return UnsupportedSchemaFeaturePolicyRemove
+	default:
+		return ""
+	}
 }
 
 func adminMapFilterToCfg(filter *adminv2.NameFilter) *NameFilter {
