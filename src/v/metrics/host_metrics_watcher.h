@@ -162,10 +162,7 @@ private:
     // /proc/net/snmp
     metrics_file_info<snmp_stats> _snmp_stats;
 
-    // Dual handle: every family this watcher registers (host_diskstats_*,
-    // host_netstat_*, host_snmp_*, host_metrics_info, io_queue_config_*) is
-    // published on both /metrics (vectorized_*) and /public_metrics
-    // (redpanda_*). The SLF dashboard consumes the public variants.
+    // Published on both /metrics and /public_metrics for the SLF dashboard.
     metrics::all_metrics_groups _metrics;
 };
 
