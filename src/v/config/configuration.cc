@@ -5012,6 +5012,15 @@ configuration::configuration()
       "behind and writes are being throttled.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5min)
+  , cloud_topics_metastore_block_cache_size(
+      *this,
+      "cloud_topics_metastore_block_cache_size",
+      "Size in bytes of the per-database uncompressed-block cache used by the "
+      "L1 metastore LSM database. Only takes effect when an LSM database is "
+      "opened (broker restart or metastore partition leadership transfer).",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10_MiB,
+      {.min = 1_MiB, .max = 64_GiB})
   , cloud_topics_metastore_write_buffer_size(
       *this,
       "cloud_topics_metastore_write_buffer_size",
