@@ -41,6 +41,11 @@ iobuf fragmented_iobuf(std::string_view s, size_t chunk_size) {
     return buf;
 }
 
+// Linearize the raw schema text out of a parsed stored_schema for comparison.
+ss::sstring schema_text(const stored_schema& s) {
+    return s.schema.def().raw()().linearize_to_string();
+}
+
 } // namespace
 
 TEST_CORO(parse_subjects_test, empty_array) {
@@ -285,6 +290,182 @@ TEST_CORO(parse_subject_versions_test, round_trip) {
         SCOPED_TRACE(i);
         ASSERT_EQ_CORO(s[i], expected[i]);
     }
+}
+
+TEST_CORO(parse_subject_version_test, minimal_avro_defaults) {
+    auto res = co_await parse_subject_version(
+      iobuf::from(
+        R"({"subject":"User","version":1,"id":100001,)"
+        R"("schema":"{\"type\":\"string\"}"})"),
+      qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(res.has_value());
+    const auto& s = res.value();
+    ASSERT_EQ_CORO(
+      s.schema.sub(), (context_subject{default_context, subject{"User"}}));
+    ASSERT_EQ_CORO(s.version, schema_version{1});
+    ASSERT_EQ_CORO(s.id, schema_id{100001});
+    ASSERT_EQ_CORO(s.schema.type(), schema_type::avro); // default
+    ASSERT_EQ_CORO(s.deleted, is_deleted::no);          // default
+    ASSERT_TRUE_CORO(s.schema.def().refs().empty());
+    ASSERT_EQ_CORO(schema_text(s), R"({"type":"string"})");
+}
+
+TEST_CORO(parse_subject_version_test, schema_types) {
+    auto json = co_await parse_subject_version(
+      iobuf::from(
+        R"({"subject":"r","version":1,"id":2,"schemaType":"JSON",)"
+        R"("schema":"{\"type\":\"object\"}"})"),
+      qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(json.has_value());
+    ASSERT_EQ_CORO(json.value().schema.type(), schema_type::json);
+
+    // PROTOBUF: the .proto text (quotes and newlines) is preserved verbatim.
+    auto proto = co_await parse_subject_version(
+      iobuf::from(
+        R"({"subject":"r","version":1,"id":2,"schemaType":"PROTOBUF",)"
+        R"("schema":"syntax = \"proto3\";\nmessage M {}\n"})"),
+      qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(proto.has_value());
+    ASSERT_EQ_CORO(proto.value().schema.type(), schema_type::protobuf);
+    ASSERT_EQ_CORO(
+      schema_text(proto.value()), "syntax = \"proto3\";\nmessage M {}\n");
+}
+
+TEST_CORO(parse_subject_version_test, full_object_maps_all_fields) {
+    auto res = co_await parse_subject_version(
+      iobuf::from(
+        R"({"subject":":.ctx:MyRecord","version":2,"id":12,)"
+        R"("schemaType":"AVRO","references":[)"
+        R"({"name":"com.acme.Referenced","subject":"childSubject","version":1}],)"
+        R"("schema":"{\"type\":\"record\"}","deleted":true})"),
+      qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(res.has_value());
+    const auto& s = res.value();
+    ASSERT_EQ_CORO(
+      s.schema.sub(), (context_subject{context{".ctx"}, subject{"MyRecord"}}));
+    ASSERT_EQ_CORO(s.version, schema_version{2});
+    ASSERT_EQ_CORO(s.id, schema_id{12});
+    ASSERT_EQ_CORO(s.schema.type(), schema_type::avro);
+    ASSERT_EQ_CORO(s.deleted, is_deleted::yes);
+    ASSERT_EQ_CORO(schema_text(s), R"({"type":"record"})");
+    const auto& refs = s.schema.def().refs();
+    ASSERT_EQ_CORO(refs.size(), size_t{1});
+    ASSERT_EQ_CORO(refs[0].name, "com.acme.Referenced");
+    ASSERT_EQ_CORO(
+      refs[0].sub.sub,
+      (context_subject{default_context, subject{"childSubject"}}));
+    ASSERT_EQ_CORO(refs[0].version, schema_version{1});
+}
+
+TEST_CORO(parse_subject_version_test, reference_subject_honors_policy) {
+    constexpr std::string_view body
+      = R"({"subject":"r","version":1,"id":2,"schema":"x",)"
+        R"("references":[{"name":"n","subject":":.ctx:Sub","version":1}]})";
+
+    auto on = co_await parse_subject_version(
+      iobuf::from(body), qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(on.has_value());
+    ASSERT_EQ_CORO(
+      on.value().schema.def().refs()[0].sub.qualified, is_qualified::yes);
+    ASSERT_EQ_CORO(
+      on.value().schema.def().refs()[0].sub.sub,
+      (context_subject{context{".ctx"}, subject{"Sub"}}));
+
+    auto off = co_await parse_subject_version(
+      iobuf::from(body), qualified_subjects_enabled::no);
+    ASSERT_TRUE_CORO(off.has_value());
+    ASSERT_EQ_CORO(
+      off.value().schema.def().refs()[0].sub.qualified, is_qualified::no);
+    ASSERT_EQ_CORO(
+      off.value().schema.def().refs()[0].sub.sub,
+      (context_subject{default_context, subject{":.ctx:Sub"}}));
+}
+
+TEST_CORO(parse_subject_version_test, ignores_unmodeled_fields) {
+    // guid/ts/ruleSet/schemaTags/metadata (and a future field) are skipped,
+    // including nested objects/arrays.
+    auto res = co_await parse_subject_version(
+      iobuf::from(
+        R"({"guid":"abc","ts":1715000000000,"subject":"User","version":1,)"
+        R"("id":7,"schema":"x","schemaType":"AVRO",)"
+        R"("ruleSet":{"domainRules":[{"name":"r","kind":"TRANSFORM"}]},)"
+        R"("metadata":{"properties":{"owner":"team-a"},"sensitive":["ssn"]},)"
+        R"("schemaTags":[{"tags":["PII"]}],"futureField":[1,2,3]})"),
+      qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(res.has_value());
+    const auto& s = res.value();
+    ASSERT_EQ_CORO(
+      s.schema.sub(), (context_subject{default_context, subject{"User"}}));
+    ASSERT_EQ_CORO(s.version, schema_version{1});
+    ASSERT_EQ_CORO(s.id, schema_id{7});
+    // metadata is not captured in v1.
+    ASSERT_FALSE_CORO(s.schema.def().meta().has_value());
+}
+
+TEST_CORO(parse_subject_version_test, absent_fields_use_sentinels_not_error) {
+    // Permissive: missing fields are NOT errors; they take defaults/sentinels.
+    auto empty = co_await parse_subject_version(
+      iobuf::from("{}"), qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(empty.has_value());
+    ASSERT_EQ_CORO(empty.value().version, invalid_schema_version);
+    ASSERT_EQ_CORO(empty.value().id, invalid_schema_id);
+    ASSERT_EQ_CORO(empty.value().schema.sub(), invalid_subject);
+    ASSERT_EQ_CORO(empty.value().schema.type(), schema_type::avro);
+    ASSERT_EQ_CORO(empty.value().deleted, is_deleted::no);
+
+    auto no_schema = co_await parse_subject_version(
+      iobuf::from(R"({"subject":"r","version":1,"id":2})"),
+      qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(no_schema.has_value());
+    ASSERT_EQ_CORO(no_schema.value().version, schema_version{1});
+}
+
+TEST_CORO(parse_subject_version_test, id_zero_is_valid) {
+    // Unlike version (always >= 1), id 0 is legal: upstream permits id 0 on
+    // import, so a server may return it.
+    auto res = co_await parse_subject_version(
+      iobuf::from(R"({"subject":"r","version":1,"id":0,"schema":"x"})"),
+      qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(res.has_value());
+    ASSERT_EQ_CORO(res.value().id, schema_id{0});
+}
+
+TEST_CORO(parse_subject_version_test, rejects_unrepresentable) {
+    for (std::string_view body :
+         {R"({"schemaType":"YAML","subject":"r","schema":"x"})", // unknown enum
+          R"({"version":"1","subject":"r"})",    // version wrong type
+          R"({"id":1.5,"subject":"r"})",         // id non-integer
+          R"({"deleted":"no","subject":"r"})",   // deleted wrong type
+          R"({"version":0,"subject":"r"})",      // version non-positive
+          R"({"id":-1,"subject":"r"})",          // id negative
+          R"({"id":2147483648,"subject":"r"})",  // > INT32_MAX
+          R"({"references":[{"version":"x"}]})", // bad reference element
+          R"({"references":5})",                 // references not an array
+          "[1,2,3]",                             // not an object
+          R"({"subject":"r")",                   // truncated
+          R"({"subject":"r"}garbage)",           // trailing content after }
+          "not json"}) {
+        SCOPED_TRACE(body);
+        auto res = co_await parse_subject_version(
+          iobuf::from(body), qualified_subjects_enabled::yes);
+        ASSERT_FALSE_CORO(res.has_value());
+    }
+}
+
+TEST_CORO(parse_subject_version_test, fragmented_input) {
+    constexpr std::string_view body
+      = R"({"subject":":.ctx:User","version":12,"id":34,"schemaType":"AVRO",)"
+        R"("schema":"{\"type\":\"record\",\"name\":\"User\"}",)"
+        R"("references":[{"name":"N","subject":"Sub","version":1}]})";
+    auto res = co_await parse_subject_version(
+      fragmented_iobuf(body, 1), qualified_subjects_enabled::yes);
+    ASSERT_TRUE_CORO(res.has_value());
+    const auto& s = res.value();
+    ASSERT_EQ_CORO(
+      s.schema.sub(), (context_subject{context{".ctx"}, subject{"User"}}));
+    ASSERT_EQ_CORO(s.version, schema_version{12});
+    ASSERT_EQ_CORO(s.id, schema_id{34});
+    ASSERT_EQ_CORO(s.schema.def().refs().size(), size_t{1});
 }
 
 } // namespace pandaproxy::schema_registry::rest_client

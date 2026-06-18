@@ -62,4 +62,23 @@ parse_subjects(iobuf body, qualified_subjects_enabled qualified);
 ss::future<std::expected<chunked_vector<schema_version>, parse_error>>
 parse_subject_versions(iobuf body);
 
+/// Parse the body of a `GET /subjects/{subject}/versions/{version}` response
+/// into a stored_schema.
+///
+/// This is a faithful, lenient deserialization (the lowest layer): unknown or
+/// not-yet-modeled fields (`guid`, `ts`, `ruleSet`, `schemaTags`, `metadata`,
+/// ...) are ignored, and absent fields take their default/sentinel (absent
+/// `schemaType` -> AVRO, `deleted` -> false, `references` -> empty, and absent
+/// `subject`/`version`/`id`/`schema` -> the invalid sentinels). It does NOT
+/// enforce completeness — whether an incomplete response is acceptable (a
+/// strict mode) is a higher-layer concern. It rejects only inputs it cannot
+/// represent: a non-object body, malformed JSON, a present modeled field with a
+/// wrong-typed or out-of-range value, or an unknown `schemaType`.
+///
+/// \p qualified is the caller-supplied policy for interpreting
+/// context-qualified subject strings (the response `subject` and each
+/// reference's `subject`). The function does not throw.
+ss::future<std::expected<stored_schema, parse_error>>
+parse_subject_version(iobuf body, qualified_subjects_enabled qualified);
+
 } // namespace pandaproxy::schema_registry::rest_client

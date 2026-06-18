@@ -17,6 +17,8 @@
 
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <utility>
 
 namespace pandaproxy::schema_registry::rest_client {
 
@@ -126,6 +128,236 @@ parse_subject_versions(iobuf body) {
         co_return std::unexpected(
           parse_error{
             .reason = ssx::sformat("failed to parse versions: {}", e.what())});
+    }
+}
+
+namespace {
+
+// A present version must be a positive value representable as int32; this also
+// keeps a present value from aliasing invalid_schema_version (-1).
+std::optional<int32_t> checked_positive_i32(int64_t v) {
+    if (v < 1 || v > std::numeric_limits<int32_t>::max()) {
+        return std::nullopt;
+    }
+    return static_cast<int32_t>(v);
+}
+
+// A present id may be 0 (upstream permits id 0 on import), so it must be a
+// non-negative value representable as int32; this keeps a present value from
+// aliasing invalid_schema_id (-1).
+std::optional<int32_t> checked_nonnegative_i32(int64_t v) {
+    if (v < 0 || v > std::numeric_limits<int32_t>::max()) {
+        return std::nullopt;
+    }
+    return static_cast<int32_t>(v);
+}
+
+// Parse a JSON array of {name, subject, version} reference objects. Entered
+// with the current token at the array start; leaves the parser at the end_array
+// token. Lenient: unknown keys within a reference are skipped, absent fields
+// take defaults; only wrong-typed values are rejected.
+ss::future<std::expected<schema_definition::references, parse_error>>
+parse_references(serde::json::parser& p, qualified_subjects_enabled qualified) {
+    using token = serde::json::token;
+    schema_definition::references refs;
+    while (co_await p.next()) {
+        if (p.token() == token::end_array) {
+            co_return refs;
+        }
+        if (p.token() != token::start_object) {
+            co_return std::unexpected(
+              parse_error{.reason = "schema reference must be an object"});
+        }
+        ss::sstring name;
+        std::optional<context_subject_reference> sub;
+        std::optional<schema_version> version;
+        while (co_await p.next() && p.token() != token::end_object) {
+            auto key = p.value_string().linearize_to_string();
+            if (!co_await p.next()) {
+                co_return std::unexpected(
+                  parse_error{.reason = "truncated JSON in schema reference"});
+            }
+            if (key == "name") {
+                if (p.token() != token::value_string) {
+                    co_return std::unexpected(
+                      parse_error{
+                        .reason = "schema reference name must be a string"});
+                }
+                name = p.value_string().linearize_to_string();
+            } else if (key == "subject") {
+                if (p.token() != token::value_string) {
+                    co_return std::unexpected(
+                      parse_error{
+                        .reason = "schema reference subject must be a string"});
+                }
+                sub = context_subject_reference::from_string(
+                  p.value_string().linearize_to_string(), qualified);
+            } else if (key == "version") {
+                if (p.token() != token::value_int) {
+                    co_return std::unexpected(
+                      parse_error{
+                        .reason
+                        = "schema reference version must be an integer"});
+                }
+                auto v = checked_positive_i32(p.value_int());
+                if (!v) {
+                    co_return std::unexpected(
+                      parse_error{
+                        .reason = "schema reference version out of range"});
+                }
+                version = schema_version{*v};
+            } else {
+                co_await p.skip_value();
+            }
+        }
+        refs.push_back(
+          schema_reference{
+            .name = std::move(name),
+            .sub = sub.value_or(
+              context_subject_reference{invalid_subject, is_qualified::no}),
+            .version = version.value_or(invalid_schema_version)});
+    }
+    co_return std::unexpected(
+      parse_error{.reason = "truncated or malformed references array"});
+}
+
+} // namespace
+
+ss::future<std::expected<stored_schema, parse_error>>
+parse_subject_version(iobuf body, qualified_subjects_enabled qualified) {
+    using token = serde::json::token;
+    // Firewall exceptions from the parser: malformed input is reported via the
+    // returned std::expected, not thrown.
+    try {
+        serde::json::parser p(std::move(body));
+
+        if (!co_await p.next() || p.token() != token::start_object) {
+            co_return std::unexpected(
+              parse_error{.reason = "expected a JSON object"});
+        }
+
+        std::optional<context_subject> subject;
+        std::optional<schema_version> version;
+        std::optional<schema_id> id;
+        std::optional<iobuf> schema;
+        schema_type type{schema_type::avro};
+        schema_definition::references refs;
+        is_deleted deleted{false};
+
+        while (co_await p.next()) {
+            if (p.token() == token::end_object) {
+                // The body is exactly one JSON object: reject any trailing
+                // content rather than ignoring it.
+                co_await p.next();
+                if (p.token() != token::eof) {
+                    co_return std::unexpected(
+                      parse_error{
+                        .reason = "trailing content after schema object"});
+                }
+                // Absent fields fall back to defaults/sentinels; completeness
+                // is a higher-layer concern.
+                co_return stored_schema{
+                  .schema = subject_schema{
+                    subject.value_or(invalid_subject),
+                    schema_definition{
+                      schema_definition::raw_string{
+                        std::move(schema).value_or(iobuf{})},
+                      type,
+                      std::move(refs),
+                      std::nullopt}},
+                  .version = version.value_or(invalid_schema_version),
+                  .id = id.value_or(invalid_schema_id),
+                  .deleted = deleted};
+            }
+            if (p.token() != token::key) {
+                co_return std::unexpected(
+                  parse_error{.reason = "expected an object key"});
+            }
+            auto key = p.value_string().linearize_to_string();
+            if (!co_await p.next()) {
+                co_return std::unexpected(
+                  parse_error{.reason = "truncated JSON after key"});
+            }
+            if (key == "subject") {
+                if (p.token() != token::value_string) {
+                    co_return std::unexpected(
+                      parse_error{.reason = "subject must be a string"});
+                }
+                subject = context_subject::from_string(
+                  p.value_string().linearize_to_string(), qualified);
+            } else if (key == "version") {
+                if (p.token() != token::value_int) {
+                    co_return std::unexpected(
+                      parse_error{.reason = "version must be an integer"});
+                }
+                auto v = checked_positive_i32(p.value_int());
+                if (!v) {
+                    co_return std::unexpected(
+                      parse_error{.reason = "version out of range"});
+                }
+                version = schema_version{*v};
+            } else if (key == "id") {
+                if (p.token() != token::value_int) {
+                    co_return std::unexpected(
+                      parse_error{.reason = "id must be an integer"});
+                }
+                auto v = checked_nonnegative_i32(p.value_int());
+                if (!v) {
+                    co_return std::unexpected(
+                      parse_error{.reason = "id out of range"});
+                }
+                id = schema_id{*v};
+            } else if (key == "schema") {
+                if (p.token() != token::value_string) {
+                    co_return std::unexpected(
+                      parse_error{.reason = "schema must be a string"});
+                }
+                schema = p.value_string();
+            } else if (key == "schemaType") {
+                if (p.token() != token::value_string) {
+                    co_return std::unexpected(
+                      parse_error{.reason = "schemaType must be a string"});
+                }
+                auto st = from_string_view<schema_type>(
+                  p.value_string().linearize_to_string());
+                if (!st) {
+                    co_return std::unexpected(
+                      parse_error{.reason = "unknown schemaType"});
+                }
+                type = *st;
+            } else if (key == "deleted") {
+                if (p.token() == token::value_true) {
+                    deleted = is_deleted::yes;
+                } else if (p.token() == token::value_false) {
+                    deleted = is_deleted::no;
+                } else {
+                    co_return std::unexpected(
+                      parse_error{.reason = "deleted must be a boolean"});
+                }
+            } else if (key == "references") {
+                if (p.token() != token::start_array) {
+                    co_return std::unexpected(
+                      parse_error{.reason = "references must be an array"});
+                }
+                auto r = co_await parse_references(p, qualified);
+                if (!r) {
+                    co_return std::unexpected(std::move(r.error()));
+                }
+                refs = std::move(*r);
+            } else {
+                // Unknown / not-yet-modeled field (guid, ts, ruleSet,
+                // schemaTags, metadata, ...): ignore it.
+                co_await p.skip_value();
+            }
+        }
+
+        // next() returned false before the closing '}'.
+        co_return std::unexpected(
+          parse_error{.reason = "truncated or malformed JSON"});
+    } catch (const std::exception& e) {
+        co_return std::unexpected(
+          parse_error{
+            .reason = ssx::sformat("failed to parse schema: {}", e.what())});
     }
 }
 
