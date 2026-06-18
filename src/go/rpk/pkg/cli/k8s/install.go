@@ -57,6 +57,14 @@ You may force the installation using the --force flag.
 			out.MaybeDie(err, "unable to install the rpk k8s plugin: %v; if running in an air-gapped environment you may install it manually", err)
 
 			fmt.Printf("Redpanda Kubernetes plugin %v successfully installed.\n", installedVersion)
+
+			// The managed binary is written as .rpk.managed-k8s, which does not
+			// replace a self-managed .rpk-k8s. If such a copy exists it keeps
+			// winning resolution, so `rpk k8s` would run the stale binary
+			// despite this "successfully installed" message — warn the user.
+			if shadow, shadowed := shadowingSelfManaged(fs); shadowed {
+				fmt.Printf("WARNING: a self-managed Redpanda Kubernetes plugin at %q shadows the version just installed; 'rpk k8s' will keep using it. Remove it (e.g. 'rpk k8s uninstall --force', or delete %q) to use the rpk-managed version.\n", shadow, shadow)
+			}
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Force install of the Redpanda Kubernetes plugin")
@@ -127,6 +135,19 @@ func validateVersion(version string) error {
 		return fmt.Errorf("provided version %q is not valid. Ensure it is either 'latest' or it follows the format MAJOR.MINOR.PATCH (e.g., 25.3.5)", version)
 	}
 	return nil
+}
+
+// shadowingSelfManaged reports the path of a self-managed k8s plugin that
+// shadows the rpk-managed binary, if any. The managed binary is written as
+// .rpk.managed-k8s; a self-managed .rpk-k8s in the same directory sorts first
+// and therefore wins resolution, so callers can warn that the freshly
+// installed managed binary will not actually be the one rpk executes.
+func shadowingSelfManaged(fs afero.Fs) (string, bool) {
+	k, ok := plugin.ListPlugins(fs, plugin.UserPaths()).Find(pluginSlug)
+	if !ok || k.Managed {
+		return "", false
+	}
+	return k.Path, true
 }
 
 // maybeExitFIPS exits with a clear error if FIPS is enabled; the rpk k8s

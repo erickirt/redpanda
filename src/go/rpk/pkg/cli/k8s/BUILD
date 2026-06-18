@@ -31,10 +31,12 @@ go_test(
     srcs = [
         "hook_test.go",
         "install_test.go",
+        "shadow_test.go",
     ],
     embed = [":k8s"],
     deps = [
         "//src/go/rpk/pkg/config",
+        "//src/go/rpk/pkg/plugin",
         "@com_github_spf13_afero//:afero",
         "@com_github_spf13_cobra//:cobra",
         "@com_github_stretchr_testify//require",
