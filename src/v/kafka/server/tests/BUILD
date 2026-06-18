@@ -1255,3 +1255,20 @@ redpanda_cc_gtest(
         "@seastar",
     ],
 )
+
+redpanda_cc_gtest(
+    name = "throughput_controlled_api_keys_test",
+    timeout = "short",
+    srcs = [
+        "throughput_controlled_api_keys_test.cc",
+    ],
+    deps = [
+        "//src/v/kafka/protocol",
+        "//src/v/kafka/protocol:describe_redpanda_roles",
+        "//src/v/kafka/protocol:fetch",
+        "//src/v/kafka/protocol:produce",
+        "//src/v/kafka/server",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+    ],
+)
