@@ -72,6 +72,14 @@ public:
     ss::future<expected<chunked_vector<schema_version>>> list_subject_versions(
       const context_subject& subject, retry_chain_node& rtc);
 
+    /// GET /subjects/{subject}/versions/{version} — fetch one version of a
+    /// subject's schema. A missing subject yields subject_not_found; a missing
+    /// version (of an existing subject) yields version_not_found.
+    ss::future<expected<stored_schema>> get_schema_by_version(
+      const context_subject& subject,
+      schema_version version,
+      retry_chain_node& rtc);
+
     /// Stops the transport and drains in-flight requests. Must be called before
     /// destroying the client.
     ss::future<> shutdown();

@@ -34,8 +34,9 @@ namespace {
 
 constexpr std::string_view accept_json = "application/json";
 
-// Schema Registry error_code for the subject-not-found condition.
+// Schema Registry error_codes for the not-found conditions.
 constexpr int32_t error_code_subject_not_found = 40401;
+constexpr int32_t error_code_version_not_found = 40402;
 
 // Percent-encode a subject for use as a single path segment. The qualified wire
 // form ":.ctx:sub" contains ':' which must be encoded ("%3A"); uri_encode also
@@ -46,11 +47,14 @@ ss::sstring encode_subject(const context_subject& subject) {
     return http::uri_encode(subject.to_string(), http::uri_encode_slash::yes);
 }
 
-// Translate a terminal 404 into subject_not_found using the error_code that
-// perform_request attached. Anything else (other statuses, unrecognized codes)
-// passes through unchanged.
-domain_error
-translate_not_found(domain_error err, const context_subject& subject) {
+// Translate a terminal 404 into a typed not-found error using the error_code
+// that perform_request attached. Anything else (other statuses, unrecognized
+// codes) passes through unchanged. version is set only for
+// get_schema_by_version (40402 is meaningless for the subject listing).
+domain_error translate_not_found(
+  domain_error err,
+  const context_subject& subject,
+  std::optional<schema_version> version) {
     auto* call = std::get_if<http_call_error>(&err);
     if (call == nullptr) {
         return err;
@@ -59,10 +63,16 @@ translate_not_found(domain_error err, const context_subject& subject) {
     if (status == nullptr) {
         return err;
     }
-    if (
-      status->status == boost::beast::http::status::not_found
-      && status->error_code == error_code_subject_not_found) {
+    if (status->status != boost::beast::http::status::not_found) {
+        return err;
+    }
+    if (status->error_code == error_code_subject_not_found) {
         return domain_error{subject_not_found{subject}};
+    }
+    if (
+      version.has_value()
+      && status->error_code == error_code_version_not_found) {
+        return domain_error{version_not_found{subject, *version}};
     }
     return err;
 }
@@ -246,10 +256,40 @@ client::list_subject_versions(
 
     auto response = co_await perform_request(rtc, std::move(request));
     if (!response.has_value()) {
-        co_return std::unexpected(
-          translate_not_found(std::move(response.error()), subject));
+        co_return std::unexpected(translate_not_found(
+          std::move(response.error()), subject, std::nullopt));
     }
     auto parsed = co_await parse_subject_versions(std::move(response.value()));
+    if (!parsed.has_value()) {
+        co_return std::unexpected(domain_error{std::move(parsed.error())});
+    }
+    co_return std::move(parsed.value());
+}
+
+ss::future<expected<stored_schema>> client::get_schema_by_version(
+  const context_subject& subject,
+  schema_version version,
+  retry_chain_node& rtc) {
+    auto gate = maybe_gate();
+    if (!gate.has_value()) {
+        co_return std::unexpected(std::move(gate.error()));
+    }
+    auto request
+      = http::request_builder{}
+          .method(boost::beast::http::verb::get)
+          .path(
+            fmt::format(
+              "/subjects/{}/versions/{}", encode_subject(subject), version()))
+          .header("accept", accept_json);
+    maybe_add_basic_auth(request);
+
+    auto response = co_await perform_request(rtc, std::move(request));
+    if (!response.has_value()) {
+        co_return std::unexpected(
+          translate_not_found(std::move(response.error()), subject, version));
+    }
+    auto parsed = co_await parse_subject_version(
+      std::move(response.value()), _qualified);
     if (!parsed.has_value()) {
         co_return std::unexpected(domain_error{std::move(parsed.error())});
     }

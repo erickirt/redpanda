@@ -312,3 +312,111 @@ TEST(rest_client, list_subject_versions_subject_not_found) {
     ASSERT_TRUE(std::holds_alternative<rc::subject_not_found>(res.error()));
     EXPECT_EQ(std::get<rc::subject_not_found>(res.error()).subject, subject);
 }
+
+TEST(rest_client, get_schema_by_version_success) {
+    constexpr std::string_view body
+      = R"({"subject":"User","version":3,"id":100001,"schemaType":"AVRO",)"
+        R"("schema":"{\"type\":\"record\",\"name\":\"User\"}"})";
+    rc::client client{
+      make_http_client([body](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(_, _, _))
+            .WillOnce([body](
+                        bh::request_header<>&& r,
+                        std::optional<iobuf>,
+                        ss::lowres_clock::duration) {
+                EXPECT_EQ(r.target(), "/subjects/User/versions/3");
+                return ss::make_ready_future<http::downloaded_response>(
+                  http::downloaded_response{
+                    .status = bh::status::ok, .body = iobuf::from(body)});
+            });
+      }),
+      endpoint};
+
+    auto subject = pps::context_subject::unqualified("User");
+    ss::abort_source as;
+    retry_chain_node rtc(as, 5s, 100ms);
+    auto res = client
+                 .get_schema_by_version(subject, pps::schema_version{3}, rtc)
+                 .get();
+    client.shutdown().get();
+
+    ASSERT_TRUE(res.has_value());
+    EXPECT_EQ(res->schema.sub(), subject);
+    EXPECT_EQ(res->version, pps::schema_version{3});
+    EXPECT_EQ(res->id, pps::schema_id{100001});
+}
+
+TEST(rest_client, get_schema_by_version_subject_not_found) {
+    rc::client client{
+      make_http_client([](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(_, _, _))
+            .WillOnce(respond(
+              bh::status::not_found,
+              R"({"error_code": 40401, "message": "Subject not found."})"));
+      }),
+      endpoint};
+
+    auto subject = pps::context_subject::unqualified("User");
+    ss::abort_source as;
+    retry_chain_node rtc(as, 5s, 100ms);
+    auto res = client
+                 .get_schema_by_version(subject, pps::schema_version{5}, rtc)
+                 .get();
+    client.shutdown().get();
+
+    ASSERT_FALSE(res.has_value());
+    EXPECT_TRUE(std::holds_alternative<rc::subject_not_found>(res.error()));
+}
+
+TEST(rest_client, get_schema_by_version_version_not_found) {
+    rc::client client{
+      make_http_client([](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(_, _, _))
+            .WillOnce(respond(
+              bh::status::not_found,
+              R"({"error_code": 40402, "message": "Version 7 not found."})"));
+      }),
+      endpoint};
+
+    auto subject = pps::context_subject::unqualified("User");
+    ss::abort_source as;
+    retry_chain_node rtc(as, 5s, 100ms);
+    auto res = client
+                 .get_schema_by_version(subject, pps::schema_version{7}, rtc)
+                 .get();
+    client.shutdown().get();
+
+    ASSERT_FALSE(res.has_value());
+    ASSERT_TRUE(std::holds_alternative<rc::version_not_found>(res.error()));
+    const auto& vnf = std::get<rc::version_not_found>(res.error());
+    EXPECT_EQ(vnf.subject, subject);
+    EXPECT_EQ(vnf.version, pps::schema_version{7});
+}
+
+TEST(rest_client, get_schema_by_version_invalid_version_not_translated) {
+    rc::client client{
+      make_http_client([](mock_client& m) {
+          EXPECT_CALL(m, request_and_collect_response(_, _, _))
+            .WillOnce(respond(
+              bh::status::unprocessable_entity,
+              R"({"error_code": 42202, "message": "Invalid version"})"));
+      }),
+      endpoint};
+
+    auto subject = pps::context_subject::unqualified("User");
+    ss::abort_source as;
+    retry_chain_node rtc(as, 5s, 100ms);
+    auto res = client
+                 .get_schema_by_version(subject, pps::schema_version{1}, rtc)
+                 .get();
+    client.shutdown().get();
+
+    // 422 is not a not-found condition: it stays a plain http_status_error.
+    ASSERT_FALSE(res.has_value());
+    ASSERT_TRUE(std::holds_alternative<rc::http_call_error>(res.error()));
+    const auto& call = std::get<rc::http_call_error>(res.error());
+    ASSERT_TRUE(std::holds_alternative<rc::http_status_error>(call));
+    EXPECT_EQ(
+      std::get<rc::http_status_error>(call).status,
+      bh::status::unprocessable_entity);
+}
