@@ -10,8 +10,8 @@
 #pragma once
 
 #include "datalake/schema_descriptor.h"
-#include "iceberg/schema.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
 
@@ -22,7 +22,8 @@ namespace datalake {
 //   - total_fields() / index_of<> field-index lookups
 //   - rp_base_next_field_id
 
-/// Canonical header key/value descriptor.
+/// Canonical header key/value descriptor (binary value — used for
+/// value construction; type is overridden at runtime when building the schema).
 using header_kv_desc = struct_desc<
   field_desc<"key", iceberg::string_type>,
   field_desc<"value", iceberg::binary_type>>;
@@ -46,9 +47,10 @@ inline constexpr std::string_view rp_struct_name = "redpanda";
 /// Translators that add fields should start IDs from here.
 inline const int rp_base_next_field_id = rp_base_desc::total_fields();
 
-/// Build the runtime base row struct_type. All translators start from this
-/// base and append their own value columns.
-iceberg::struct_type rp_base_struct_type();
+/// Build the base row struct_type, applying headers_config overrides
+/// (e.g. promote header values from binary to string).
+iceberg::struct_type
+rp_base_struct_type(model::iceberg_mode::headers_config headers_cfg);
 
 /// Build the redpanda system struct_value. Single definition used
 /// by all translators.
@@ -58,7 +60,8 @@ std::unique_ptr<iceberg::struct_value> build_rp_struct(
   std::optional<iobuf> key,
   model::timestamp ts,
   model::timestamp_type ts_t,
-  const chunked_vector<model::record_header>& headers);
+  const chunked_vector<model::record_header>& headers,
+  model::iceberg_mode::headers_config);
 
 /// Get the redpanda struct_type from a base row struct_type.
 inline iceberg::struct_type& rp_struct_type(iceberg::struct_type& row) {
