@@ -118,7 +118,7 @@ ss::future<> client::shutdown() {
     co_await std::move(gate_closed);
 }
 
-expected<ss::gate::holder> client::maybe_gate() {
+std::expected<ss::gate::holder, domain_error> client::maybe_gate() {
     if (_gate.is_closed()) {
         return std::unexpected(
           domain_error{aborted_error{"client gate is closed"}});
@@ -132,7 +132,7 @@ void client::maybe_add_basic_auth(http::request_builder& request) {
     }
 }
 
-ss::future<expected<iobuf>> client::perform_request(
+ss::future<std::expected<iobuf, domain_error>> client::perform_request(
   retry_chain_node& parent_rtc,
   http::request_builder builder,
   std::optional<iobuf> payload) {
@@ -210,7 +210,7 @@ ss::future<expected<iobuf>> client::perform_request(
     }
 }
 
-ss::future<expected<chunked_vector<context_subject>>>
+ss::future<std::expected<chunked_vector<context_subject>, domain_error>>
 client::list_subjects(retry_chain_node& rtc) {
     auto gate = maybe_gate();
     if (!gate.has_value()) {
@@ -237,7 +237,7 @@ client::list_subjects(retry_chain_node& rtc) {
     co_return std::move(parsed.value());
 }
 
-ss::future<expected<chunked_vector<schema_version>>>
+ss::future<std::expected<chunked_vector<schema_version>, domain_error>>
 client::list_subject_versions(
   const context_subject& subject, retry_chain_node& rtc) {
     auto gate = maybe_gate();
@@ -266,7 +266,8 @@ client::list_subject_versions(
     co_return std::move(parsed.value());
 }
 
-ss::future<expected<stored_schema>> client::get_schema_by_version(
+ss::future<std::expected<stored_schema, domain_error>>
+client::get_schema_by_version(
   const context_subject& subject,
   schema_version version,
   retry_chain_node& rtc) {

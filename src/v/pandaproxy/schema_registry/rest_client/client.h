@@ -24,6 +24,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sstring.hh>
 
+#include <expected>
 #include <memory>
 #include <optional>
 
@@ -64,18 +65,20 @@ public:
     ~client() = default;
 
     /// GET /subjects — list all subjects across all contexts.
-    ss::future<expected<chunked_vector<context_subject>>>
+    ss::future<std::expected<chunked_vector<context_subject>, domain_error>>
     list_subjects(retry_chain_node& rtc);
 
     /// GET /subjects/{subject}/versions — list the (live) version numbers
     /// registered under \p subject. A missing subject yields subject_not_found.
-    ss::future<expected<chunked_vector<schema_version>>> list_subject_versions(
+    ss::future<std::expected<chunked_vector<schema_version>, domain_error>>
+    list_subject_versions(
       const context_subject& subject, retry_chain_node& rtc);
 
     /// GET /subjects/{subject}/versions/{version} — fetch one version of a
     /// subject's schema. A missing subject yields subject_not_found; a missing
     /// version (of an existing subject) yields version_not_found.
-    ss::future<expected<stored_schema>> get_schema_by_version(
+    ss::future<std::expected<stored_schema, domain_error>>
+    get_schema_by_version(
       const context_subject& subject,
       schema_version version,
       retry_chain_node& rtc);
@@ -85,14 +88,14 @@ public:
     ss::future<> shutdown();
 
 private:
-    expected<ss::gate::holder> maybe_gate();
+    std::expected<ss::gate::holder, domain_error> maybe_gate();
     void maybe_add_basic_auth(http::request_builder& request);
 
     // Builds and issues the request against _endpoint, retrying according to
     // the retry policy and the supplied retry_chain_node, and returns the
     // collected response body. A permanent http_status_error is enriched with
     // the parsed error_code before being returned.
-    ss::future<expected<iobuf>> perform_request(
+    ss::future<std::expected<iobuf, domain_error>> perform_request(
       retry_chain_node& parent_rtc,
       http::request_builder builder,
       std::optional<iobuf> payload = std::nullopt);

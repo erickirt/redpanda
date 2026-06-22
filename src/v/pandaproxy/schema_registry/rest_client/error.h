@@ -136,11 +136,6 @@ using domain_error = std::variant<
   version_not_found,
   aborted_error>;
 
-// The core result type used by all operations in the SR rest-client which can
-// fail. Uses std::expected for consistency with the response parsers.
-template<typename T>
-using expected = std::expected<T, domain_error>;
-
 } // namespace pandaproxy::schema_registry::rest_client
 
 template<>
