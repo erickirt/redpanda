@@ -173,7 +173,7 @@ func printShadowLinkCfgOverview(slCfg *ShadowLinkConfig) {
 			tw.Print("Source Redpanda ID:", slCfg.CloudOptions.SourceRedpandaID)
 		}
 	}
-	if len(slCfg.ClientOptions.BootstrapServers) > 0 {
+	if slCfg.ClientOptions != nil && len(slCfg.ClientOptions.BootstrapServers) > 0 {
 		tw.Print("Bootstrap Servers:", "")
 		for _, srv := range slCfg.ClientOptions.BootstrapServers {
 			tw.Print("", fmt.Sprintf("- %s", srv))
