@@ -156,6 +156,9 @@ ss::future<std::expected<iobuf, domain_error>> client::perform_request(
     retry_chain_node rtc(&parent_rtc);
     std::vector<error_kind> retriable_errors;
     std::optional<http_call_error> last_error;
+    // Target (path + query) of the most recent attempt, for the failure logs
+    // below. Empty until the first request is built.
+    ss::sstring request_target;
 
     while (true) {
         retry_permit permit{};
@@ -170,7 +173,11 @@ ss::future<std::expected<iobuf, domain_error>> client::perform_request(
             }
             // We only expect shutdown exceptions here; treat anything else
             // conservatively as exhausted rather than aborted.
-            vlog(srlog.warn, "schema registry request gave up: {}", msg);
+            vlog(
+              srlog.warn,
+              "schema registry request gave up [{}]: {}",
+              request_target,
+              msg);
             co_return std::unexpected(
               domain_error{retries_exhausted{
                 .reasons = std::move(retriable_errors),
@@ -187,6 +194,8 @@ ss::future<std::expected<iobuf, domain_error>> client::perform_request(
         if (!request.has_value()) {
             co_return std::unexpected(domain_error{request.error()});
         }
+        request_target = ss::sstring{
+          request->target().begin(), request->target().end()};
 
         auto response_f = co_await ss::coroutine::as_future(
           _http_client->request_and_collect_response(
@@ -206,14 +215,19 @@ ss::future<std::expected<iobuf, domain_error>> client::perform_request(
                 aborted_error{"shutting down while evaluating retry"}});
         }
         if (!is_retriable(error.kind)) {
-            vlog(srlog.warn, "schema registry request failed: {}", error.err);
+            vlog(
+              srlog.warn,
+              "schema registry request failed [{}]: {}",
+              request_target,
+              error.err);
             co_return std::unexpected(
               co_await attach_error_code(domain_error{std::move(error.err)}));
         }
 
         vlog(
           srlog.trace,
-          "schema registry request failed, retrying in {}ms: {}",
+          "schema registry request failed [{}], retrying in {}ms: {}",
+          request_target,
           std::chrono::duration_cast<std::chrono::milliseconds>(permit.delay)
             .count(),
           error.err);
