@@ -61,6 +61,25 @@ TEST_CORO(SingleFlightTest, ColdRunBecomesLeader) {
     ASSERT_EQ_CORO(map.in_flight(), 0u);
 }
 
+// An already-aborted caller short-circuits to cloud_op_timeout without
+// running work or inserting an entry (so it never becomes a leader).
+TEST_CORO(SingleFlightTest, AbortedBeforeRunShortCircuits) {
+    single_flight map;
+    ss::abort_source as;
+    as.request_abort();
+
+    bool work_ran = false;
+    auto r = co_await map.run("/a", as, [&] {
+        work_ran = true;
+        return ready(ok());
+    });
+
+    ASSERT_FALSE_CORO(work_ran);
+    ASSERT_FALSE_CORO(r.has_value());
+    ASSERT_EQ_CORO(r.error(), io::errc::cloud_op_timeout);
+    ASSERT_EQ_CORO(map.in_flight(), 0u);
+}
+
 TEST_CORO(SingleFlightTest, ConcurrentRunsLeaderPublishesSuccess) {
     single_flight map;
     ss::promise<single_flight::outcome> leader_p;

@@ -75,6 +75,11 @@ public:
     /// - On any work failure (leader's own, inherited by mergers, or
     ///   merger-side abort), returns unexpected(errc).
     ///
+    /// If `as` is already aborted on entry, run returns
+    /// unexpected(cloud_op_timeout) immediately. It neither
+    /// coordinates nor runs work, so a cancelled caller never becomes a
+    /// leader that healthy mergers would then inherit a failure from.
+    ///
     /// run never throws and reports every failure through run_result's
     /// error branch. If work's returned future fails, we propagate
     /// errc::file_io_error to this caller and any waiting mergers, and
@@ -129,6 +134,10 @@ ss::future<single_flight::run_result> single_flight::run(
   ss::abort_source& as,
   WorkFn work,
   ss::logger* logger) noexcept {
+    if (as.abort_requested()) {
+        co_return std::unexpected(io::errc::cloud_op_timeout);
+    }
+
     auto j = join_or_lead(cache_key, as);
 
     if (j.kind == join_kind::merger) {
