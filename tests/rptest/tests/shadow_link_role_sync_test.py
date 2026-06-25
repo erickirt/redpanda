@@ -500,3 +500,51 @@ class ShadowLinkRoleSyncAuthTest(RoleSyncTestBase):
         assert topic not in set(bob_rpk.list_topics()), (
             "non-member BOB must not be authorized by the synced role"
         )
+
+    @cluster(num_nodes=6)
+    def test_permission_grant_activates_sync(self):
+        limited_user = "limited-link-user"
+        limited_pw = "limited-link-password"
+        su_rpk = self._source_superuser_rpk()
+
+        # An in-scope role exists on the source, waiting to sync.
+        self._src.create_role(role="synced-role", members=[_user("u1")])
+
+        # A non-superuser link principal that lacks cluster DESCRIBE on the source.
+        su_rpk.sasl_create_user(limited_user, limited_pw)
+
+        self._create_link_with_role_sync(
+            mutate_req=lambda req: self._add_link_scram_creds(
+                req, limited_user, limited_pw
+            )
+        )
+
+        # Without DESCRIBE the migrator cannot enumerate roles -> LINK_UNAVAILABLE.
+        wait_until(
+            lambda: (
+                self._roles_task_state() == shadow_link_pb2.TASK_STATE_LINK_UNAVAILABLE
+            ),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="roles task did not park LINK_UNAVAILABLE without permission",
+        )
+        assert "synced-role" not in self._dst.list_role_names(), (
+            "nothing should sync while the link principal lacks permission"
+        )
+        task = self._roles_task()
+        assert task is not None and task.reason, "expected a non-empty reason"
+
+        # Grant cluster DESCRIBE on the source; the task recovers and mirrors.
+        su_rpk.acl_create_allow_cluster(username=limited_user, op="describe")
+        wait_until(
+            lambda: self._roles_task_state() == shadow_link_pb2.TASK_STATE_ACTIVE,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="roles task did not become ACTIVE after the permission grant",
+        )
+        wait_until(
+            lambda: self._dst_role_members("synced-role") == {"u1"},
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg="role did not mirror after the permission grant",
+        )
