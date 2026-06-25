@@ -233,3 +233,53 @@ class ShadowLinkRoleSyncTest(RoleSyncTestBase):
             backoff_sec=1,
             err_msg="member removal made while paused did not propagate on resume",
         )
+
+    @cluster(num_nodes=6)
+    def test_reconcile_authority_is_scoped(self):
+        """The reconcile is full-replace authoritative, but only over in-scope
+        roles. For an in-scope role the destination is driven back to the
+        source: a member added directly on the destination is stripped and a
+        role deleted on the destination is recreated. A destination role
+        outside the filter scope, with no source counterpart, is left
+        untouched."""
+        self._src.create_role(
+            role="synced-role", members=[_user("u1"), _group("synced-group")]
+        )
+        # "unmanaged-" is outside the default "synced-" include filter, so the
+        # migrator never selects it on either side.
+        self._dst.create_role(role="unmanaged-role", members=[_user("local-admin")])
+        self._create_link_with_role_sync()
+        wait_until(
+            lambda: self._dst_role_members("synced-role") == {"u1", "synced-group"},
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="initial role state did not mirror to destination",
+        )
+
+        # A member added directly on the destination is stripped on reconcile.
+        self._dst.add_role_members(role="synced-role", members=[_user("drift-member")])
+        wait_until(
+            lambda: self._dst_role_members("synced-role") == {"u1", "synced-group"},
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="foreign member added on destination was not reverted",
+        )
+
+        # A role deleted on the destination is recreated from the source.
+        self._dst.delete_role("synced-role", delete_acls=False)
+        wait_until(
+            lambda: self._dst_role_members("synced-role") == {"u1", "synced-group"},
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg="role deleted on destination was not recreated",
+        )
+
+        # The reverts above are observed reconcile cycles that ran while
+        # "unmanaged-role" existed, so its survival here is "left alone by the
+        # filter" rather than "not yet reconciled".
+        assert "unmanaged-role" in self._dst.list_role_names(), (
+            "out-of-scope destination role was deleted by the migrator"
+        )
+        assert self._dst_role_members("unmanaged-role") == {"local-admin"}, (
+            "out-of-scope destination role's membership was altered by the migrator"
+        )
