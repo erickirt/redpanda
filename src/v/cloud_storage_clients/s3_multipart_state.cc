@@ -15,6 +15,7 @@
 #include "base/vlog.h"
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
+#include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_client.h"
 #include "cloud_storage_clients/s3_client_utils.h"
@@ -36,26 +37,39 @@
 
 namespace cloud_storage_clients {
 
+namespace {
+// Every client in a pool is the same concrete backend type, so this downcast
+// of the per-request client is sound; the dassert guards that in debug.
+s3_client* as_s3_client(client& c) {
+    dassert(
+      dynamic_cast<s3_client*>(&c) != nullptr,
+      "multipart request issued on a non-s3 client");
+    return static_cast<s3_client*>(&c);
+}
+} // namespace
+
 // s3_multipart_state implementations //
 
 s3_multipart_state::s3_multipart_state(
-  s3_client* client,
+  ss::shared_ptr<client_provider> provider,
   plain_bucket_name bucket,
   object_key key,
   ss::lowres_clock::duration timeout)
-  : _client(client)
+  : _provider(std::move(provider))
   , _bucket(std::move(bucket))
   , _key(std::move(key))
   , _timeout(timeout) {}
 
 ss::future<> s3_multipart_state::initialize_multipart() {
+    auto lease = co_await _provider->acquire();
+    auto* s3c = as_s3_client(*lease.client);
     vlog(
       s3_log.debug,
       "Initializing S3 multipart upload for {}/{}",
       _bucket,
       _key);
 
-    auto header = _client->_requestor.make_create_multipart_upload_request(
+    auto header = s3c->_requestor.make_create_multipart_upload_request(
       _bucket, _key);
     if (!header) {
         throw std::system_error(header.error());
@@ -64,7 +78,7 @@ ss::future<> s3_multipart_state::initialize_multipart() {
     vlog(
       s3_log.trace, "send CreateMultipartUpload request:\n{}", header.value());
 
-    auto response_stream = co_await _client->_client.request(
+    auto response_stream = co_await s3c->_client.request(
       std::move(header.value()), _timeout);
 
     co_await response_stream->prefetch_headers();
@@ -88,7 +102,7 @@ ss::future<> s3_multipart_state::initialize_multipart() {
         _upload_id = xml::get_from_ptree<std::string>(
           response_tree, "InitiateMultipartUploadResult.UploadId");
 
-        _client->_probe->register_multipart_create();
+        s3c->_probe->register_multipart_create();
 
         vlog(
           s3_log.debug,
@@ -107,6 +121,8 @@ ss::future<> s3_multipart_state::initialize_multipart() {
 }
 
 ss::future<> s3_multipart_state::upload_part(size_t part_num, iobuf data) {
+    auto lease = co_await _provider->acquire();
+    auto* s3c = as_s3_client(*lease.client);
     vassert(!_upload_id.empty(), "Multipart upload not initialized");
 
     const size_t data_size = data.size_bytes();
@@ -117,7 +133,7 @@ ss::future<> s3_multipart_state::upload_part(size_t part_num, iobuf data) {
       data_size,
       _upload_id);
 
-    auto header = _client->_requestor.make_upload_part_request(
+    auto header = s3c->_requestor.make_upload_part_request(
       _bucket, _key, part_num, _upload_id, data_size);
     if (!header) {
         throw std::system_error(header.error());
@@ -128,7 +144,7 @@ ss::future<> s3_multipart_state::upload_part(size_t part_num, iobuf data) {
     // Convert iobuf to input_stream
     auto body = make_iobuf_input_stream(std::move(data));
 
-    auto response_stream = co_await _client->_client
+    auto response_stream = co_await s3c->_client
                              .request(std::move(header.value()), body, _timeout)
                              .finally([&body] { return body.close(); });
 
@@ -158,13 +174,15 @@ ss::future<> s3_multipart_state::upload_part(size_t part_num, iobuf data) {
     // Drain response
     co_await http::drain(std::move(response_stream));
 
-    _client->_probe->register_multipart_upload();
+    s3c->_probe->register_multipart_upload();
 
     vlog(
       s3_log.debug, "Uploaded part {} with ETag: {}", part_num, _etags.back());
 }
 
 ss::future<> s3_multipart_state::complete_multipart_upload() {
+    auto lease = co_await _provider->acquire();
+    auto* s3c = as_s3_client(*lease.client);
     vassert(!_upload_id.empty(), "Multipart upload not initialized");
 
     vlog(
@@ -173,7 +191,7 @@ ss::future<> s3_multipart_state::complete_multipart_upload() {
       _upload_id,
       _etags.size());
 
-    auto request = _client->_requestor.make_complete_multipart_upload_request(
+    auto request = s3c->_requestor.make_complete_multipart_upload_request(
       _bucket, _key, _upload_id, _etags);
     if (!request) {
         throw std::system_error(request.error());
@@ -182,7 +200,7 @@ ss::future<> s3_multipart_state::complete_multipart_upload() {
     auto [header, body] = std::move(request.value());
     vlog(s3_log.trace, "send CompleteMultipartUpload request:\n{}", header);
 
-    auto response_stream = co_await _client->_client
+    auto response_stream = co_await s3c->_client
                              .request(std::move(header), body, _timeout)
                              .finally([&body] { return body.close(); });
 
@@ -217,7 +235,7 @@ ss::future<> s3_multipart_state::complete_multipart_upload() {
             response_tree, "Error.Resource", ""));
     }
 
-    _client->_probe->register_multipart_complete();
+    s3c->_probe->register_multipart_complete();
 
     vlog(s3_log.debug, "Completed multipart upload {}", _upload_id);
 }
@@ -231,7 +249,10 @@ ss::future<> s3_multipart_state::abort_multipart_upload() {
 
     vlog(s3_log.debug, "Aborting S3 multipart upload {}", _upload_id);
 
-    auto header = _client->_requestor.make_abort_multipart_upload_request(
+    auto lease = co_await _provider->acquire();
+    auto* s3c = as_s3_client(*lease.client);
+
+    auto header = s3c->_requestor.make_abort_multipart_upload_request(
       _bucket, _key, _upload_id);
     if (!header) {
         // Log error but don't throw - abort should be best effort
@@ -246,7 +267,7 @@ ss::future<> s3_multipart_state::abort_multipart_upload() {
       s3_log.trace, "send AbortMultipartUpload request:\n{}", header.value());
 
     try {
-        auto response_stream = co_await _client->_client.request(
+        auto response_stream = co_await s3c->_client.request(
           std::move(header.value()), _timeout);
 
         co_await response_stream->prefetch_headers();
@@ -265,7 +286,7 @@ ss::future<> s3_multipart_state::abort_multipart_upload() {
         // Drain response
         co_await http::drain(std::move(response_stream));
 
-        _client->_probe->register_multipart_abort();
+        s3c->_probe->register_multipart_abort();
 
         vlog(s3_log.debug, "Aborted multipart upload {}", _upload_id);
     } catch (const std::exception& ex) {
@@ -279,6 +300,8 @@ ss::future<> s3_multipart_state::abort_multipart_upload() {
 }
 
 ss::future<> s3_multipart_state::upload_as_single_object(iobuf data) {
+    auto lease = co_await _provider->acquire();
+    auto* s3c = as_s3_client(*lease.client);
     vlog(
       s3_log.debug,
       "Using single put_object for small file (size: {})",
@@ -288,7 +311,7 @@ ss::future<> s3_multipart_state::upload_as_single_object(iobuf data) {
     auto body = make_iobuf_input_stream(std::move(data));
 
     // Use existing put_object implementation
-    co_await _client->do_put_object(
+    co_await s3c->do_put_object(
       _bucket, _key, data_size, std::move(body), _timeout);
 }
 

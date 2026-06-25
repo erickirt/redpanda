@@ -23,13 +23,15 @@
 
 namespace cloud_storage_clients {
 
-class s3_client;
+class client_provider;
 
-/// S3-specific multipart upload state
+/// S3-specific multipart upload state. Holds the connection-independent
+/// protocol state (upload id and part etags) and leases a client per request
+/// from the provider, so a long-running upload never pins one client.
 class s3_multipart_state : public multipart_upload_state {
 public:
     s3_multipart_state(
-      s3_client* client,
+      ss::shared_ptr<client_provider> provider,
       plain_bucket_name bucket,
       object_key key,
       ss::lowres_clock::duration timeout);
@@ -47,7 +49,7 @@ public:
     ss::sstring upload_id() const override { return _upload_id; }
 
 private:
-    s3_client* _client;
+    ss::shared_ptr<client_provider> _provider;
     plain_bucket_name _bucket;
     object_key _key;
     ss::lowres_clock::duration _timeout;

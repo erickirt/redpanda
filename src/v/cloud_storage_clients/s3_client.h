@@ -253,6 +253,7 @@ public:
     /// \return multipart_upload_state that can be wrapped in multipart_upload
     ss::future<result<ss::shared_ptr<multipart_upload_state>, error_outcome>>
     initiate_multipart_upload(
+      ss::shared_ptr<client_provider> provider,
       const plain_bucket_name& bucket,
       const object_key& key,
       size_t part_size,

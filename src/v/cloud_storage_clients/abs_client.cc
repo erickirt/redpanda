@@ -1458,6 +1458,7 @@ ss::future<> abs_client::do_delete_path(
 
 ss::future<result<ss::shared_ptr<multipart_upload_state>, error_outcome>>
 abs_client::initiate_multipart_upload(
+  ss::shared_ptr<client_provider> provider,
   const plain_bucket_name& bucket,
   const object_key& key,
   size_t part_size,
@@ -1480,10 +1481,10 @@ abs_client::initiate_multipart_upload(
       key,
       part_size);
 
-    // Create and return ABS multipart state
-    // Caller will wrap this in a multipart_upload
+    // Create and return the backend state. It leases a client from `provider`
+    // for each request rather than holding one.
     auto state = ss::make_shared<abs_multipart_state>(
-      this, bucket, key, timeout);
+      std::move(provider), bucket, key, timeout);
     co_return state;
 }
 

@@ -1671,6 +1671,7 @@ request_creator::make_abort_multipart_upload_request(
 
 ss::future<result<ss::shared_ptr<multipart_upload_state>, error_outcome>>
 s3_client::initiate_multipart_upload(
+  ss::shared_ptr<client_provider> provider,
   const plain_bucket_name& bucket,
   const object_key& key,
   size_t part_size,
@@ -1693,10 +1694,10 @@ s3_client::initiate_multipart_upload(
           multipart_limits::max_s3_part_size);
     }
 
-    // Create and return multipart state
-    // Caller will wrap this in a multipart_upload
+    // Create and return the backend state. It leases a client from `provider`
+    // for each request rather than holding one.
     auto state = ss::make_shared<s3_multipart_state>(
-      this, bucket, key, timeout);
+      std::move(provider), bucket, key, timeout);
     co_return state;
 }
 

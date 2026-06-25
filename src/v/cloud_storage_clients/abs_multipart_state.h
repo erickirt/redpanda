@@ -23,13 +23,13 @@
 
 namespace cloud_storage_clients {
 
-class abs_client;
+class client_provider;
 
 /// Azure Blob Storage multipart upload state
 class abs_multipart_state : public multipart_upload_state {
 public:
     abs_multipart_state(
-      abs_client* client,
+      ss::shared_ptr<client_provider> provider,
       plain_bucket_name container,
       object_key key,
       ss::lowres_clock::duration timeout);
@@ -43,7 +43,7 @@ public:
     ss::sstring upload_id() const override { return ""; }
 
 private:
-    abs_client* _client;
+    ss::shared_ptr<client_provider> _provider;
     plain_bucket_name _container;
     object_key _key;
     ss::lowres_clock::duration _timeout;
