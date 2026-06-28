@@ -133,7 +133,6 @@
         "rptest/tests/datalake/simple_connect_test.py",
         "rptest/tests/datalake/spark_sql_server_smoke_test.py",
         "rptest/tests/datalake/throttling_test.py",
-        "rptest/tests/datalake/topic_properties_test.py",
         "rptest/tests/datalake/transactions_test.py",
         "rptest/tests/datalake/translation_interruption_test.py",
         "rptest/tests/datalake/trino_smoke_test.py",

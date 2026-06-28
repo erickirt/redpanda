@@ -14,7 +14,15 @@ import threading
 from contextlib import contextmanager
 from logging import Logger
 import time
-from typing import Any, Callable, ContextManager, Optional, Type, TypeVar
+from typing import (
+    Any,
+    Callable,
+    ContextManager,
+    Optional,
+    Type,
+    TypeVar,
+    TYPE_CHECKING,
+)
 
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.errors import TimeoutError
@@ -25,6 +33,9 @@ from enum import Enum
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.storage import Segment
 from ducktape.cluster.cluster import ClusterNode
+
+if TYPE_CHECKING:
+    from rptest.services.redpanda import RedpandaService
 
 T = TypeVar("T")
 E = TypeVar("E", bound=Exception)
@@ -325,13 +336,13 @@ def wait_for_removal_of_n_segments(
 
 
 def wait_for_local_storage_truncate(
-    redpanda,
+    redpanda: "RedpandaService",
     topic: str,
     *,
     target_bytes: int,
     partition_idx: Optional[int] = None,
     timeout_sec: Optional[int] = None,
-    nodes: Optional[list] = None,
+    nodes: Optional[list[ClusterNode]] = None,
 ):
     """
     For use in tiered storage tests: wait until the locally retained data
