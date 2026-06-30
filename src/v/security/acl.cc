@@ -24,6 +24,10 @@
 #include <container/chunked_vector.h>
 #include <fmt/format.h>
 
+#include <algorithm>
+#include <iterator>
+#include <ranges>
+
 namespace security {
 
 namespace {
@@ -162,8 +166,9 @@ std::optional<security::acl_match> acl_matches::find(
 acl_matches
 acl_store::find(resource_type resource, const ss::sstring& name) const {
     using opt_entry_set = std::optional<acl_matches::entry_set_ref>;
+    const std::string_view name_view{name.data(), name.size()};
 
-    const resource_pattern wildcard_pattern(
+    const resource_pattern_probe wildcard_pattern(
       resource, resource_pattern::wildcard, pattern_type::literal);
 
     opt_entry_set wildcards;
@@ -171,16 +176,37 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
         wildcards = {it->first, it->second};
     }
 
-    const resource_pattern literal_pattern(
-      resource, name, pattern_type::literal);
+    const resource_pattern_probe literal_pattern(
+      resource, name_view, pattern_type::literal);
 
     opt_entry_set literals;
     if (const auto it = _acls.find(literal_pattern); it != _acls.end()) {
         literals = {it->first, it->second};
     }
 
-    auto prefixes = get_prefix_view<acl_matches::entry_set_ref>(
-      _acls, resource, name);
+    /*
+     * A prefixed pattern matches the resource name iff its name is a prefix of
+     * it, so the only matches are the name's own prefixes ("t", "tz", "tz-",
+     * ..., "tz-events" for name "tz-events"). The per-resource-type radix tree
+     * visits exactly those in a single root-to-leaf descent, touching each
+     * byte of the name once and visiting only stored prefixes -- no
+     * same-first-character candidates to inspect and discard. Each match
+     * references its entry set directly, so no further `_acls` lookup is
+     * needed.
+     *
+     * for_each_prefix_of() yields matches shortest-prefix-first; reverse to
+     * report them longest-prefix-first (most specific match first).
+     */
+    acl_matches::prefix_vector prefixes;
+    if (
+      const auto it = _prefix_index.find(resource); it != _prefix_index.end()) {
+        it->second.for_each_prefix_of(
+          name_view,
+          [&prefixes](std::string_view, const acl_entry_set_match& match) {
+              prefixes.push_back(match);
+          });
+        std::ranges::reverse(prefixes);
+    }
 
     return acl_matches(wildcards, literals, std::move(prefixes));
 }
@@ -265,6 +291,27 @@ chunked_vector<chunked_vector<acl_binding>> acl_store::remove_bindings(
         // ensure that elements won't outlive the corresponding bindings
         // in enclosing scope.
         maybe_roles.clear();
+
+        // Prune a pattern whose entry set is now empty so neither `_acls` nor
+        // the prefix index accumulates tombstones across deletions. The index
+        // references `_acls` elements, so its entry must be dropped in lockstep
+        // with the `_acls` key (see the `_acls` invariant). `resource` is a key
+        // in `resources`, not in `_acls`, so it stays valid past the erase.
+        if (!dry_run && it->second.empty()) {
+            if (resource.pattern() == pattern_type::prefixed) {
+                if (
+                  auto idx = _prefix_index.find(resource.resource());
+                  idx != _prefix_index.end()) {
+                    [[maybe_unused]] const bool erased = idx->second.erase(
+                      resource.name());
+                    dassert(
+                      erased,
+                      "prefixed pattern {} missing from _prefix_index on erase",
+                      resource.name());
+                }
+            }
+            _acls.erase(it);
+        }
     }
 
     chunked_vector<chunked_vector<acl_binding>> res;
@@ -309,11 +356,9 @@ ss::future<>
 acl_store::reset_bindings(const chunked_vector<acl_binding>& bindings) {
     // NOTE: not coroutinized because otherwise clang-14 crashes.
     _acls.clear();
+    _prefix_index.clear();
     return ss::do_for_each(
-             bindings,
-             [this](const auto& binding) {
-                 _acls[binding.pattern()].insert(binding.entry());
-             })
+             bindings, [this](const auto& binding) { insert_binding(binding); })
       .then([this] {
           return ss::do_for_each(_acls, [](auto& kv) { kv.second.rehash(); });
       });
