@@ -162,8 +162,12 @@ level_one_log_reader_impl::read_some(
               read_batches(*_current_stream->reader));
             if (read_fut.failed()) {
                 auto ex = read_fut.get_exception();
-                vlog(
-                  _log.error,
+                auto log_level = ssx::is_shutdown_exception(ex)
+                                   ? ss::log_level::debug
+                                   : ss::log_level::error;
+                vlogl(
+                  _log,
+                  log_level,
                   "Exception reading from open stream (object {}): {}",
                   _current_stream->oid,
                   ex);
@@ -330,8 +334,11 @@ ss::future<l1::footer> level_one_log_reader_impl::read_footer(
       extent, abort_source, _config.group, _config.skip_cache));
     if (read_fut.failed()) {
         auto ex = read_fut.get_exception();
-        vlog(
-          _log.error,
+        auto log_level = ssx::is_shutdown_exception(ex) ? ss::log_level::debug
+                                                        : ss::log_level::error;
+        vlogl(
+          _log,
+          log_level,
           "Exception opening stream for footer from object {} (pos {} object "
           "size {}): {}",
           oid,
